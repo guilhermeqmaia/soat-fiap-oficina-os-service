@@ -300,7 +300,7 @@ components:
                   numeroOS: { type: string }
                   orcamentoId: { type: string }
                   cobrancaId: { type: string }
-                  linkPagamento: { type: string, format: uri, description: checkout_pro.init_point da order do Mercado Pago }
+                  linkPagamento: { type: string, format: uri, description: checkout_url da order do Mercado Pago (Checkout Pro via Orders) }
     billingOrcamentoRejeitado:
       name: billing.orcamento-rejeitado
       payload:

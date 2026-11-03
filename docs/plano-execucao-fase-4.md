@@ -310,7 +310,7 @@ US-F4-17 (vídeo + PDF).
 | **Custo AWS** sobe (3 deployments, 2 bancos, filas, DynamoDB) | SNS/SQS/DynamoDB no free tier; RDS instância única com 2 bancos; `aws-pause.sh` entre sessões; orçamento de US$ 20/mês com alerta |
 | **Escopo grande** (~131 SP) | Ondas 2/3 paralelizáveis por pessoa; kit reduz retrabalho; strangler evita reescrever o OS |
 | **Consistência eventual confunde na demo** | `GET /ordens-servico/:n/saga` mostra a linha do tempo; dashboard "Fluxo distribuído"; roteiro do vídeo por passos |
-| **Webhook do Mercado Pago em ambiente efêmero** | URL pública do gateway configurada na order (`notification_url`); job de reconciliação cobre webhook perdido; mock (WireMock) no compose |
+| **Webhook do Mercado Pago em ambiente efêmero** | URL pública do gateway configurada no webhook da aplicação (painel do Mercado Pago); job de reconciliação cobre webhook perdido; mock (WireMock) no compose |
 | **Trace não atravessa o broker** | `traceparent` em message attributes desde o kit (US-F4-16) |
 | **Migração de dados** | Não há produção real: seeds recriados por serviço; o ambiente da Fase 3 já foi destruído |
 

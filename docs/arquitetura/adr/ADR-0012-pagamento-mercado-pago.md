@@ -20,11 +20,14 @@ recurso de integração.
 ## Decisão
 
 - **Checkout Pro via API de Orders**: o Billing cria uma *order*
-  (`POST /v1/orders` com `type: "online"`, `processing_mode: "automatic"`,
-  `external_reference` = número da OS, `notification_url` = rota pública do
-  gateway, `total_amount`, `items`, `payer`) e devolve o `checkout_pro.init_point`
-  da resposta; o cliente paga no checkout hospedado — nenhum dado de cartão passa
-  pelo nosso sistema. O `id` da order é a chave externa da `Cobranca`.
+  (`POST /v1/orders` com `type: "online"`, `processing_mode: "manual"` — único
+  valor aceito no Checkout Pro —, `external_reference` = número da OS,
+  `total_amount` e `items[].unit_price` como **strings decimais**, `payer.email`,
+  `config.online.{success_url,failure_url,pending_url}`, `expiration_time`) e
+  devolve o **`checkout_url`** da resposta; o cliente paga no checkout hospedado —
+  nenhum dado de cartão passa pelo nosso sistema. O `id` da order é a chave externa
+  da `Cobranca`. Não há `notification_url` por order: o webhook é o da **aplicação**
+  (painel → Configuração de webhooks, evento **Order**), um por ambiente.
 - **Momento:** o pagamento acontece **na aprovação do orçamento** — novo status
   **`AGUARDANDO_PAGAMENTO`** entre `AGUARDANDO_APROVACAO` e `EM_EXECUCAO`. A
   execução só começa com pagamento aprovado (é o que torna a compensação
@@ -61,12 +64,12 @@ recurso de integração.
 ## Consequências
 
 - Máquina de estados da OS ganha um status; UIs `admin`/`cliente` mostram o link de pagamento.
-- A notificação "orçamento aprovado" passa a carregar o link de pagamento (`checkout_pro.init_point`).
+- A notificação "orçamento aprovado" passa a carregar o link de pagamento (`checkout_url` da order).
 - O evento `billing.pagamento-aprovado` carrega o `orderId` (id da order) no lugar
   de um `payment.id`; o OS Service apenas repassa esse valor.
-- Ambiente efêmero precisa da URL pública do gateway configurada na order
-  (`notification_url`); o job de reconciliação cobre a janela em que o webhook não
-  alcança o ambiente.
+- O webhook é configurado por aplicação no painel (não por order): a URL pública
+  do gateway entra lá; enquanto o ambiente não existe, o job de reconciliação
+  (`GET /v1/orders/{id}`) cobre a janela em que o webhook não alcança o Billing.
 - Custos: sandbox gratuito; em produção real haveria taxa por transação (fora do escopo acadêmico).
 
 ## Histórico

@@ -14,7 +14,7 @@
 Obrigatorio no enunciado: integrar pagamentos com o Mercado Pago. Decisao
 (ADR-0012, revisada em 03/11): **Checkout Pro via API de Orders** — o Billing
 cria uma *order* (`POST /v1/orders`) e o cliente paga no checkout hospedado pelo
-`checkout_pro.init_point`; o Mercado Pago notifica por **webhook** (`type: order`).
+`checkout_url` da resposta; o Mercado Pago notifica por **webhook** (`type: order`).
 A API de Preferences passou a ser tratada como legado pelo Mercado Pago e nao
 deve ser usada. O sandbox tem cartoes de teste que produzem pagamento
 aprovado/recusado/pendente de forma deterministica — perfeito para demonstrar a
@@ -30,7 +30,7 @@ compensacao no video.
 ## Criterios de Aceite
 
 - [ ] Credenciais (access token de teste/producao) e assinatura secreta do webhook no **Secrets Manager** (e nos secrets do repo para o CI); nunca no repo
-- [ ] Ao aprovar orcamento: cria order via `POST /v1/orders` (`type: online`, `processing_mode: automatic`, `external_reference` = numero da OS, `notification_url` = rota publica do gateway, `total_amount`, `items`, `payer`) e persiste `Cobranca` (PENDENTE) com o `id` da order e o `checkout_pro.init_point`
+- [ ] Ao aprovar orcamento: cria order via `POST /v1/orders` (`type: online`, `processing_mode: manual`, `external_reference` = numero da OS, `total_amount`/`unit_price` como strings decimais, `payer.email`, `config.online.*_url`, `X-Idempotency-Key`) e persiste `Cobranca` (PENDENTE) com o `id` da order e o `checkout_url`. O webhook e o da aplicacao (painel), nao da order
 - [ ] `POST /webhooks/mercadopago`: valida **`x-signature`** (`ts` + `v1`, HMAC com `x-request-id` e `data.id`) e responde 200/201; consulta `GET /v1/orders/{id}` (nunca confia so no payload); **idempotente** por **id da order**
 - [ ] `order.processed` com pagamento aprovado -> `billing.pagamento-aprovado` (com `orderId`); order recusada/cancelada -> `billing.pagamento-recusado`; `order.action_required` / pagamento pendente -> mantem PENDENTE
 - [ ] Reconciliacao: job que consulta por `GET /v1/orders/{id}` as cobrancas PENDENTES ha mais de X min (webhook perdido) — recuperacao para frente
