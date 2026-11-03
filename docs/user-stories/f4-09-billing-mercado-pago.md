@@ -20,9 +20,12 @@ deve ser usada. O sandbox tem cartoes de teste que produzem pagamento
 aprovado/recusado/pendente de forma deterministica — perfeito para demonstrar a
 compensacao no video.
 
-> **Pre-requisito pronto em 03/11:** aplicacao `oficina-billing-fiap` criada no
-> painel do Mercado Pago com API de Orders; credenciais de teste e assinatura do
-> webhook vao para os secrets do repo do Billing e Secrets Manager (nunca no repo).
+> **Pre-requisito pronto (03/11/2026):** aplicacao `oficina-billing-fiap` criada no painel do Mercado Pago com
+> **API de Orders**; secrets `MP_ACCESS_TOKEN`, `MP_PUBLIC_KEY` e `MP_WEBHOOK_SECRET` (credenciais de teste e
+> assinatura do webhook) ja gravados no repo `soat-fiap-oficina-billing-service` — o CD deve leva-los ao
+> Secrets Manager/ConfigMap; nunca no codigo. Webhook de teste assinado so no evento **Order**; exemplo real do
+> payload em [`docs/contratos/exemplos/`](../contratos/exemplos/README.md). Contas de teste (vendedor/comprador)
+> ficam com o Guilherme.
 
 ## Criterios de Aceite
 
