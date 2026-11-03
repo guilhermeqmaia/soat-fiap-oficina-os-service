@@ -199,6 +199,7 @@ Table saga_os {
   compensacoes jsonb [not null, note: '[{comando, enviadaEm, confirmadaEm}]']
   prazo_aprovacao timestamp
   prazo_pagamento timestamp
+  falha_simulada varchar [note: 'demo: passo em que a saga simula a falha (US-F4-11)']
   version int [not null, default: 0]
   created_at timestamp [default: `now()`]
   updated_at timestamp

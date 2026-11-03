@@ -232,6 +232,8 @@ model SagaOS {
   compensacoes      Json      @default("[]")
   prazoAprovacao    DateTime? @map("prazo_aprovacao")
   prazoPagamento    DateTime? @map("prazo_pagamento")
+  /// Demo (US-F4-11): passo em que a saga simula a falha do participante
+  falhaSimulada     String?   @map("falha_simulada")
   version           Int       @default(0)
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")

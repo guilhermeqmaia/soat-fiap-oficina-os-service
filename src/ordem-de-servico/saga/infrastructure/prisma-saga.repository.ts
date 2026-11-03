@@ -33,6 +33,7 @@ export class PrismaSagaRepository implements SagaRepository {
       compensacoes: saga.compensacoes as unknown as object[],
       prazoAprovacao: saga.prazoAprovacao,
       prazoPagamento: saga.prazoPagamento,
+      falhaSimulada: saga.falhaSimulada,
     };
     const row = await this.naTransacao(txExterno, async (tx) => {
       let id = saga.id;
@@ -104,7 +105,7 @@ export class PrismaSagaRepository implements SagaRepository {
 
   private toDomain(r: {
     id: string; numero: string; clienteId: string; veiculoId: string; descricaoProblema: string; passo: string; status: string;
-    passoDesde: Date; historico: unknown; compensacoes: unknown; prazoAprovacao: Date | null; prazoPagamento: Date | null;
+    passoDesde: Date; historico: unknown; compensacoes: unknown; prazoAprovacao: Date | null; prazoPagamento: Date | null; falhaSimulada?: string | null;
     version: number; createdAt: Date; updatedAt: Date;
   }): SagaOS {
     return SagaOS.reconstitute({
@@ -120,6 +121,7 @@ export class PrismaSagaRepository implements SagaRepository {
       compensacoes: Array.isArray(r.compensacoes) ? (r.compensacoes as Compensacao[]) : [],
       prazoAprovacao: r.prazoAprovacao ?? null,
       prazoPagamento: r.prazoPagamento ?? null,
+      falhaSimulada: (r.falhaSimulada as PassoSaga | null) ?? null,
       version: r.version ?? 0,
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,

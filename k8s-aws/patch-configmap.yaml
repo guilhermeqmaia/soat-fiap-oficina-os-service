@@ -41,3 +41,6 @@ data:
   SNS_TOPIC_ARN: "__SNS_TOPIC_ARN__"
   SQS_QUEUE_URL: "__SQS_QUEUE_URL__"
   AWS_REGION: "__AWS_REGION__"
+  # Ambiente de DEMONSTRACAO da Fase 4: habilita x-simular-falha para o video da compensacao
+  # (US-F4-11). Remover em qualquer ambiente real.
+  SAGA_SIMULAR_FALHA_HABILITADO: "true"

@@ -5,6 +5,8 @@ import { MotivoCancelamento } from '../../domain/value-objects/motivo-cancelamen
 import { OrdemDeServicoNotFoundError } from '../../domain/errors/ordem-de-servico-not-found.error';
 import { InvalidStatusTransitionError } from '../../domain/errors/invalid-status-transition.error';
 import { PassoSaga, SagaOS, StatusSaga } from '../domain/saga-os.entity';
+import { ItemServicoOS } from '../../domain/value-objects/item-servico-os.vo';
+import { ItemProdutoOS } from '../../domain/value-objects/item-produto-os.vo';
 import { OrquestradorSagaService, prazosDoAmbiente } from './orquestrador-saga.service';
 import { ConcurrentModificationError } from '../../domain/errors/concurrent-modification.error';
 import { SagaTimeoutsService } from './saga-timeouts.service';
@@ -21,7 +23,7 @@ function fakeRepo() {
       const salva = SagaOS.reconstitute({
         id: s.id ?? 'id-' + s.numero, numero: s.numero, clienteId: s.clienteId, veiculoId: s.veiculoId, descricaoProblema: s.descricaoProblema,
         passo: s.passo, status: s.status, historico: [...s.historico], compensacoes: [...s.compensacoes], prazoAprovacao: s.prazoAprovacao,
-        prazoPagamento: s.prazoPagamento, passoDesde: s.passoDesde, version: s.version + 1, createdAt: s.createdAt ?? new Date(), updatedAt: new Date(),
+        prazoPagamento: s.prazoPagamento, passoDesde: s.passoDesde, falhaSimulada: s.falhaSimulada, version: s.version + 1, createdAt: s.createdAt ?? new Date(), updatedAt: new Date(),
       });
       store.set(s.numero, salva); return salva;
     }),
@@ -125,6 +127,41 @@ describe('OrquestradorSagaService', () => {
     expect(s.status).toBe(StatusSaga.CONCLUIDA);
     expect(ucs.execucaoFinalizada.execute).toHaveBeenCalled();
     await expect(svc.processar({ type: 'execucao.finalizada', data: { numeroOS: 'OS-404' } })).rejects.toThrow(OrdemDeServicoNotFoundError);
+  });
+
+  it('falha simulada (demo): o evento de sucesso vira falha no passo marcado e a saga compensa', async () => {
+    await svc.iniciar(ordem(), { descricaoProblema: 'd', falhaSimulada: PassoSaga.AGUARDAR_PAGAMENTO });
+    for (const [t, d] of [['execucao.enfileirada', {}], ['execucao.diagnostico-concluido', { mecanicoId: 'm', diagnostico: 'Pastilhas', itens: ITENS }], ['billing.orcamento-gerado', { total: '1.00' }], ['billing.orcamento-aprovado', {}]] as const) {
+      await svc.processar({ type: t, id: t, data: { numeroOS: 'OS-1', ...d } });
+    }
+    const s = await svc.processar({ type: 'billing.pagamento-aprovado', id: 'pa', data: { numeroOS: 'OS-1' } });
+    expect(s.status).toBe(StatusSaga.COMPENSANDO);
+    expect(ucs.cancelamento.execute).toHaveBeenCalledWith(expect.objectContaining({ motivo: MotivoCancelamento.PAGAMENTO_RECUSADO }));
+    expect(repo.outbox.slice(-2).map((o) => o.type)).toEqual(['billing.cancelar-orcamento', 'execucao.liberar-reservas']);
+    expect(s.falhaSimulada).toBeNull();
+  });
+
+  it('reprocessar reenvia o comando do passo (com itens do snapshot da OS) e nao toca a OS', async () => {
+    await svc.iniciar(ordem(), { descricaoProblema: 'd' });
+    await svc.processar({ type: 'execucao.enfileirada', id: 'e1', data: { numeroOS: 'OS-1' } });
+    await svc.processar({ type: 'execucao.diagnostico-concluido', id: 'e2', data: { numeroOS: 'OS-1', mecanicoId: 'm', diagnostico: 'Pastilhas', itens: ITENS } });
+    const osComItens = OrdemDeServico.reconstitute({
+      id: 'os-1', numero: 'OS-1', clienteId: 'cli-1', veiculoId: 'vei-1', mecanicoId: 'm', descricaoInicial: 'Barulho ao frenar', diagnostico: 'Pastilhas', status: StatusOS.EM_DIAGNOSTICO,
+      motivoCancelamento: null, createdAt: new Date(), updatedAt: new Date(),
+      itensServico: [new ItemServicoOS('srv-1', 'Troca', 1, 200, [new ItemProdutoOS('prd-1', 'Pastilha', 2, 50)])],
+    });
+    ordens.findByNumero.mockResolvedValueOnce(osComItens);
+    const antes = repo.outbox.length;
+    const { reenviados, saga } = await svc.reprocessar('OS-1');
+    expect(reenviados).toEqual(['billing.gerar-orcamento']);
+    expect(repo.outbox).toHaveLength(antes + 1);
+    expect((repo.outbox[antes].data as any).itens).toEqual([
+      { tipo: 'SERVICO', referenciaId: 'srv-1', nome: 'Troca', quantidade: 1, precoUnitario: '200.00' },
+      { tipo: 'PRODUTO', referenciaId: 'prd-1', nome: 'Pastilha', quantidade: 2, precoUnitario: '50.00', servicoId: 'srv-1' },
+    ]);
+    expect(saga.passo).toBe(PassoSaga.GERAR_ORCAMENTO);
+    expect(Object.values(ucs).filter((u) => u !== ucs.enfileiramento && u !== ucs.diagnostico).every((u) => u.execute.mock.calls.length === 0)).toBe(true);
+    await expect(svc.reprocessar('OS-404')).rejects.toThrow('nao encontrada');
   });
 
   it('prazosDoAmbiente: dias/horas ou override em ms', () => {

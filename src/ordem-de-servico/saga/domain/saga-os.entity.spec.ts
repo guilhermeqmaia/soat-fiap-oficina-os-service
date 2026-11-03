@@ -1,6 +1,6 @@
 import { MotivoCancelamento } from '../../domain/value-objects/motivo-cancelamento';
 import { StatusOS } from '../../domain/value-objects/status-os.vo';
-import { PassoSaga, SagaOS, StatusSaga, EventoSaga } from './saga-os.entity';
+import { PassoSaga, SagaOS, StatusSaga, EventoSaga, PASSOS_COM_FALHA_SIMULAVEL } from './saga-os.entity';
 
 const T0 = new Date('2026-10-21T10:00:00Z');
 const em = (min: number) => new Date(T0.getTime() + min * 60_000);
@@ -225,5 +225,81 @@ describe('SagaOS — maquina de estados pura (RFC-0005)', () => {
     expect(r.version).toBe(4); expect(r.status).toBe(StatusSaga.COMPENSANDO); expect(r.comandosPendentes).toEqual([]);
     r.aplicar(ev('billing.orcamento-cancelado'), em(11), PRAZOS); r.aplicar(ev('execucao.reservas-liberadas'), em(12), PRAZOS);
     expect(r.status).toBe(StatusSaga.CANCELADA);
+  });
+
+  describe('injecao de falhas (demo, US-F4-11)', () => {
+    it.each([
+      [PassoSaga.ENFILEIRAR_EXECUCAO, 'execucao.enfileirada', 'execucao.recusada', MotivoCancelamento.EXECUCAO_RECUSADA],
+      [PassoSaga.AGUARDAR_APROVACAO, 'billing.orcamento-aprovado', 'billing.orcamento-rejeitado', MotivoCancelamento.ORCAMENTO_REJEITADO],
+      [PassoSaga.AGUARDAR_PAGAMENTO, 'billing.pagamento-aprovado', 'billing.pagamento-recusado', MotivoCancelamento.PAGAMENTO_RECUSADO],
+      [PassoSaga.INICIAR_EXECUCAO, 'execucao.iniciada', 'execucao.recusada', MotivoCancelamento.FALHA_INICIO_EXECUCAO],
+    ] as const)('em %s troca %s por %s uma unica vez', (passo, sucesso, falha, motivo) => {
+      const s = SagaOS.iniciar({ numero: 'OS-1', clienteId: 'cli-1', veiculoId: 'vei-1', descricaoProblema: 'Barulho', falhaSimulada: passo }, T0);
+      s.consumirComandos();
+      // avanca ate o passo marcado sem disparar a simulacao em passos anteriores
+      const seq: Array<[PassoSaga, EventoSaga]> = [
+        [PassoSaga.AGUARDAR_DIAGNOSTICO, ev('execucao.enfileirada')],
+        [PassoSaga.GERAR_ORCAMENTO, ev('execucao.diagnostico-concluido', { mecanicoId: 'm', diagnostico: 'Pastilhas', itens: ITENS })],
+        [PassoSaga.AGUARDAR_APROVACAO, ev('billing.orcamento-gerado', { total: '300.00' })],
+        [PassoSaga.AGUARDAR_PAGAMENTO, ev('billing.orcamento-aprovado')],
+        [PassoSaga.INICIAR_EXECUCAO, ev('billing.pagamento-aprovado')],
+      ];
+      let i = 1;
+      for (const [alvo, e] of seq) {
+        if (s.passo === passo) break;
+        const efetivo = s.simularFalha(e, em(i));
+        expect(efetivo).toBe(e);
+        s.aplicar(efetivo, em(i++), PRAZOS); s.consumirComandos();
+        expect(s.passo).toBe(alvo);
+      }
+      expect(s.falhaSimulada).toBe(passo);
+      const original = ev(sucesso);
+      const trocado = s.simularFalha(original, em(50));
+      expect(trocado.type).toBe(falha);
+      expect(trocado.data.motivo).toContain('falha simulada');
+      expect(s.falhaSimulada).toBeNull();
+      expect(s.historico[s.historico.length - 1].resultado).toBe('falha-simulada');
+      const r = s.aplicar(trocado, em(51), PRAZOS);
+      expect(r.transicaoOS).toEqual({ tipo: 'cancelar', motivo });
+      // segunda vez nao troca mais
+      expect(s.simularFalha(ev(sucesso), em(52))).toEqual(ev(sucesso));
+    });
+    it('sem falhaSimulada ou em passo diferente, o evento passa intacto', () => {
+      const s = SagaOS.iniciar({ numero: 'OS-1', clienteId: 'c', veiculoId: 'v', descricaoProblema: 'd', falhaSimulada: PassoSaga.AGUARDAR_PAGAMENTO }, T0);
+      const e = ev('execucao.enfileirada');
+      expect(s.simularFalha(e)).toBe(e);
+      expect(nova().simularFalha(e)).toBe(e);
+      expect(PASSOS_COM_FALHA_SIMULAVEL).toHaveLength(4);
+    });
+  });
+
+  describe('reprocessar (retomada manual)', () => {
+    it('reenvia o comando do passo atual: enfileirar, gerar-orcamento (com itens), iniciar', () => {
+      const s0 = nova(); s0.consumirComandos();
+      expect(s0.reprocessar({}, em(1)).map((c) => c.type)).toEqual(['execucao.enfileirar']);
+      expect(s0.historico[s0.historico.length - 1]).toMatchObject({ evento: 'saga.reprocessar', resultado: 'reprocessada' });
+      const s2 = ate(PassoSaga.GERAR_ORCAMENTO);
+      expect(s2.reprocessar({}, em(1))).toEqual([]);
+      const itens = [{ tipo: 'SERVICO' as const, referenciaId: 's1', nome: 'Troca', quantidade: 1, precoUnitario: '200.00' }];
+      expect(s2.reprocessar({ itens }, em(2))[0]).toMatchObject({ type: 'billing.gerar-orcamento', data: { numeroOS: 'OS-1', clienteId: 'cli-1', itens } });
+      const s5 = ate(PassoSaga.INICIAR_EXECUCAO);
+      expect(s5.reprocessar({}, em(1)).map((c) => c.type)).toEqual(['execucao.iniciar']);
+    });
+    it('passos que aguardam cliente/participante e sagas encerradas nao reenviam nada', () => {
+      for (const passo of [PassoSaga.AGUARDAR_DIAGNOSTICO, PassoSaga.AGUARDAR_APROVACAO, PassoSaga.AGUARDAR_PAGAMENTO, PassoSaga.AGUARDAR_FINALIZACAO, PassoSaga.CONCLUIDA]) {
+        const s = ate(passo);
+        expect(s.reprocessar({}, em(1))).toEqual([]);
+        expect(s.historico[s.historico.length - 1].detalhe).toContain('nada a reenviar');
+      }
+    });
+    it('em COMPENSANDO reenvia so as compensacoes nao confirmadas', () => {
+      const s = ate(PassoSaga.AGUARDAR_PAGAMENTO);
+      s.aplicar(ev('billing.pagamento-recusado'), em(10), PRAZOS); s.consumirComandos();
+      s.aplicar(ev('billing.orcamento-cancelado'), em(11), PRAZOS);
+      const re = s.reprocessar({}, em(12));
+      expect(re.map((c) => c.type)).toEqual(['execucao.liberar-reservas']);
+      expect(s.compensacoes.find((c) => c.comando === 'execucao.liberar-reservas')?.enviadaEm).toBe(em(12).toISOString());
+      expect(s.status).toBe(StatusSaga.COMPENSANDO);
+    });
   });
 });

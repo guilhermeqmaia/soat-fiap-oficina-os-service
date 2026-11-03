@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Headers, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -27,6 +27,9 @@ import { CancelarOrdemDeServicoUseCase } from '../application/use-cases/cancelar
 import { DeletarOrdemDeServicoUseCase } from '../application/use-cases/deletar-ordem-de-servico.use-case';
 import { ConsultarSagaUseCase } from '../saga/application/consultar-saga.use-case';
 import { SagaPresenter } from '../saga/infrastructure/saga.presenter';
+import { PASSOS_COM_FALHA_SIMULAVEL, PassoSaga } from '../saga/domain/saga-os.entity';
+import { simulacaoDeFalhasHabilitada } from '../../config/simulacao-falhas.config';
+import { ApiHeader } from '@nestjs/swagger';
 
 /**
  * OS Service (Fase 4): apenas o ciclo de vida que e do Atendimento. Diagnostico,
@@ -60,8 +63,24 @@ export class OrdemDeServicoController {
   @ApiNotFoundResponse({ description: 'Cliente ou veiculo nao encontrado' })
   @ApiBadRequestResponse({ description: 'Dados invalidos' })
   @ApiConflictResponse({ description: 'Veiculo nao pertence ao cliente' })
-  async create(@Body() dto: CreateOrdemDeServicoDto) {
-    const os = await this.criarOrdemDeServico.execute(dto);
+  @ApiHeader({
+    name: 'x-simular-falha',
+    required: false,
+    description:
+      'Demo (US-F4-11, so com SAGA_SIMULAR_FALHA_HABILITADO=true): passo da saga em que o evento de sucesso sera tratado como falha — ' +
+      PASSOS_COM_FALHA_SIMULAVEL.join(' | '),
+  })
+  async create(@Body() dto: CreateOrdemDeServicoDto, @Headers('x-simular-falha') simularFalha?: string) {
+    let falhaSimulada: PassoSaga | null = null;
+    if (simularFalha) {
+      if (!simulacaoDeFalhasHabilitada()) throw new BadRequestException('Injecao de falhas desabilitada neste ambiente');
+      const passo = simularFalha.trim().toUpperCase() as PassoSaga;
+      if (!PASSOS_COM_FALHA_SIMULAVEL.includes(passo)) {
+        throw new BadRequestException(`x-simular-falha invalido; use um de: ${PASSOS_COM_FALHA_SIMULAVEL.join(', ')}`);
+      }
+      falhaSimulada = passo;
+    }
+    const os = await this.criarOrdemDeServico.execute({ ...dto, falhaSimulada });
     return OrdemDeServicoPresenter.toResponse(os);
   }
 

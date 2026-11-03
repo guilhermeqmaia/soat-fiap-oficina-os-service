@@ -545,6 +545,47 @@ describe('OrdemDeServico (e2e) — OS Service', () => {
       expect((await http().get(`/ordens-servico/numero/${os.numero}/status`)).body.status).toBe(StatusOS.EM_DIAGNOSTICO);
     });
 
+    it('injecao de falhas (demo): x-simular-falha=AGUARDAR_PAGAMENTO transforma o pagamento aprovado em recusado', async () => {
+      process.env.SAGA_SIMULAR_FALHA_HABILITADO = 'true';
+      try {
+        const res = await http().post('/ordens-servico').set('Authorization', `Bearer ${tokens.atendente}`).set('x-simular-falha', 'aguardar_pagamento')
+          .send({ clienteId, veiculoId, descricaoInicial: 'Cliente relata barulho ao frenar' });
+        expect(res.status).toBe(201);
+        const os = res.body as { id: string; numero: string };
+        expect((await saga(os.numero)).falhaSimulada).toBe(PassoSaga.AGUARDAR_PAGAMENTO);
+        await ateAguardarPagamento(os.numero);
+        await moduleRef.get(BillingPagamentoAprovadoHandler).handle(envelope('billing.pagamento-aprovado', { numeroOS: os.numero, cobrancaId: 'cob-1', pagamentoExternoId: 'mp-1', valor: '300.00' }, 'billing-service'));
+        expect((await http().get(`/ordens-servico/numero/${os.numero}/status`)).body).toMatchObject({ status: StatusOS.CANCELADA, motivoCancelamento: MotivoCancelamento.PAGAMENTO_RECUSADO });
+        const s = await saga(os.numero);
+        expect(s.status).toBe(StatusSaga.COMPENSANDO);
+        expect(s.falhaSimulada).toBeNull();
+        expect(s.historico.some((h: any) => h.resultado === 'falha-simulada')).toBe(true);
+        expect((await comandosDe(os.numero)).slice(-2)).toEqual(['billing.cancelar-orcamento', 'execucao.liberar-reservas']);
+        // valor invalido -> 400
+        expect((await http().post('/ordens-servico').set('Authorization', `Bearer ${tokens.atendente}`).set('x-simular-falha', 'PASSO_X').send({ clienteId, veiculoId, descricaoInicial: 'Cliente relata barulho' })).status).toBe(400);
+      } finally {
+        delete process.env.SAGA_SIMULAR_FALHA_HABILITADO;
+      }
+      // com a flag desligada o header e recusado
+      expect((await http().post('/ordens-servico').set('Authorization', `Bearer ${tokens.atendente}`).set('x-simular-falha', 'AGUARDAR_PAGAMENTO').send({ clienteId, veiculoId, descricaoInicial: 'Cliente relata barulho' })).status).toBe(400);
+    });
+
+    it('POST /admin/sagas/:numero/reprocessar reenvia o comando pendente via outbox (somente ADMIN)', async () => {
+      const os = await createOs();
+      await moduleRef.get(ExecucaoEnfileiradaHandler).handle(envelope('execucao.enfileirada', { numeroOS: os.numero, posicaoFila: 1 }));
+      await moduleRef.get(ExecucaoDiagnosticoConcluidoHandler).handle(envelope('execucao.diagnostico-concluido', { numeroOS: os.numero, mecanicoId: mecanicoUserId, diagnostico: 'Pastilhas gastas', itens: ITENS }));
+      expect((await http().post(`/admin/sagas/${os.numero}/reprocessar`).set('Authorization', `Bearer ${tokens.atendente}`)).status).toBe(403);
+      const res = await http().post(`/admin/sagas/${os.numero}/reprocessar`).set('Authorization', `Bearer ${tokens.admin}`);
+      expect(res.status).toBe(200);
+      expect(res.body.reenviados).toEqual(['billing.gerar-orcamento']);
+      expect(res.body.saga.passo).toBe(PassoSaga.GERAR_ORCAMENTO);
+      expect(await comandosDe(os.numero)).toEqual(['execucao.enfileirar', 'billing.gerar-orcamento', 'billing.gerar-orcamento']);
+      const ultimo = await prisma.outbox.findFirst({ where: { correlationId: os.numero, type: 'billing.gerar-orcamento' }, orderBy: { criadaEm: 'desc' } });
+      expect((ultimo!.envelope as any).data.itens).toEqual(ITENS);
+      expect((await http().get(`/ordens-servico/numero/${os.numero}/status`)).body.status).toBe(StatusOS.EM_DIAGNOSTICO);
+      expect((await http().post('/admin/sagas/OS-NAO-EXISTE/reprocessar').set('Authorization', `Bearer ${tokens.admin}`)).status).toBe(404);
+    });
+
     it('GET numero/:numero/saga: 404 sem saga; CLIENTE nao acessa', async () => {
       expect((await http().get('/ordens-servico/numero/OS-NAO-EXISTE/saga').set('Authorization', `Bearer ${tokens.admin}`)).status).toBe(404);
       const os = await createOs();
