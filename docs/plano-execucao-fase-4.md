@@ -108,7 +108,7 @@ por um *outbox* transacional (tabela **LATE**) para efeitos pós-commit.
 
 → Sustenta: **gateway único por domínio** (já temos: API Gateway da Fase 3, D9); **saga
 orquestrada com estado explícito e consultável** para não cair na armadilha da Uber (D2);
-**pagamento = ledger imutável + idempotência por `payment.id`** (D8); e um aviso honesto
+**pagamento = ledger imutável + idempotência por id da order** (D8); e um aviso honesto
 para o README: **saga é o custo de ter bancos separados**, não um fim em si.
 
 ### Síntese — o que o mercado espera de quem "faz microsserviços"
@@ -149,7 +149,7 @@ AWS, [Padrão Saga — Prescriptive Guidance](https://docs.aws.amazon.com/pt_br/
 | D5 | **Código comum** | Pacote **`@guilhermeqmaia/oficina-kit`** (GitHub Packages) + **template de serviço**: auth resource server, logs, métricas, mensageria, outbox, consumer idempotente | Três serviços iguais no que não é domínio. *Mercado Livre (Fury) e Nubank ("every service is similar").* (ADR-0010) |
 | D6 | **Confiabilidade de mensagens** | **Transactional Outbox** + **consumidor idempotente** (`processed_messages`) + **DLQ com runbook** de reprocessamento | O trio que todas as quatro empresas adotam. Nunca publicar fora da transação; nunca descartar mensagem. (ADR-0009) |
 | D7 | **Qualidade no CI** | **SonarCloud** (grátis para repos públicos) com quality gate bloqueante | "SonarQube ou similar" sem hospedar nada; badge = evidência de cobertura exigida. (ADR-0011) |
-| D8 | **Pagamento** | **Mercado Pago Checkout Pro** + webhook assinado; **pagamento acontece na aprovação do orçamento** (novo status `AGUARDANDO_PAGAMENTO`); ledger append-only | Cartões de teste do sandbox produzem aprovado/recusado de forma determinística — a demo de compensação fica reproduzível. *Uber: ordens imutáveis, idempotência por ID, retries longos.* (ADR-0012) |
+| D8 | **Pagamento** | **Mercado Pago Checkout Pro (API de Orders)** + webhook assinado; **pagamento acontece na aprovação do orçamento** (novo status `AGUARDANDO_PAGAMENTO`); ledger append-only | Cartões de teste do sandbox produzem aprovado/recusado de forma determinística — a demo de compensação fica reproduzível. *Uber: ordens imutáveis, idempotência por ID, retries longos.* (ADR-0012) |
 | D9 | **Borda** | **Mesmo API Gateway** da Fase 3, rotas por prefixo → 3 backends; **um NLB** com 3 listeners; Lambda de auth **inalterada** | O gateway é o contrato estável; os serviços internos podem mudar. *Uber DOMA.* (ADR-0013) |
 | D10 | **Bancos SQL** | Postgres `oficina_os` e `oficina_billing` com usuários exclusivos; **instância única RDS por padrão** (variável Terraform permite separar) | "Banco próprio" garantido por credenciais e grants (teste negativo documentado). Duas instâncias Multi-AZ dobrariam o custo por dia ligado. |
 | D11 | **Repositório do OS Service** | `soat-fiap-oficina-os-service` **evolui para o OS Service** (strangler) e é **renomeado** para `soat-fiap-oficina-os-service`; continua sendo o hub de documentação | O monólito já é 70 % OS Service (CI/CD, EKS, observabilidade, auth prontos). GitHub redireciona a URL antiga (links do PDF da Fase 3 continuam válidos). |
@@ -183,7 +183,7 @@ flowchart LR
     OS <-->|comandos / eventos| MQ[("SNS + SQS FIFO<br/>+ DLQ")]
     BI <--> MQ
     EX <--> MQ
-    BI <-->|preference / webhook| MP["Mercado Pago"]
+    BI <-->|order / webhook| MP["Mercado Pago"]
     OS -.-> N["Notificação<br/>(webhook / e-mail)"]
     OS & BI & EX -.traces · logs · métricas.-> OBS["Datadog / Prometheus"]
 ```
@@ -202,7 +202,7 @@ RECEBIDA → EM_DIAGNOSTICO → AGUARDANDO_APROVACAO → AGUARDANDO_PAGAMENTO �
 | 1 | `execucao.enfileirar` | `execucao.enfileirada` | RECEBIDA → EM_DIAGNOSTICO (ao atribuir mecânico) |
 | 2 | — (mecânico trabalha na Execução) | `execucao.diagnostico-concluido` (itens + preços congelados) | EM_DIAGNOSTICO |
 | 3 | `billing.gerar-orcamento` | `billing.orcamento-gerado` | → AGUARDANDO_APROVACAO (notifica cliente) |
-| 4 | — (cliente aprova no Billing → preference MP) | `billing.orcamento-aprovado` | → AGUARDANDO_PAGAMENTO (notifica com link) |
+| 4 | — (cliente aprova no Billing → order MP) | `billing.orcamento-aprovado` | → AGUARDANDO_PAGAMENTO (notifica com link) |
 | 5 | — (webhook do Mercado Pago) | `billing.pagamento-aprovado` | — |
 | 6 | `execucao.iniciar` | `execucao.iniciada` (baixa de estoque) | → EM_EXECUCAO |
 | 7 | — | `execucao.finalizada` | → FINALIZADA (notifica) |
@@ -297,7 +297,7 @@ US-F4-17 (vídeo + PDF).
 ### Não iniciado
 - Broker (SNS/SQS), outbox, consumidores idempotentes, DLQ.
 - Saga (orquestrador, compensações, timeouts, estado consultável).
-- Mercado Pago (preference, webhook assinado, reconciliação, estorno).
+- Mercado Pago (API de Orders, webhook assinado, reconciliação, estorno).
 - DynamoDB, kit compartilhado, SonarCloud, BDD (Cucumber), testes de contrato.
 - Trace através de mensagens; dashboards do fluxo distribuído.
 
@@ -310,7 +310,7 @@ US-F4-17 (vídeo + PDF).
 | **Custo AWS** sobe (3 deployments, 2 bancos, filas, DynamoDB) | SNS/SQS/DynamoDB no free tier; RDS instância única com 2 bancos; `aws-pause.sh` entre sessões; orçamento de US$ 20/mês com alerta |
 | **Escopo grande** (~131 SP) | Ondas 2/3 paralelizáveis por pessoa; kit reduz retrabalho; strangler evita reescrever o OS |
 | **Consistência eventual confunde na demo** | `GET /ordens-servico/:n/saga` mostra a linha do tempo; dashboard "Fluxo distribuído"; roteiro do vídeo por passos |
-| **Webhook do Mercado Pago em ambiente efêmero** | URL pública do gateway configurada na preference; job de reconciliação cobre webhook perdido; mock (WireMock) no compose |
+| **Webhook do Mercado Pago em ambiente efêmero** | URL pública do gateway configurada na order (`notification_url`); job de reconciliação cobre webhook perdido; mock (WireMock) no compose |
 | **Trace não atravessa o broker** | `traceparent` em message attributes desde o kit (US-F4-16) |
 | **Migração de dados** | Não há produção real: seeds recriados por serviço; o ambiente da Fase 3 já foi destruído |
 

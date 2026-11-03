@@ -12,20 +12,27 @@
 ## Contexto
 
 Obrigatorio no enunciado: integrar pagamentos com o Mercado Pago. Decisao
-(ADR-0012): **Checkout Pro** — o Billing cria uma *preference* e o cliente paga
-no checkout hospedado; o Mercado Pago notifica por **webhook**. O sandbox tem
-cartoes de teste que produzem pagamento aprovado/recusado/pendente de forma
-deterministica — perfeito para demonstrar a compensacao no video.
+(ADR-0012, revisada em 03/11): **Checkout Pro via API de Orders** — o Billing
+cria uma *order* (`POST /v1/orders`) e o cliente paga no checkout hospedado pelo
+`checkout_pro.init_point`; o Mercado Pago notifica por **webhook** (`type: order`).
+A API de Preferences passou a ser tratada como legado pelo Mercado Pago e nao
+deve ser usada. O sandbox tem cartoes de teste que produzem pagamento
+aprovado/recusado/pendente de forma deterministica — perfeito para demonstrar a
+compensacao no video.
+
+> **Pre-requisito pronto em 03/11:** aplicacao `oficina-billing-fiap` criada no
+> painel do Mercado Pago com API de Orders; credenciais de teste e assinatura do
+> webhook vao para os secrets do repo do Billing e Secrets Manager (nunca no repo).
 
 ## Criterios de Aceite
 
-- [ ] Credenciais (access token de teste/producao) e segredo do webhook no **Secrets Manager**; nunca no repo
-- [ ] Ao aprovar orcamento: cria preference (`external_reference` = numero da OS, `notification_url` = rota publica do gateway) e persiste `Cobranca` (PENDENTE) com o `init_point`
-- [ ] `POST /webhooks/mercadopago`: valida **`x-signature`** (HMAC) e `x-request-id`; consulta o pagamento na API (nunca confia so no payload); **idempotente** por `payment.id`
-- [ ] Pagamento `approved` -> `billing.pagamento-aprovado`; `rejected`/`cancelled` -> `billing.pagamento-recusado`; `pending`/`in_process` -> mantem PENDENTE
-- [ ] Reconciliacao: job que consulta cobrancas PENDENTES ha mais de X min (webhook perdido) — recuperacao para frente
-- [ ] Estorno via API quando a compensacao exigir (`billing.cancelar-orcamento` com pagamento aprovado)
-- [ ] Testes com o SDK mockado + roteiro no QA Plan usando os cartoes de teste do sandbox
+- [ ] Credenciais (access token de teste/producao) e assinatura secreta do webhook no **Secrets Manager** (e nos secrets do repo para o CI); nunca no repo
+- [ ] Ao aprovar orcamento: cria order via `POST /v1/orders` (`type: online`, `processing_mode: automatic`, `external_reference` = numero da OS, `notification_url` = rota publica do gateway, `total_amount`, `items`, `payer`) e persiste `Cobranca` (PENDENTE) com o `id` da order e o `checkout_pro.init_point`
+- [ ] `POST /webhooks/mercadopago`: valida **`x-signature`** (`ts` + `v1`, HMAC com `x-request-id` e `data.id`) e responde 200/201; consulta `GET /v1/orders/{id}` (nunca confia so no payload); **idempotente** por **id da order**
+- [ ] `order.processed` com pagamento aprovado -> `billing.pagamento-aprovado` (com `orderId`); order recusada/cancelada -> `billing.pagamento-recusado`; `order.action_required` / pagamento pendente -> mantem PENDENTE
+- [ ] Reconciliacao: job que consulta por `GET /v1/orders/{id}` as cobrancas PENDENTES ha mais de X min (webhook perdido) — recuperacao para frente
+- [ ] Estorno pelos endpoints de Orders quando a compensacao exigir (`billing.cancelar-orcamento` com pagamento aprovado); order ainda nao paga e cancelada
+- [ ] Integracao com o SDK `mercadopago` 2.x (classe `Order`); testes com o SDK mockado + roteiro no QA Plan usando os cartoes de teste do sandbox (titular `APRO` aprova, `OTHE` recusa, `CONT` pendente)
 - [ ] Logs mascaram dados do pagador
 ## Dependencias
 
@@ -33,4 +40,5 @@ deterministica — perfeito para demonstrar a compensacao no video.
 
 ## Referencias
 
-- Documentacao do Mercado Pago: Checkout Pro, Webhooks (assinatura), cartoes de teste
+- [ADR-0012](../arquitetura/adr/ADR-0012-pagamento-mercado-pago.md)
+- Mercado Pago: [Checkout Pro (Orders) — criar order](https://docs02.mercadopago.com.br/developers/en/docs/checkout-pro-orders/create-order) · [Orders — notificacoes](https://www.mercadopago.com.br/developers/pt/docs/checkout-api-orders/notifications) · [Checkout Pro (Orders) — notificacoes](https://www.mercadopago.com.mx/developers/pt/docs/checkout-pro-orders/notifications) · [SDK Node](https://github.com/mercadopago/sdk-nodejs) · cartoes de teste

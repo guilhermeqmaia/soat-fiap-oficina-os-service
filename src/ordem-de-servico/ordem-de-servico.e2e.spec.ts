@@ -388,7 +388,7 @@ describe('OrdemDeServico (e2e) — OS Service', () => {
       expect((gerar!.envelope as any)).toMatchObject({ producer: 'os-service', data: { numeroOS: os.numero, clienteId, itens: ITENS } });
       expect((gerar!.envelope as any).causationId).toBeDefined();
 
-      await moduleRef.get(BillingPagamentoAprovadoHandler).handle(envelope('billing.pagamento-aprovado', { numeroOS: os.numero, cobrancaId: 'cob-1', pagamentoExternoId: 'mp-1', valor: '300.00' }, 'billing-service'));
+      await moduleRef.get(BillingPagamentoAprovadoHandler).handle(envelope('billing.pagamento-aprovado', { numeroOS: os.numero, cobrancaId: 'cob-1', orderId: 'mp-1', valor: '300.00' }, 'billing-service'));
       expect(await comandosDe(os.numero)).toEqual(['execucao.enfileirar', 'billing.gerar-orcamento', 'execucao.iniciar']);
       await moduleRef.get(ExecucaoIniciadaHandler).handle(envelope('execucao.iniciada', { numeroOS: os.numero }));
       await moduleRef.get(ExecucaoFinalizadaHandler).handle(envelope('execucao.finalizada', { numeroOS: os.numero, finalizadaEm: new Date().toISOString() }));
@@ -481,7 +481,7 @@ describe('OrdemDeServico (e2e) — OS Service', () => {
     it('falha ao iniciar a execucao apos o pagamento -> estorno + liberar reservas (FALHA_INICIO_EXECUCAO)', async () => {
       const os = await createOs();
       await ateAguardarPagamento(os.numero);
-      await moduleRef.get(BillingPagamentoAprovadoHandler).handle(envelope('billing.pagamento-aprovado', { numeroOS: os.numero, cobrancaId: 'cob-1', pagamentoExternoId: 'mp-1', valor: '300.00' }, 'billing-service'));
+      await moduleRef.get(BillingPagamentoAprovadoHandler).handle(envelope('billing.pagamento-aprovado', { numeroOS: os.numero, cobrancaId: 'cob-1', orderId: 'mp-1', valor: '300.00' }, 'billing-service'));
       await moduleRef.get(ExecucaoRecusadaHandler).handle(envelope('execucao.recusada', { numeroOS: os.numero, motivo: 'estoque insuficiente' }));
       expect((await http().get(`/ordens-servico/numero/${os.numero}/status`)).body).toMatchObject({ status: StatusOS.CANCELADA, motivoCancelamento: MotivoCancelamento.FALHA_INICIO_EXECUCAO });
       expect((await comandosDe(os.numero)).slice(-3)).toEqual(['execucao.iniciar', 'billing.cancelar-orcamento', 'execucao.liberar-reservas']);
