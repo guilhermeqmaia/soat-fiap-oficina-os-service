@@ -288,7 +288,7 @@ components:
                   validoAte: { type: string, format: date-time }
     billingOrcamentoAprovado:
       name: billing.orcamento-aprovado
-      title: Cliente aprovou; cobrança criada no Mercado Pago
+      title: Cliente aprovou; order criada no Mercado Pago (API de Orders)
       payload:
         allOf:
           - $ref: '#/components/schemas/Envelope'
@@ -300,7 +300,7 @@ components:
                   numeroOS: { type: string }
                   orcamentoId: { type: string }
                   cobrancaId: { type: string }
-                  linkPagamento: { type: string, format: uri }
+                  linkPagamento: { type: string, format: uri, description: checkout_url da order do Mercado Pago (Checkout Pro via Orders) }
     billingOrcamentoRejeitado:
       name: billing.orcamento-rejeitado
       payload:
@@ -313,11 +313,11 @@ components:
           - properties:
               data:
                 type: object
-                required: [numeroOS, cobrancaId, pagamentoExternoId, valor]
+                required: [numeroOS, cobrancaId, orderId, valor]
                 properties:
                   numeroOS: { type: string }
                   cobrancaId: { type: string }
-                  pagamentoExternoId: { type: string, description: payment.id do Mercado Pago }
+                  orderId: { type: string, description: id da order do Mercado Pago (API de Orders) }
                   valor: { $ref: '#/components/schemas/Dinheiro' }
     billingPagamentoRecusado:
       name: billing.pagamento-recusado

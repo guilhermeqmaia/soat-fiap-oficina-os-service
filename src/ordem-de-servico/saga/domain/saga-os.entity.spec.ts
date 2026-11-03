@@ -19,7 +19,7 @@ const ate = (passo: PassoSaga) => {
     [PassoSaga.GERAR_ORCAMENTO, ev('execucao.diagnostico-concluido', { mecanicoId: 'm', diagnostico: 'Pastilhas', itens: ITENS })],
     [PassoSaga.AGUARDAR_APROVACAO, ev('billing.orcamento-gerado', { orcamentoId: 'o1', total: '300.00' })],
     [PassoSaga.AGUARDAR_PAGAMENTO, ev('billing.orcamento-aprovado', { orcamentoId: 'o1', cobrancaId: 'c1', linkPagamento: 'https://mp' })],
-    [PassoSaga.INICIAR_EXECUCAO, ev('billing.pagamento-aprovado', { cobrancaId: 'c1', pagamentoExternoId: 'x', valor: '300.00' })],
+    [PassoSaga.INICIAR_EXECUCAO, ev('billing.pagamento-aprovado', { cobrancaId: 'c1', orderId: 'x', valor: '300.00' })],
     [PassoSaga.AGUARDAR_FINALIZACAO, ev('execucao.iniciada')],
     [PassoSaga.CONCLUIDA, ev('execucao.finalizada', { finalizadaEm: T0.toISOString() })],
   ];

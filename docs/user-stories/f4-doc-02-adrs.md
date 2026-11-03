@@ -19,7 +19,7 @@ uniformes nos tres servicos. Uma ADR curta por decisao (formato Nygard).
 - [x] **ADR-0009 — Transactional Outbox + consumidor idempotente:** todo evento sai da mesma transacao que muda o estado; todo consumidor deduplica por `messageId`; envelope padrao (`id`, `type`, `occurredAt`, `correlationId` = numero da OS, `causationId`, `version`, `traceparent`)
 - [x] **ADR-0010 — Kit compartilhado (`@guilhermeqmaia/oficina-kit`):** o que entra (auth resource server, logs, metricas, mensageria, outbox) e o que NAO entra (nada de dominio); versionamento semver via GitHub Packages
 - [x] **ADR-0011 — Qualidade no CI com SonarCloud:** quality gate obrigatorio (cobertura >= 80%, 0 bugs/vulnerabilidades novas) como check de branch protection
-- [x] **ADR-0012 — Pagamento com Mercado Pago:** Checkout Pro (preference) + webhook assinado; pagamento acontece na aprovacao do orcamento; sandbox para demo de falhas
+- [x] **ADR-0012 — Pagamento com Mercado Pago:** Checkout Pro via API de Orders + webhook assinado; pagamento acontece na aprovacao do orcamento; sandbox para demo de falhas
 - [x] **ADR-0013 — API Gateway multi-servico:** um HTTP API, rotas por prefixo para cada servico, um NLB interno com um listener por servico; rota publica do webhook do Mercado Pago validada por assinatura
 - [x] **ADR-0001 marcada como "Complementada por ADR-0009"** (a Fase 3 previu o corte por eventos in-process)
 - [x] `docs/arquitetura/adr/README.md` atualizado

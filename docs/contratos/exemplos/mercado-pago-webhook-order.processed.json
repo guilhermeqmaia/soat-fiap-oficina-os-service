@@ -1,0 +1,37 @@
+{
+  "action": "order.processed",
+  "api_version": "v1",
+  "application_id": "400480433027788",
+  "data": {
+    "external_reference": "ext_ref_1234",
+    "id": "123",
+    "status": "processed",
+    "status_detail": "accredited",
+    "total_paid_amount": 100000,
+    "transactions": {
+      "payments": [
+        {
+          "amount": 100000,
+          "id": "PAY01K7S9596QBWZRTY02NF",
+          "paid_amount": 100000,
+          "payment_method": {
+            "id": "visa",
+            "installments": 1,
+            "type": "credit_card"
+          },
+          "reference": {
+            "id": 1234567891
+          },
+          "status": "processed",
+          "status_detail": "accredited"
+        }
+      ]
+    },
+    "type": "point",
+    "version": 3
+  },
+  "date_created": "2021-11-01T02:02:02-04:00",
+  "live_mode": false,
+  "type": "order",
+  "user_id": 3815332120
+}
