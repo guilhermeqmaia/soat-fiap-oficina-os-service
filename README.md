@@ -592,6 +592,11 @@ precisa ser explícito e consultável).
   conflito de versão é refeito em processo e, se persistir, devolve 409 (HTTP) ou reentrega (SQS).
 - Métricas: `oficina_os_saga_passos_total`, `oficina_os_saga_passo_duracao_seconds`, `oficina_os_sagas`,
   `oficina_os_sagas_paradas` (alerta de saga travada, `SAGA_ALERTA_PARADA_MIN`).
+- **Operação (US-F4-11):** mensagem que falha 5 vezes vai para a DLQ e dispara alarme; o runbook
+  [`docs/runbooks/saga-dlq-reprocessar.md`](docs/runbooks/saga-dlq-reprocessar.md) cobre triagem e redrive.
+  `POST /admin/sagas/:numero/reprocessar` (ADMIN) reenvia o comando pendente de uma saga travada.
+- **Demo de falha:** com `SAGA_SIMULAR_FALHA_HABILITADO=true`, o header `x-simular-falha=<passo>` no
+  `POST /ordens-servico` faz a saga tratar o sucesso daquele passo como falha e compensar.
 
 ---
 

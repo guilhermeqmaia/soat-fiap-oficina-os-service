@@ -6,6 +6,7 @@ import { VeiculoNotFoundError } from '../../domain/errors/veiculo-not-found.erro
 import { VeiculoClienteMismatchError } from '../../domain/errors/veiculo-cliente-mismatch.error';
 import { ORDEM_DE_SERVICO_GATEWAY, OrdemDeServicoGateway } from '../gateways/ordem-de-servico.gateway';
 import { OrquestradorSagaService } from '../../saga/application/orquestrador-saga.service';
+import { PassoSaga } from '../../saga/domain/saga-os.entity';
 import { UNIT_OF_WORK, UnitOfWork } from '../ports/unit-of-work';
 import {
   CLIENTE_CONSULTA_GATEWAY,
@@ -18,6 +19,8 @@ export interface CriarOrdemDeServicoInput {
   clienteId: string;
   veiculoId: string;
   descricaoInicial: string;
+  /** Demo (US-F4-11): passo da saga em que simular a falha do participante. */
+  falhaSimulada?: PassoSaga | null;
 }
 
 /**
@@ -63,7 +66,7 @@ export class CriarOrdemDeServicoUseCase implements UseCase<CriarOrdemDeServicoIn
     // existe OS sem saga nem saga sem comando (US-F4-10).
     return this.uow.executar(async (tx) => {
       const criada = await this.gateway.create(ordem, tx);
-      await this.orquestrador.iniciar(criada, { descricaoProblema: input.descricaoInicial }, tx);
+      await this.orquestrador.iniciar(criada, { descricaoProblema: input.descricaoInicial, falhaSimulada: input.falhaSimulada ?? null }, tx);
       return criada;
     });
   }

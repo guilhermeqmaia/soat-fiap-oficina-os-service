@@ -46,7 +46,7 @@ describe('CriarOrdemDeServicoUseCase', () => {
     expect(os.status).toBe(StatusOS.RECEBIDA); expect(os.itensServico).toHaveLength(0); expect(g.create).toHaveBeenCalled();
     // OS e saga na mesma transacao: o mesmo tx vai para o gateway e para o orquestrador
     expect(g.create).toHaveBeenCalledWith(expect.anything(), 'tx-1');
-    expect(orquestrador.iniciar).toHaveBeenCalledWith(expect.objectContaining({ numero: os.numero }), { descricaoProblema: 'Barulho ao frenar' }, 'tx-1');
+    expect(orquestrador.iniciar).toHaveBeenCalledWith(expect.objectContaining({ numero: os.numero }), { descricaoProblema: 'Barulho ao frenar', falhaSimulada: null }, 'tx-1');
     // os.aberta pendente no agregado entregue ao gateway (vai para o outbox na mesma transacao)
     const entregue: OrdemDeServico = g.create.mock.calls[0][0];
     expect(entregue.eventosIntegracao[0]).toMatchObject({

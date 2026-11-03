@@ -56,7 +56,15 @@ export interface EventoSaga {
   data: Record<string, any>;
 }
 
-export type ResultadoPasso = 'avancou' | 'ignorado' | 'compensando' | 'confirmacao' | 'concluida' | 'cancelada';
+export type ResultadoPasso =
+  | 'avancou'
+  | 'ignorado'
+  | 'compensando'
+  | 'confirmacao'
+  | 'concluida'
+  | 'cancelada'
+  | 'reprocessada'
+  | 'falha-simulada';
 
 export interface PassoHistorico {
   em: string;
@@ -101,6 +109,8 @@ export interface SagaOSProps {
   compensacoes: Compensacao[];
   prazoAprovacao: Date | null;
   prazoPagamento: Date | null;
+  /** Demo (US-F4-11): passo em que a saga deve simular a falha do participante. */
+  falhaSimulada?: PassoSaga | null;
   version: number;
   createdAt?: Date;
   updatedAt?: Date;
@@ -156,6 +166,7 @@ export class SagaOS {
   private _compensacoes: Compensacao[];
   private _prazoAprovacao: Date | null;
   private _prazoPagamento: Date | null;
+  private _falhaSimulada: PassoSaga | null;
   private _version: number;
   readonly createdAt?: Date;
   readonly updatedAt?: Date;
@@ -174,6 +185,7 @@ export class SagaOS {
     this._compensacoes = [...p.compensacoes];
     this._prazoAprovacao = p.prazoAprovacao;
     this._prazoPagamento = p.prazoPagamento;
+    this._falhaSimulada = p.falhaSimulada ?? null;
     this._version = p.version;
     this.createdAt = p.createdAt;
     this.updatedAt = p.updatedAt;
@@ -181,11 +193,13 @@ export class SagaOS {
 
   /** Abertura da OS: primeiro passo = enfileirar na Execucao. */
   static iniciar(
-    dados: { numero: string; clienteId: string; veiculoId: string; descricaoProblema: string },
+    dados: { numero: string; clienteId: string; veiculoId: string; descricaoProblema: string; falhaSimulada?: PassoSaga | null },
     agora: Date = new Date(),
   ): SagaOS {
+    const { falhaSimulada, ...resto } = dados;
     const saga = new SagaOS({
-      ...dados,
+      ...resto,
+      falhaSimulada: falhaSimulada ?? null,
       passo: PassoSaga.ENFILEIRAR_EXECUCAO,
       status: StatusSaga.EM_ANDAMENTO,
       passoDesde: agora,
@@ -267,6 +281,9 @@ export class SagaOS {
   }
   get prazoAprovacao(): Date | null {
     return this._prazoAprovacao;
+  }
+  get falhaSimulada(): PassoSaga | null {
+    return this._falhaSimulada;
   }
   get prazoPagamento(): Date | null {
     return this._prazoPagamento;
@@ -384,6 +401,64 @@ export class SagaOS {
       default:
         return this.ignorar(evento, agora, 'evento desconhecido');
     }
+  }
+
+  /**
+   * Injecao de falhas para a demo (US-F4-11): se a saga foi aberta com
+   * `falhaSimulada` = passo atual e chega o evento de sucesso desse passo, o
+   * evento e trocado pelo de falha correspondente (uma unica vez). Fora disso,
+   * devolve o evento intacto.
+   */
+  simularFalha(evento: EventoSaga, agora: Date = new Date()): EventoSaga {
+    if (!this._falhaSimulada || this._falhaSimulada !== this._passo) return evento;
+    const substituto = FALHA_SIMULADA[this._passo]?.[evento.type];
+    if (!substituto) return evento;
+    this._falhaSimulada = null;
+    this.registrar(agora, evento.type, 'falha-simulada', `demo: ${evento.type} tratado como ${substituto}`);
+    return { ...evento, type: substituto, data: { ...evento.data, motivo: `falha simulada no passo ${this._passo}` } };
+  }
+
+  /**
+   * Retomada manual (ADMIN): reenvia o comando do passo atual ou as compensacoes
+   * ainda nao confirmadas. Passos que esperam cliente/participante nao tem
+   * comando a reenviar. `itens` (snapshot da OS) so e usado em GERAR_ORCAMENTO.
+   */
+  reprocessar(dados: { itens?: ItemContrato[] }, agora: Date = new Date()): ComandoSaga[] {
+    const antes = this._comandosPendentes.length;
+    if (this._status === StatusSaga.COMPENSANDO) {
+      for (const c of this._compensacoes) {
+        if (c.confirmadaEm) continue;
+        this.enviar({
+          type: c.comando,
+          data: c.comando === 'billing.cancelar-orcamento' ? { numeroOS: this.numero, motivo: MotivoCancelamento.OPERADOR } : { numeroOS: this.numero },
+        });
+        c.enviadaEm = agora.toISOString();
+      }
+    } else if (this._status === StatusSaga.EM_ANDAMENTO) {
+      switch (this._passo) {
+        case PassoSaga.ENFILEIRAR_EXECUCAO:
+          this.enviar({ type: 'execucao.enfileirar', data: { numeroOS: this.numero, veiculoId: this.veiculoId, descricaoProblema: this.descricaoProblema } });
+          break;
+        case PassoSaga.GERAR_ORCAMENTO:
+          if (dados.itens && dados.itens.length > 0) {
+            this.enviar({ type: 'billing.gerar-orcamento', data: { numeroOS: this.numero, clienteId: this.clienteId, itens: dados.itens } });
+          }
+          break;
+        case PassoSaga.INICIAR_EXECUCAO:
+          this.enviar({ type: 'execucao.iniciar', data: { numeroOS: this.numero } });
+          break;
+        default:
+          break;
+      }
+    }
+    const reenviados = this._comandosPendentes.slice(antes);
+    this.registrar(
+      agora,
+      'saga.reprocessar',
+      'reprocessada',
+      reenviados.length ? `reenviado: ${reenviados.map((c) => c.type).join(', ')}` : 'nada a reenviar neste passo',
+    );
+    return reenviados;
   }
 
   // ─── helpers ────────────────────────────────────────────────────────────────
@@ -518,6 +593,26 @@ export class SagaOS {
     return this.compensar(evento, agora, motivo, comandos);
   }
 }
+
+/** Item no formato do AsyncAPI (`Item`), usado ao reenviar `billing.gerar-orcamento`. */
+export interface ItemContrato {
+  tipo: 'SERVICO' | 'PRODUTO';
+  referenciaId: string;
+  nome: string;
+  quantidade: number;
+  precoUnitario: string;
+  servicoId?: string;
+}
+
+/** Evento de sucesso -> evento de falha, por passo (injecao de falhas da demo). */
+const FALHA_SIMULADA: Partial<Record<PassoSaga, Record<string, string>>> = {
+  [PassoSaga.ENFILEIRAR_EXECUCAO]: { 'execucao.enfileirada': 'execucao.recusada' },
+  [PassoSaga.AGUARDAR_APROVACAO]: { 'billing.orcamento-aprovado': 'billing.orcamento-rejeitado' },
+  [PassoSaga.AGUARDAR_PAGAMENTO]: { 'billing.pagamento-aprovado': 'billing.pagamento-recusado' },
+  [PassoSaga.INICIAR_EXECUCAO]: { 'execucao.iniciada': 'execucao.recusada' },
+};
+/** Passos em que a demo pode simular falha. */
+export const PASSOS_COM_FALHA_SIMULAVEL = Object.keys(FALHA_SIMULADA) as PassoSaga[];
 
 export const PRAZOS_DEFAULT: Prazos = {
   aprovacaoMs: 3 * 24 * 60 * 60 * 1000,

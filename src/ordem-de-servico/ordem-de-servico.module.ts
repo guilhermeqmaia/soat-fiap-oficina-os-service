@@ -8,6 +8,7 @@ import { VEICULO_REPOSITORY } from '../veiculo/domain/veiculo.repository';
 import { USUARIO_REPOSITORY } from '../usuario/domain/usuario.repository';
 import { OrdemDeServicoController } from './infrastructure/ordem-de-servico.controller';
 import { ClienteOrdemDeServicoController } from './infrastructure/cliente-ordem-de-servico.controller';
+import { SagaAdminController } from './saga/infrastructure/saga-admin.controller';
 import { PrismaOrdemDeServicoRepository } from './infrastructure/prisma-ordem-de-servico.repository';
 import { PrismaAuditLogRepository } from './infrastructure/prisma-audit-log.repository';
 import { ORDEM_DE_SERVICO_REPOSITORY } from './domain/ordem-de-servico.repository';
@@ -69,7 +70,7 @@ export const TRANSICOES_USE_CASES = [
 
 @Module({
   imports: [PrismaModule, ClienteModule, VeiculoModule, UsuarioModule],
-  controllers: [OrdemDeServicoController, ClienteOrdemDeServicoController],
+  controllers: [OrdemDeServicoController, ClienteOrdemDeServicoController, SagaAdminController],
   providers: [
     ...USE_CASES,
     ...TRANSICOES_USE_CASES,

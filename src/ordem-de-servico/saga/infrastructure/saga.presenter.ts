@@ -9,6 +9,7 @@ export class SagaPresenter {
       status: saga.status,
       prazoAprovacao: saga.prazoAprovacao,
       prazoPagamento: saga.prazoPagamento,
+      falhaSimulada: saga.falhaSimulada,
       historico: saga.historico,
       compensacoes: saga.compensacoes,
       iniciadaEm: saga.createdAt,

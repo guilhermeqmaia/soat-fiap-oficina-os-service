@@ -14,7 +14,8 @@ import {
   RegistrarOrcamentoAprovadoUseCase,
   RegistrarOrcamentoGeradoUseCase,
 } from '../../application/use-cases/transicoes';
-import { EventoSaga, Prazos, SagaOS, TransicaoOS } from '../domain/saga-os.entity';
+import { EventoSaga, ItemContrato, PassoSaga, Prazos, SagaOS, TransicaoOS } from '../domain/saga-os.entity';
+import { SagaNotFoundError } from '../domain/errors/saga-not-found.error';
 import { SAGA_REPOSITORY, SagaRepository } from '../domain/saga.repository';
 import { sagaPassoDuracao, sagaPassos } from '../../../observabilidade/metrics.registry';
 
@@ -62,7 +63,11 @@ export class OrquestradorSagaService {
    * Abertura da OS: cria a saga e grava `execucao.enfileirar` no outbox. Deve
    * rodar na MESMA transacao em que a OS foi criada (`tx` do chamador).
    */
-  async iniciar(ordem: OrdemDeServico, resumo: { descricaoProblema: string }, tx?: unknown): Promise<SagaOS> {
+  async iniciar(
+    ordem: OrdemDeServico,
+    resumo: { descricaoProblema: string; falhaSimulada?: PassoSaga | null },
+    tx?: unknown,
+  ): Promise<SagaOS> {
     const existente = await this.sagas.findByNumero(ordem.numero, tx);
     if (existente) return existente;
     const saga = SagaOS.iniciar({
@@ -70,6 +75,7 @@ export class OrquestradorSagaService {
       clienteId: ordem.clienteId,
       veiculoId: ordem.veiculoId,
       descricaoProblema: resumo.descricaoProblema,
+      falhaSimulada: resumo.falhaSimulada ?? null,
     });
     sagaPassos.inc({ passo: saga.passo, resultado: 'avancou' });
     return this.sagas.save(saga, tx);
@@ -95,6 +101,13 @@ export class OrquestradorSagaService {
     const saga = (await this.sagas.findByNumero(numero, tx)) ?? (await this.adotar(numero, agora, tx));
     const passoAntes = saga.passo;
     const entradaNoPasso = saga.passoDesde;
+
+    // Demo (US-F4-11): troca o evento de sucesso pelo de falha no passo marcado.
+    const efetivo = saga.simularFalha(evento, agora);
+    if (efetivo !== evento) {
+      this.logger.warn({ msg: 'falha simulada (demo)', numeroOS: numero, passo: passoAntes, de: evento.type, para: efetivo.type });
+      evento = efetivo;
+    }
 
     const resultado = saga.aplicar(evento, agora, prazosDoAmbiente());
     const rotulo = resultado.aplicado ? saga.historico[saga.historico.length - 1]?.resultado ?? 'avancou' : 'ignorado';
@@ -123,6 +136,34 @@ export class OrquestradorSagaService {
       comandos: resultado.comandos.map((c) => c.type),
     });
     return salva;
+  }
+
+  /**
+   * Retomada manual de uma saga travada (ADMIN, US-F4-11): reenvia o comando
+   * do passo atual ou as compensacoes pendentes, via outbox. Nao muda a OS.
+   */
+  async reprocessar(numero: string, agora: Date = new Date()): Promise<{ saga: SagaOS; reenviados: string[] }> {
+    return this.uow.executar(async (tx) => {
+      const saga = await this.sagas.findByNumero(numero, tx);
+      if (!saga) throw new SagaNotFoundError(numero);
+      const ordem = await this.ordens.findByNumero(numero, tx);
+      const itens: ItemContrato[] = (ordem?.itensServico ?? []).flatMap((s) => [
+        { tipo: 'SERVICO' as const, referenciaId: s.servicoId, nome: s.nome, quantidade: s.quantidade, precoUnitario: s.precoUnitario.toFixed(2) },
+        ...s.produtos.map((p) => ({
+          tipo: 'PRODUTO' as const,
+          referenciaId: p.produtoId,
+          nome: p.nome,
+          quantidade: p.quantidade,
+          precoUnitario: p.precoUnitario.toFixed(2),
+          servicoId: s.servicoId,
+        })),
+      ]);
+      const reenviados = saga.reprocessar({ itens }, agora).map((c) => c.type);
+      sagaPassos.inc({ passo: saga.passo, resultado: 'reprocessada' });
+      const salva = await this.sagas.save(saga, tx);
+      this.logger.log({ msg: 'saga reprocessada', numeroOS: numero, passo: salva.passo, status: salva.status, reenviados });
+      return { saga: salva, reenviados };
+    });
   }
 
   private async transicionar(numero: string, t: TransicaoOS, evento: EventoSaga, tx: unknown): Promise<void> {

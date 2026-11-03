@@ -36,3 +36,5 @@ data:
   # `npm run dev` (Vite) local. Ajuste para o dominio do front em producao/ingress.
   WEB_ORIGINS: "http://localhost:5173,http://localhost:5174,http://localhost:8080,http://localhost:8081"
   PUBLIC_BASE_URL: "http://localhost:3000"
+  # Demo (US-F4-11): injecao de falhas na saga via header x-simular-falha
+  SAGA_SIMULAR_FALHA_HABILITADO: "true"
