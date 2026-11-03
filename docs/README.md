@@ -77,3 +77,7 @@ documentos abaixo detalham cada tema.
 - [plano-execucao-fase-4.md](plano-execucao-fase-4.md) — plano da Fase 4 (insights de mercado, decisões, ondas, 23 histórias)
 - [contratos/](contratos/README.md) — catálogo AsyncAPI dos eventos e comandos da Fase 4 (fonte dos testes de contrato)
 - [tech-challenges/fase-4-tech-challenge.pdf](tech-challenges/fase-4-tech-challenge.pdf) — enunciado
+
+## Painel da Fase 4
+
+[`dashboard-fase-4.html`](dashboard-fase-4.html) — progresso por onda, divisão proposta por pessoa e decisões, para abrir no navegador (arquivo único, sem dependências).
