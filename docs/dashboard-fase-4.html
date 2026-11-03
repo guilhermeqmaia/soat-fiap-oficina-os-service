@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fase 4 — Oficina Mecânica · painel do time</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-0: #f4f4f2; --surface-1: #fcfcfb; --surface-2: #ededea; --line: #e1e0dc;
+    --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #7c7b76;
+    --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --neutral: #c9c8c2;
+    --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b;
+    --accent: #2a78d6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-0: #111110; --surface-1: #1a1a19; --surface-2: #242423; --line: #333331;
+      --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8f8e87;
+      --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --neutral: #4a4a47; --accent: #3987e5;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-0: #111110; --surface-1: #1a1a19; --surface-2: #242423; --line: #333331;
+    --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8f8e87;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --neutral: #4a4a47; --accent: #3987e5;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--surface-0); color: var(--text-primary); font: 15px/1.45 -apple-system, "Segoe UI", Inter, Roboto, sans-serif; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 24px 56px; }
+  header { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+  h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  h2 { font-size: 17px; margin: 0 0 12px; }
+  .sub { color: var(--text-secondary); margin: 0; }
+  .toolbar { display: flex; gap: 8px; align-items: center; }
+  button { font: inherit; font-size: 13px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-1); color: var(--text-primary); cursor: pointer; }
+  button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+  .grid { display: grid; gap: 16px; }
+  .tiles { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); margin-bottom: 16px; }
+  .card { background: var(--surface-1); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; }
+  .tile .label { color: var(--text-secondary); font-size: 13px; }
+  .tile .value { font-size: 34px; font-weight: 650; letter-spacing: -0.02em; line-height: 1.1; margin: 4px 0 2px; font-variant-numeric: tabular-nums; }
+  .tile .hint { color: var(--text-muted); font-size: 12.5px; }
+  .two { grid-template-columns: 1fr 1fr; margin-bottom: 16px; }
+  @media (max-width: 860px) { .two { grid-template-columns: 1fr; } }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--text-secondary); margin: 2px 0 10px; }
+  .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; background: var(--sw); }
+  svg { width: 100%; height: auto; display: block; overflow: visible; }
+  .tip { position: fixed; pointer-events: none; background: var(--surface-1); color: var(--text-primary); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; font-size: 12.5px; box-shadow: 0 6px 24px rgba(0,0,0,.12); opacity: 0; transition: opacity .08s; z-index: 10; white-space: nowrap; }
+  .hero { display: flex; gap: 24px; align-items: center; }
+  .ring { flex: 0 0 150px; }
+  .hero .big { font-size: 44px; font-weight: 700; letter-spacing: -0.03em; line-height: 1; }
+  .hero p { margin: 6px 0 0; color: var(--text-secondary); }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--text-secondary); font-weight: 600; font-size: 12.5px; text-transform: uppercase; letter-spacing: .03em; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--surface-2); color: var(--text-secondary); white-space: nowrap; }
+  .pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--dot, var(--neutral)); }
+  .st-done { --dot: var(--good); } .st-review { --dot: var(--s1); } .st-prog { --dot: var(--warning); } .st-todo { --dot: var(--neutral); }
+  .crit { color: var(--critical); font-weight: 600; }
+  .cols { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .person { border-top: 4px solid var(--c); }
+  .person h3 { margin: 0 0 2px; font-size: 16px; }
+  .person .role { color: var(--text-secondary); font-size: 13px; margin-bottom: 10px; }
+  .person ul { margin: 0; padding-left: 18px; }
+  .person li { margin: 4px 0; }
+  .person li small { color: var(--text-muted); }
+  .person .total { margin-top: 10px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .decisions { columns: 2; column-gap: 28px; font-size: 13.5px; }
+  @media (max-width: 860px) { .decisions { columns: 1; } }
+  .decisions div { break-inside: avoid; margin: 0 0 8px; }
+  .decisions b { color: var(--accent); }
+  .notes li { margin: 6px 0; }
+  .muted { color: var(--text-muted); font-size: 12.5px; }
+  .filters { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  .filters button { padding: 4px 10px; border-radius: 999px; }
+  .hidden { display: none; }
+  section { margin-bottom: 16px; }
+  .weeks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  @media (max-width: 760px) { .weeks { grid-template-columns: 1fr; } }
+  .week { background: var(--surface-2); border-radius: 10px; padding: 12px 14px; font-size: 13.5px; }
+  .week b { display: block; margin-bottom: 6px; }
+</style>
+</head>
+<body data-palette="#2a78d6,#eb6834,#1baf7a,#eda100">
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Fase 4 — Microsserviços e Saga · painel do time</h1>
+      <p class="sub">Tech Challenge FIAP SOAT · atualizado em 03/11/2026 · fonte: <code>docs/plano-execucao-fase-4.md</code>, Notion e PRs</p>
+    </div>
+    <div class="toolbar">
+      <button id="theme" aria-pressed="false">Modo escuro</button>
+      <button id="tables" aria-pressed="false">Ver como tabela</button>
+    </div>
+  </header>
+
+  <div class="grid tiles">
+    <div class="card tile"><div class="label">Story points entregues</div><div class="value">60 <span class="muted">/ 135</span></div><div class="hint">44% da fase, revisado e testado</div></div>
+    <div class="card tile"><div class="label">Stories concluídas</div><div class="value">10 <span class="muted">/ 23</span></div><div class="hint">DONE ou IN REVIEW</div></div>
+    <div class="card tile"><div class="label">Restante</div><div class="value">75 <span class="muted">SP</span></div><div class="hint">13 stories · 34 SP no caminho crítico</div></div>
+    <div class="card tile"><div class="label">Testes no OS Service</div><div class="value">634</div><div class="hint">428 unit (94%) + 206 integração/e2e</div></div>
+  </div>
+
+  <div class="grid two">
+    <section class="card">
+      <h2>O que já foi feito</h2>
+      <ul class="notes">
+        <li><b>Planejamento e contratos:</b> plano da Fase 4 com pesquisa de mercado (iFood, Mercado Livre, Nubank, Uber), 4 RFCs, 5 ADRs e o AsyncAPI com todos os eventos e comandos.</li>
+        <li><b>Kit compartilhado</b> <code>@guilhermeqmaia/oficina-kit</code> no npm (auth, logs, métricas, health, mensageria, outbox, consumer idempotente) e gerador de serviço.</li>
+        <li><b>Infra:</b> SNS/SQS FIFO com DLQ e alarmes, bancos por serviço (2 Postgres + DynamoDB), gateway com um NLB e rotas por serviço, 3 repositórios novos com CI/CD e OIDC.</li>
+        <li><b>OS Service:</b> monólito reduzido ao OS Service (catálogo, estoque e execução saíram), itens como snapshot, outbox transacional, 12 handlers SQS, repositório renomeado.</li>
+        <li><b>Saga orquestrada:</b> máquina de estados com 8 passos, compensações, timeouts, linha do tempo por API, tudo numa transação única com retry em conflito.</li>
+        <li><b>Qualidade:</b> duas reviews independentes aplicadas, 634 testes, validação manual ponta a ponta com LocalStack (SNS, SQS, DLQ) e QA plans de 6 stories.</li>
+      </ul>
+    </section>
+    <section class="card">
+      <h2>O que resta fazer</h2>
+      <ul class="notes">
+        <li><b>Execução Service</b> (Bruno): fila, diagnóstico, catálogo e estoque em DynamoDB, respondendo aos comandos da saga. <span class="crit">Caminho crítico.</span></li>
+        <li><b>Billing Service</b> (Gabriel): orçamento, aprovação e rejeição; depois pagamento com Mercado Pago e webhook. <span class="crit">Caminho crítico.</span></li>
+        <li><b>Notificações por eventos</b> (Gabriel): consumir a fila e desligar a notificação in-process do OS Service.</li>
+        <li><b>Compensações e reprocessamento</b> (Guilherme): endpoint de reprocessar saga, injeção de falhas para a demo, runbook da DLQ.</li>
+        <li><b>Qualidade</b> (Lucas): BDD do fluxo completo, cobertura ≥ 80% com SonarCloud nos 3 serviços, QA plans restantes.</li>
+        <li><b>Observabilidade distribuída</b> (Guilherme): traces através das filas, dashboards e alertas de DLQ.</li>
+        <li><b>Fechamento:</b> contratos de eventos e READMEs (Bruno), diagramas (Guilherme), deploy final na AWS, vídeo e PDF.</li>
+      </ul>
+    </section>
+  </div>
+
+  <div class="grid two">
+    <section class="card">
+      <h2>Progresso por onda (story points)</h2>
+      <div class="legend"><span style="--sw: var(--s1)">Entregue</span><span style="--sw: var(--s4)">Em progresso</span><span style="--sw: var(--neutral)">A fazer</span></div>
+      <div id="ondas"></div>
+      <table id="ondas-table" class="hidden"><thead><tr><th>Onda</th><th class="num">Entregue</th><th class="num">Em progresso</th><th class="num">A fazer</th><th class="num">Total</th></tr></thead><tbody></tbody></table>
+    </section>
+    <section class="card">
+      <h2>Carga proposta por pessoa (SP restantes)</h2>
+      <div class="legend"><span style="--sw: var(--s1)">Guilherme</span><span style="--sw: var(--s2)">Bruno</span><span style="--sw: var(--s3)">Gabriel</span><span style="--sw: var(--s4)">Lucas</span></div>
+      <div id="pessoas"></div>
+      <table id="pessoas-table" class="hidden"><thead><tr><th>Pessoa</th><th>Stories</th><th class="num">SP</th></tr></thead><tbody></tbody></table>
+      <p class="muted">Divisão proposta, não decidida. Nomes e colunas são editáveis na reunião.</p>
+    </section>
+  </div>
+
+  <section class="card">
+    <h2>Proposta de divisão do restante (75 SP)</h2>
+    <div class="grid cols">
+      <div class="person card" style="--c: var(--s1)">
+        <h3>Guilherme</h3><div class="role">OS Service, saga e plataforma</div>
+        <ul>
+          <li>US-F4-11 Compensações e rollback <small>8 SP</small></li>
+          <li>US-F4-16 Observabilidade distribuída <small>5 SP</small></li>
+          <li>US-F4-DOC-04 Diagramas e sequências <small>3 SP</small></li>
+          <li>US-F4-17 Entrega: vídeo e PDF <small>3 SP</small></li>
+        </ul><div class="total">19 SP</div>
+      </div>
+      <div class="person card" style="--c: var(--s2)">
+        <h3>Bruno</h3><div class="role">Execução Service, contratos e READMEs</div>
+        <ul>
+          <li><span class="crit">US-F4-07 Execução: fila, diagnóstico, catálogo, estoque (DynamoDB)</span> <small>13 SP · caminho crítico</small></li>
+          <li>US-F4-15 Testes de contrato dos eventos <small>3 SP</small></li>
+          <li>US-F4-DOC-05 READMEs por serviço com evidências <small>3 SP</small></li>
+        </ul><div class="total">19 SP</div>
+      </div>
+      <div class="person card" style="--c: var(--s3)">
+        <h3>Gabriel</h3><div class="role">Billing Service e notificações</div>
+        <ul>
+          <li><span class="crit">US-F4-08 Billing: orçamento, aprovação, rejeição</span> <small>8 SP · caminho crítico</small></li>
+          <li>US-F4-09 Pagamento com Mercado Pago <small>8 SP</small></li>
+          <li>US-F4-12 Notificações por eventos <small>3 SP</small></li>
+        </ul><div class="total">19 SP</div>
+      </div>
+      <div class="person card" style="--c: var(--s4)">
+        <h3>Lucas</h3><div class="role">Qualidade e documentação</div>
+        <ul>
+          <li>US-F4-14 BDD do fluxo completo (Cucumber) <small>8 SP</small></li>
+          <li>US-F4-13 Cobertura ≥ 80% + SonarCloud nos 3 serviços <small>5 SP</small></li>
+          <li>US-F4-DOC-06 QA plans da Fase 4 <small>5 SP</small></li>
+        </ul><div class="total">18 SP</div>
+      </div>
+    </div>
+    <h2 style="margin-top:18px">Sequência sugerida</h2>
+    <div class="weeks">
+      <div class="week"><b>Semana 1 — destravar o fluxo</b>07 Execução · 08 Billing · 12 Notificações · 11 Compensações</div>
+      <div class="week"><b>Semana 2 — fechar ponta a ponta</b>09 Mercado Pago · 15 Contratos · 14 BDD · 13 Sonar/cobertura · 16 Observabilidade · religar o EKS</div>
+      <div class="week"><b>Semana 3 — entrega</b>DOC-04/05/06 · deploy final na AWS · vídeo e PDF (17)</div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Stories (23)</h2>
+    <div class="filters">
+      <button data-f="all" aria-pressed="true">Todas</button><button data-f="done">Entregues</button><button data-f="prog">Em progresso</button><button data-f="todo">A fazer</button><button data-f="crit">Caminho crítico</button>
+    </div>
+    <table id="stories"><thead><tr><th>Story</th><th>Onda</th><th>Repositório</th><th class="num">SP</th><th>Status</th><th>Responsável proposto</th></tr></thead><tbody></tbody></table>
+  </section>
+
+  <div class="grid two">
+    <section class="card">
+      <h2>Decisões aprovadas em 30/09 (RFC-0004..0007, ADR-0009..0013)</h2>
+      <div class="decisions">
+        <div><b>D1</b> 3 serviços: OS (atendimento + orquestrador), Billing (orçamento, pagamento, ledger), Execução (fila, diagnóstico, catálogo, estoque)</div>
+        <div><b>D2</b> Saga orquestrada no OS Service, estado em <code>saga_os</code>, consultável por API</div>
+        <div><b>D3</b> SNS + SQS FIFO com DLQ, <code>MessageGroupId</code> = número da OS</div>
+        <div><b>D4</b> DynamoDB single-table na Execução</div>
+        <div><b>D5</b> Kit <code>@guilhermeqmaia/oficina-kit</code> no npm + template de serviço</div>
+        <div><b>D6</b> Outbox transacional, consumidor idempotente, DLQ com runbook</div>
+        <div><b>D7</b> SonarCloud com quality gate bloqueante</div>
+        <div><b>D8</b> Mercado Pago Checkout Pro na aprovação, status <code>AGUARDANDO_PAGAMENTO</code></div>
+        <div><b>D9</b> Mesmo API Gateway, um NLB com 3 target groups por prefixo</div>
+        <div><b>D10</b> Postgres <code>oficina_os</code> e <code>oficina_billing</code>, RDS único</div>
+        <div><b>D11</b> Monólito renomeado para <code>soat-fiap-oficina-os-service</code>, continua hub de docs</div>
+        <div><b>D12</b> Ambiente local com LocalStack</div>
+      </div>
+      <p class="muted">Base: artigos de engenharia do iFood, Mercado Livre, Nubank e Uber, resumidos no plano para o PDF e o vídeo.</p>
+    </section>
+    <section class="card">
+      <h2>Para decidir na reunião</h2>
+      <ul class="notes">
+        <li><b>Caminho crítico:</b> US-F4-07 e US-F4-08 travam BDD, ponta a ponta, vídeo. Repos já têm CI, banco, fila, contrato e o orquestrador esperando os eventos.</li>
+        <li><b>Contrato a respeitar:</b> <code>Item.servicoId</code> nos produtos do diagnóstico; <code>execucao.liberar-reservas</code> = cancelar na Execução; <code>billing.cancelar-orcamento</code> sempre responde <code>billing.orcamento-cancelado</code>.</li>
+        <li><b>Contas:</b> sandbox do Mercado Pago e token do SonarCloud (Guilherme).</li>
+        <li><b>AWS:</b> cluster desligado por custo; religar só para o deploy final.</li>
+        <li><b>Regras abertas:</b> cancelar após pagamento aprovado segue permitido com estorno; notificação in-process sai na US-F4-12 para não duplicar e-mails.</li>
+        <li><b>Já pronto para quem vai começar:</b> kit 0.2.1, <code>scripts/new-service.sh</code>, LocalStack com a topologia da RFC-0006, AsyncAPI validado, QA plans de 01/02/03/05/06/10.</li>
+      </ul>
+    </section>
+  </div>
+  <p class="muted">Entregue: DOC-01, DOC-02, DOC-03, US-F4-01..06 e US-F4-10 (PRs #78–#93 no hub, #29–#32 no infra-k8s, #9–#10 no infra-db, #1–#7 no kit). Validação manual com Postgres + LocalStack registrada em <code>docs/qa-plans/QA_PLAN_US-F4-10.md</code> (TS-11).</p>
+</div>
+<div class="tip" id="tip"></div>
+
+<script>
+const ONDAS = [
+  { n: '0 Decisões e contratos', done: 8, prog: 0, todo: 0 },
+  { n: '1 Plataforma', done: 31, prog: 0, todo: 0 },
+  { n: '2 Serviços', done: 8, prog: 0, todo: 24 },
+  { n: '3 Saga e pagamento', done: 13, prog: 0, todo: 16 },
+  { n: '4 Qualidade', done: 0, prog: 8, todo: 8 },
+  { n: '5 Observabilidade e docs', done: 0, prog: 5, todo: 11 },
+  { n: '6 Entrega', done: 0, prog: 0, todo: 3 },
+];
+const PESSOAS = [
+  { n: 'Guilherme', sp: 19, c: 'var(--s1)', s: '11, 16, DOC-04, 17' },
+  { n: 'Bruno', sp: 19, c: 'var(--s2)', s: '07, 15, DOC-05' },
+  { n: 'Gabriel', sp: 19, c: 'var(--s3)', s: '08, 09, 12' },
+  { n: 'Lucas', sp: 18, c: 'var(--s4)', s: '14, 13, DOC-06' },
+];
+const STORIES = [
+  ['US-F4-DOC-01','RFCs: decomposição, saga, mensageria, NoSQL',0,'hub',3,'done','Guilherme',0],
+  ['US-F4-DOC-02','ADRs: outbox, kit, Sonar, Mercado Pago, gateway',0,'hub',2,'done','Guilherme',0],
+  ['US-F4-DOC-03','Contratos de eventos (AsyncAPI)',0,'hub',3,'review','Guilherme',0],
+  ['US-F4-01','Kit compartilhado + template',1,'kit',8,'done','Guilherme',0],
+  ['US-F4-02','Mensageria SNS + SQS FIFO com DLQ',1,'infra-k8s',5,'review','Guilherme',0],
+  ['US-F4-03','Bancos por serviço (Postgres ×2, DynamoDB)',1,'infra-db',5,'review','Guilherme',0],
+  ['US-F4-04','Repos + CI/CD por serviço',1,'todos',8,'review','Guilherme',0],
+  ['US-F4-05','API Gateway multi-serviço + webhook MP',1,'infra-k8s',5,'review','Guilherme',0],
+  ['US-F4-06','OS Service: strangler do monólito',2,'os-service',8,'review','Guilherme',0],
+  ['US-F4-07','Execução Service: fila, diagnóstico, catálogo, estoque (DynamoDB)',2,'execucao-service',13,'todo','Bruno',1],
+  ['US-F4-08','Billing Service: orçamento, aprovação, rejeição',2,'billing-service',8,'todo','Gabriel',1],
+  ['US-F4-12','Notificações por eventos',2,'os-service',3,'todo','Gabriel',0],
+  ['US-F4-09','Billing: pagamento Mercado Pago',3,'billing-service',8,'todo','Gabriel',1],
+  ['US-F4-10','Saga orquestrada da OS',3,'os-service',13,'review','Guilherme',0],
+  ['US-F4-11','Compensações e rollback seguro',3,'os-service',8,'todo','Guilherme',0],
+  ['US-F4-13','Cobertura ≥ 80% + quality gate',4,'todos',5,'todo','Lucas',0],
+  ['US-F4-14','BDD do fluxo completo (Cucumber)',4,'hub',8,'prog','Lucas',1],
+  ['US-F4-15','Testes de contrato dos eventos',4,'todos',3,'todo','Bruno',0],
+  ['US-F4-16','Observabilidade distribuída',5,'os-service / infra-k8s',5,'todo','Guilherme',0],
+  ['US-F4-DOC-04','Diagrama geral + sequências da saga',5,'hub',3,'todo','Guilherme',0],
+  ['US-F4-DOC-05','READMEs por serviço com evidências',5,'todos',3,'todo','Bruno',0],
+  ['US-F4-DOC-06','QA plans da Fase 4',5,'hub',5,'prog','Lucas',0],
+  ['US-F4-17','Entrega: vídeo, PDF, diagrama',6,'todos',3,'todo','Guilherme',1],
+];
+const STATUS = { done: ['st-done','Entregue'], review: ['st-review','Em review'], prog: ['st-prog','Em progresso'], todo: ['st-todo','A fazer'] };
+
+const tip = document.getElementById('tip');
+function showTip(e, html) { tip.innerHTML = html; tip.style.opacity = 1; tip.style.left = (e.clientX + 14) + 'px'; tip.style.top = (e.clientY - 10) + 'px'; }
+function hideTip() { tip.style.opacity = 0; }
+const svgEl = (t, a) => { const el = document.createElementNS('http://www.w3.org/2000/svg', t); for (const k in a) el.setAttribute(k, a[k]); return el; };
+const txt = (x, y, s, a = {}) => { const t = svgEl('text', { x, y, fill: a.fill || 'var(--text-secondary)', 'font-size': a.size || 12, 'text-anchor': a.anchor || 'start', 'dominant-baseline': 'middle', 'font-weight': a.weight || 400 }); t.textContent = s; return t; };
+
+// Barras empilhadas horizontais: entregue / em progresso / a fazer, uma por onda
+function ondas() {
+  const W = 520, L = 170, rowH = 34, H = ONDAS.length * rowH + 28, max = 40, bw = 18, gap = 2;
+  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Story points por onda: entregue, em progresso e a fazer' });
+  const x = v => L + v / max * (W - L - 40);
+  [0, 10, 20, 30, 40].forEach(v => { svg.appendChild(svgEl('line', { x1: x(v), x2: x(v), y1: 4, y2: H - 22, stroke: 'var(--line)', 'stroke-width': 1 })); svg.appendChild(txt(x(v), H - 10, v, { anchor: 'middle', size: 11, fill: 'var(--text-muted)' })); });
+  ONDAS.forEach((o, i) => {
+    const y = 8 + i * rowH + (rowH - bw) / 2; let cx = L;
+    svg.appendChild(txt(L - 10, y + bw / 2, o.n, { anchor: 'end', fill: 'var(--text-primary)' }));
+    const segs = [['done', 'var(--s1)', 'Entregue'], ['prog', 'var(--s4)', 'Em progresso'], ['todo', 'var(--neutral)', 'A fazer']];
+    const total = o.done + o.prog + o.todo;
+    segs.forEach(([k, c, lbl], si) => {
+      const v = o[k]; if (!v) return;
+      const w = x(v) - x(0) - (si ? gap : 0);
+      const r = svgEl('rect', { x: cx + (si ? gap : 0), y, width: Math.max(w, 0), height: bw, fill: c, rx: 0 });
+      r.addEventListener('mousemove', e => showTip(e, `<b>${o.n}</b><br>${lbl}: ${v} SP de ${total}`)); r.addEventListener('mouseleave', hideTip);
+      svg.appendChild(r); cx += x(v) - x(0);
+    });
+    // ponta arredondada: cobre o fim do último segmento com surface gap
+    svg.appendChild(txt(cx + 8, y + bw / 2, `${o.done}/${total}`, { size: 12, fill: 'var(--text-secondary)' }));
+  });
+  document.getElementById('ondas').appendChild(svg);
+  const tb = document.querySelector('#ondas-table tbody');
+  ONDAS.forEach(o => { const tr = document.createElement('tr'); tr.innerHTML = `<td>${o.n}</td><td class="num">${o.done}</td><td class="num">${o.prog}</td><td class="num">${o.todo}</td><td class="num">${o.done + o.prog + o.todo}</td>`; tb.appendChild(tr); });
+}
+// Barras por pessoa (uma série por entidade; legenda + rótulo direto)
+function pessoas() {
+  const W = 520, L = 110, rowH = 40, H = PESSOAS.length * rowH + 28, max = 25, bw = 20;
+  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Story points propostos por pessoa' });
+  const x = v => L + v / max * (W - L - 40);
+  [0, 5, 10, 15, 20, 25].forEach(v => { svg.appendChild(svgEl('line', { x1: x(v), x2: x(v), y1: 4, y2: H - 22, stroke: 'var(--line)', 'stroke-width': 1 })); svg.appendChild(txt(x(v), H - 10, v, { anchor: 'middle', size: 11, fill: 'var(--text-muted)' })); });
+  PESSOAS.forEach((p, i) => {
+    const y = 8 + i * rowH + (rowH - bw) / 2; const w = x(p.sp) - x(0);
+    svg.appendChild(txt(L - 10, y + bw / 2, p.n, { anchor: 'end', fill: 'var(--text-primary)' }));
+    const path = svgEl('path', { d: `M${x(0)},${y} H${x(0) + w - 4} a4,4 0 0 1 4,4 V${y + bw - 4} a4,4 0 0 1 -4,4 H${x(0)} Z`, fill: p.c });
+    path.addEventListener('mousemove', e => showTip(e, `<b>${p.n}</b> · ${p.sp} SP<br>${p.s}`)); path.addEventListener('mouseleave', hideTip);
+    svg.appendChild(path);
+    svg.appendChild(txt(x(p.sp) + 8, y + bw / 2, `${p.sp} SP`, { fill: 'var(--text-primary)', weight: 600 }));
+  });
+  document.getElementById('pessoas').appendChild(svg);
+  const tb = document.querySelector('#pessoas-table tbody');
+  PESSOAS.forEach(p => { const tr = document.createElement('tr'); tr.innerHTML = `<td>${p.n}</td><td>${p.s}</td><td class="num">${p.sp}</td>`; tb.appendChild(tr); });
+}
+function stories(filter = 'all') {
+  const tb = document.querySelector('#stories tbody'); tb.innerHTML = '';
+  STORIES.filter(s => filter === 'all' || (filter === 'done' && (s[5] === 'done' || s[5] === 'review')) || (filter === 'prog' && s[5] === 'prog') || (filter === 'todo' && s[5] === 'todo') || (filter === 'crit' && s[7]))
+    .forEach(s => { const [cls, lbl] = STATUS[s[5]]; const tr = document.createElement('tr');
+      tr.innerHTML = `<td><b>${s[0]}</b><br><span class="muted">${s[1]}</span></td><td>${s[2]}</td><td><code>${s[3]}</code></td><td class="num">${s[4]}</td><td><span class="pill ${cls}">${lbl}</span>${s[7] ? ' <span class="crit" title="caminho crítico">●</span>' : ''}</td><td>${s[6]}</td>`;
+      tb.appendChild(tr); });
+}
+ondas(); pessoas(); stories();
+document.querySelectorAll('.filters button').forEach(b => b.addEventListener('click', () => { document.querySelectorAll('.filters button').forEach(o => o.setAttribute('aria-pressed', 'false')); b.setAttribute('aria-pressed', 'true'); stories(b.dataset.f); }));
+const themeBtn = document.getElementById('theme');
+themeBtn.addEventListener('click', () => { const dark = document.documentElement.getAttribute('data-theme') !== 'dark'; document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light'); themeBtn.setAttribute('aria-pressed', String(dark)); themeBtn.textContent = dark ? 'Modo claro' : 'Modo escuro'; });
+const tablesBtn = document.getElementById('tables');
+tablesBtn.addEventListener('click', () => { const on = tablesBtn.getAttribute('aria-pressed') !== 'true'; tablesBtn.setAttribute('aria-pressed', String(on)); ['ondas', 'pessoas'].forEach(id => { document.getElementById(id).classList.toggle('hidden', on); document.getElementById(id + '-table').classList.toggle('hidden', !on); }); });
+</script>
+</body>
+</html>
