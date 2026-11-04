@@ -20,7 +20,7 @@ microsservicos, bancos e comunicacao". Evolui `arquitetura-fase3.md`.
 - [ ] Diagrama de sequencia do **caminho feliz**: abrir OS -> enfileirar -> diagnostico -> orcamento -> aprovacao + pagamento -> execucao -> finalizacao -> entrega
 - [ ] Diagrama de sequencia de **compensacao**: pagamento recusado -> liberar reservas -> cancelar orcamento -> OS CANCELADA
 - [ ] Diagrama de sequencia de **timeout**: orcamento sem resposta em N dias
-- [ ] Maquina de estados da OS atualizada (novo status `AGUARDANDO_PAGAMENTO`) com o servico dono de cada transicao
+- [ ] Maquina de estados da OS atualizada (novo status `AGUARDANDO_PAGAMENTO`, apos `EM_EXECUCAO` — cobranca apos a execucao) com o servico dono de cada transicao
 - [ ] Diagrama de deploy (EKS: 3 deployments, HPA, NLB com 3 listeners, filas)
 - [ ] Mesmo diagrama geral reaproveitado no README do hub e no PDF
 ## Dependencias

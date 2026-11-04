@@ -99,7 +99,8 @@ describe('PrismaOrdemDeServicoRepository (unit)', () => {
     ]);
     mockPrisma.ordemDeServico.count.mockResolvedValue(4);
     const r = await repository.findAll({ page: 1, limit: 3 });
-    expect(r.data.map((o) => o.id)).toEqual(['d', 'b', 'c']);
+    // AGUARDANDO_PAGAMENTO (pos-execucao) e a mais avancada; EM_EXECUCAO em seguida, mais antigas primeiro
+    expect(r.data.map((o) => o.id)).toEqual(['c', 'd', 'b']);
     expect(r.total).toBe(4);
     const where = mockPrisma.ordemDeServico.findMany.mock.calls[0][0].where;
     expect(where.NOT).toEqual([{ status: 'FINALIZADA' }, { status: 'ENTREGUE' }, { status: 'CANCELADA' }]);

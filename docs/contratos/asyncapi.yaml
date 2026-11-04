@@ -52,6 +52,7 @@ channels:
       billingOrcamentoGerado: { $ref: '#/components/messages/billingOrcamentoGerado' }
       billingOrcamentoAprovado: { $ref: '#/components/messages/billingOrcamentoAprovado' }
       billingOrcamentoRejeitado: { $ref: '#/components/messages/billingOrcamentoRejeitado' }
+      billingCobrancaCriada: { $ref: '#/components/messages/billingCobrancaCriada' }
       billingPagamentoAprovado: { $ref: '#/components/messages/billingPagamentoAprovado' }
       billingPagamentoRecusado: { $ref: '#/components/messages/billingPagamentoRecusado' }
       billingOrcamentoCancelado: { $ref: '#/components/messages/billingOrcamentoCancelado' }
@@ -67,6 +68,7 @@ channels:
     description: Fila SQS de comandos consumida pelo Billing Service.
     messages:
       billingGerarOrcamento: { $ref: '#/components/messages/billingGerarOrcamento' }
+      billingCobrar: { $ref: '#/components/messages/billingCobrar' }
       billingCancelarOrcamento: { $ref: '#/components/messages/billingCancelarOrcamento' }
 
 operations:
@@ -110,7 +112,7 @@ operations:
   notificacaoConsome:
     action: receive
     channel: { $ref: '#/channels/oficina-billing' }
-    summary: Fila `notificacao-eventos` assina orçamento gerado, pagamento aprovado/recusado (+ os.finalizada/os.cancelada do tópico oficina-os).
+    summary: Fila `notificacao-eventos` assina orçamento gerado, orçamento aprovado, cobrança criada (link de pagamento), pagamento aprovado/recusado (+ os.finalizada/os.cancelada do tópico oficina-os).
 
 components:
   schemas:
@@ -175,7 +177,7 @@ components:
       payload:
         allOf:
           - $ref: '#/components/schemas/Envelope'
-          - properties: { data: { type: object, required: [numeroOS, motivo], properties: { numeroOS: {type: string}, motivo: {type: string, enum: [EXECUCAO_RECUSADA, ORCAMENTO_REJEITADO, PAGAMENTO_RECUSADO, TIMEOUT_APROVACAO, TIMEOUT_PAGAMENTO, FALHA_INICIO_EXECUCAO, OPERADOR]} } } }
+          - properties: { data: { type: object, required: [numeroOS, motivo], properties: { numeroOS: {type: string}, motivo: {type: string, enum: [EXECUCAO_RECUSADA, ORCAMENTO_REJEITADO, PAGAMENTO_RECUSADO, TIMEOUT_APROVACAO, TIMEOUT_PAGAMENTO, FALHA_INICIO_EXECUCAO, OPERADOR], description: 'PAGAMENTO_RECUSADO e TIMEOUT_PAGAMENTO são reservados/obsoletos desde 03/11/2026 (cobrança após a execução não cancela a OS)'} } } }
     osFinalizada:
       name: os.finalizada
       payload:
@@ -264,12 +266,33 @@ components:
                   itens: { type: array, minItems: 1, items: { $ref: '#/components/schemas/Item' } }
     billingCancelarOrcamento:
       name: billing.cancelar-orcamento
-      title: 'Compensação: cancelar orçamento e cobrança (estornar se pago)'
+      title: 'Compensação: cancelar orçamento (antes da execução — nada foi cobrado)'
       summary: >-
-        Idempotente; responder sempre com `billing.orcamento-cancelado` (com `estornado`), inclusive quando o
-        orçamento acabou de ser criado ou já estava cancelado. Mesmo MessageGroupId que `billing.gerar-orcamento`.
+        Enviado pelo orquestrador até o passo INICIAR_EXECUCAO. Como a cobrança só é criada depois da execução
+        (`billing.cobrar`), não há pagamento a estornar. Idempotente; responder sempre com
+        `billing.orcamento-cancelado`, inclusive quando o orçamento acabou de ser criado ou já estava cancelado.
+        Mesmo MessageGroupId que `billing.gerar-orcamento`.
       payload:
         allOf: [ { $ref: '#/components/schemas/Envelope' }, { properties: { data: { type: object, required: [numeroOS, motivo], properties: { numeroOS: {type: string}, motivo: {type: string} } } } } ]
+
+    billingCobrar:
+      name: billing.cobrar
+      title: 'Comando: cobrar o serviço executado (cria a order no Mercado Pago)'
+      summary: >-
+        Enviado pelo orquestrador ao receber `execucao.finalizada` (OS em AGUARDANDO_PAGAMENTO). O Billing cria a
+        order com o total do orçamento aprovado e responde com `billing.cobranca-criada`. Reenviado pelo
+        reprocessamento manual (`POST /admin/sagas/:numero/reprocessar`) quando o pagamento foi recusado ou está
+        em atraso: o Billing cancela a order anterior no Mercado Pago e cria uma nova.
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/Envelope'
+          - properties:
+              data:
+                type: object
+                required: [numeroOS]
+                properties:
+                  numeroOS: { type: string }
+                  orcamentoId: { type: string, description: Opcional — id do orçamento aprovado (o Billing resolve pelo numeroOS quando ausente) }
 
     # ===== Eventos do Billing Service =====
     billingOrcamentoGerado:
@@ -288,43 +311,64 @@ components:
                   validoAte: { type: string, format: date-time }
     billingOrcamentoAprovado:
       name: billing.orcamento-aprovado
-      title: Cliente aprovou; order criada no Mercado Pago (API de Orders)
+      title: Cliente aprovou o orçamento (execução pode começar)
+      summary: Sem cobrança neste momento — a order do Mercado Pago só é criada após a execução, em resposta a `billing.cobrar`.
       payload:
         allOf:
           - $ref: '#/components/schemas/Envelope'
           - properties:
               data:
                 type: object
-                required: [numeroOS, orcamentoId, cobrancaId, linkPagamento]
+                required: [numeroOS, orcamentoId]
                 properties:
                   numeroOS: { type: string }
                   orcamentoId: { type: string }
-                  cobrancaId: { type: string }
-                  linkPagamento: { type: string, format: uri, description: checkout_url da order do Mercado Pago (Checkout Pro via Orders) }
     billingOrcamentoRejeitado:
       name: billing.orcamento-rejeitado
       payload:
         allOf: [ { $ref: '#/components/schemas/Envelope' }, { properties: { data: { type: object, required: [numeroOS, orcamentoId], properties: { numeroOS: {type: string}, orcamentoId: {type: string}, motivo: {type: string} } } } } ]
-    billingPagamentoAprovado:
-      name: billing.pagamento-aprovado
+    billingCobrancaCriada:
+      name: billing.cobranca-criada
+      title: Cobrança criada após o serviço executado (order no Mercado Pago)
+      summary: >-
+        Resposta a `billing.cobrar`. A Notificação envia o `linkPagamento` ao cliente; o OS Service só registra
+        no histórico da saga (a OS continua AGUARDANDO_PAGAMENTO).
       payload:
         allOf:
           - $ref: '#/components/schemas/Envelope'
           - properties:
               data:
                 type: object
-                required: [numeroOS, cobrancaId, orderId, valor]
+                required: [numeroOS, orderId, linkPagamento, valor]
                 properties:
                   numeroOS: { type: string }
-                  cobrancaId: { type: string }
+                  orderId: { type: string, description: id da order do Mercado Pago (API de Orders) }
+                  linkPagamento: { type: string, format: uri, description: checkout_url da order do Mercado Pago (Checkout Pro via Orders) }
+                  valor: { $ref: '#/components/schemas/Dinheiro' }
+    billingPagamentoAprovado:
+      name: billing.pagamento-aprovado
+      title: Pagamento aprovado após o serviço executado (OS → FINALIZADA)
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/Envelope'
+          - properties:
+              data:
+                type: object
+                required: [numeroOS, orderId, valor]
+                properties:
+                  numeroOS: { type: string }
                   orderId: { type: string, description: id da order do Mercado Pago (API de Orders) }
                   valor: { $ref: '#/components/schemas/Dinheiro' }
     billingPagamentoRecusado:
       name: billing.pagamento-recusado
+      title: Pagamento recusado após o serviço executado (OS permanece AGUARDANDO_PAGAMENTO; sem compensação)
       payload:
-        allOf: [ { $ref: '#/components/schemas/Envelope' }, { properties: { data: { type: object, required: [numeroOS, cobrancaId, motivo], properties: { numeroOS: {type: string}, cobrancaId: {type: string}, motivo: {type: string} } } } } ]
+        allOf: [ { $ref: '#/components/schemas/Envelope' }, { properties: { data: { type: object, required: [numeroOS, orderId, motivo], properties: { numeroOS: {type: string}, orderId: {type: string}, motivo: {type: string} } } } } ]
     billingOrcamentoCancelado:
       name: billing.orcamento-cancelado
-      title: Compensação concluída (inclui estorno quando houve pagamento)
+      title: Compensação concluída (orçamento cancelado)
+      summary: >-
+        `estornado` é mantido por compatibilidade e é sempre `false` no fluxo atual — a cobrança só existe
+        após a execução, quando a saga já não compensa.
       payload:
-        allOf: [ { $ref: '#/components/schemas/Envelope' }, { properties: { data: { type: object, required: [numeroOS, orcamentoId, estornado], properties: { numeroOS: {type: string}, orcamentoId: {type: string}, estornado: {type: boolean} } } } } ]
+        allOf: [ { $ref: '#/components/schemas/Envelope' }, { properties: { data: { type: object, required: [numeroOS, orcamentoId, estornado], properties: { numeroOS: {type: string}, orcamentoId: {type: string}, estornado: {type: boolean, description: Sempre false no fluxo atual (mantido por compatibilidade)} } } } } ]

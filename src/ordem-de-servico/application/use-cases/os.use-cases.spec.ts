@@ -20,7 +20,7 @@ const osComItens = (status = StatusOS.AGUARDANDO_APROVACAO) => {
   base.iniciarDiagnostico();
   base.registrarDiagnostico({ diagnostico: 'Pastilhas gastas', mecanicoId: 'mec-1', itens: [new ItemServicoOS('s1', 'Troca de pastilha', 1, 200, [new ItemProdutoOS('p1', 'Pastilha', 2, 50)])] });
   if (status !== StatusOS.EM_DIAGNOSTICO) base.aguardarAprovacao();
-  if (status === StatusOS.FINALIZADA) { base.aguardarPagamento(); base.iniciarExecucao(); base.finalizar(); }
+  if (status === StatusOS.FINALIZADA) { base.iniciarExecucao(); base.aguardarPagamento(); base.finalizar(); }
   return OrdemDeServico.reconstitute({
     id: 'os-1', numero: base.numero, clienteId: 'cli-1', veiculoId: 'vei-1', mecanicoId: 'mec-1', descricaoInicial: base.descricaoInicial, diagnostico: base.diagnostico,
     status: base.status, motivoCancelamento: null, createdAt: new Date('2026-10-01T10:00:00Z'), updatedAt: new Date('2026-10-02T10:00:00Z'), itensServico: [...base.itensServico],

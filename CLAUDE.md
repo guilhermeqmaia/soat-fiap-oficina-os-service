@@ -31,18 +31,24 @@ The latest version is **Event Storming v3 (30/03)**.
 ### Service Order Flow (state machine)
 
 ```
-RECEBIDA -> EM_DIAGNOSTICO -> AGUARDANDO_APROVACAO -> EM_EXECUCAO -> FINALIZADA -> ENTREGUE
+RECEBIDA -> EM_DIAGNOSTICO -> AGUARDANDO_APROVACAO -> EM_EXECUCAO -> AGUARDANDO_PAGAMENTO -> FINALIZADA -> ENTREGUE
                                       |
                                       v
-                                  CANCELADA
+                                  CANCELADA (only RECEBIDA / EM_DIAGNOSTICO / AGUARDANDO_APROVACAO)
 ```
+
+Fase 4 (decision of 2026-11-03): the customer is charged **after** the service is
+executed. `execucao.finalizada` -> AGUARDANDO_PAGAMENTO + command `billing.cobrar`;
+`billing.cobranca-criada` carries the payment link; `billing.pagamento-aprovado` -> FINALIZADA.
+Declined/late payment keeps the OS in AGUARDANDO_PAGAMENTO (no rollback).
 
 **Automatic transitions (Policies):**
 - Mechanic assigns themselves to OS -> status changes to EM_DIAGNOSTICO
 - Mechanic completes budget -> AGUARDANDO_APROVACAO + notifies client
-- Client approves -> EM_EXECUCAO
+- Client approves -> `execucao.iniciar`; EM_EXECUCAO when the Execucao Service confirms (`execucao.iniciada`)
+- Execution finished -> AGUARDANDO_PAGAMENTO + `billing.cobrar`; payment approved -> FINALIZADA
 - Client rejects -> CANCELADA + reverses inventory reservations
-- All services completed -> FINALIZADA
+- All services completed -> AGUARDANDO_PAGAMENTO (charge); payment approved -> FINALIZADA
 - When execution starts -> inventory deduction for products
 
 ## User Stories
@@ -211,7 +217,7 @@ src/
 
 - **Ubiquitous Language** — use domain terms: OrdemDeServico (not "ticket"), Produto (not "peca"), Cliente, Veiculo
 - **Validations** — CPF/CNPJ and license plate must be validated in the domain (Value Objects)
-- **OS Status** — use enum: RECEBIDA, EM_DIAGNOSTICO, AGUARDANDO_APROVACAO, EM_EXECUCAO, FINALIZADA, ENTREGUE, CANCELADA
+- **OS Status** — use enum: RECEBIDA, EM_DIAGNOSTICO, AGUARDANDO_APROVACAO, EM_EXECUCAO, AGUARDANDO_PAGAMENTO, FINALIZADA, ENTREGUE, CANCELADA
 - **APIs** — RESTful, documented with Swagger decorators
 - **Database** — PostgreSQL, rationale: robust ACID transaction support, rich data types, maturity
 - **Tests** — minimum 80% coverage on critical domains

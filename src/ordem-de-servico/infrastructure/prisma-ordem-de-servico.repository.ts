@@ -27,10 +27,10 @@ const INCLUDE_ITENS = {
   itensServico: { include: { produtos: true } },
 } as const;
 
-/** Prioridade de exibicao na listagem (EM_EXECUCAO primeiro; terminais por ultimo). */
+/** Prioridade de exibicao na listagem (mais avancada primeiro: AGUARDANDO_PAGAMENTO, EM_EXECUCAO...; terminais por ultimo). */
 const STATUS_PRIORITY: Record<string, number> = {
-  EM_EXECUCAO: 0,
-  AGUARDANDO_PAGAMENTO: 1,
+  AGUARDANDO_PAGAMENTO: 0,
+  EM_EXECUCAO: 1,
   AGUARDANDO_APROVACAO: 2,
   EM_DIAGNOSTICO: 3,
   RECEBIDA: 4,

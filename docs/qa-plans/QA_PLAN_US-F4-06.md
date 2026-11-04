@@ -1,7 +1,7 @@
 # QA Plan — US-F4-06: OS Service — Evolucao do Monolito (Strangler)
 
 ## Resumo
-Valida o monolito da Fase 3 reduzido ao **OS Service**: catalogo/estoque/execucao e orcamento/aprovacao sairam; a OS guarda um snapshot dos itens recebido por evento; novo status `AGUARDANDO_PAGAMENTO` e `motivoCancelamento`; API reduzida a abertura, consulta, entrega e cancelamento; transicoes idempotentes dirigidas por eventos; audit log alimentado por toda mudanca de status.
+Valida o monolito da Fase 3 reduzido ao **OS Service**: catalogo/estoque/execucao e orcamento/aprovacao sairam; a OS guarda um snapshot dos itens recebido por evento; novo status `AGUARDANDO_PAGAMENTO` (apos `EM_EXECUCAO` desde 03/11 — ADR-0012) e `motivoCancelamento`; API reduzida a abertura, consulta, entrega e cancelamento; transicoes idempotentes dirigidas por eventos; audit log alimentado por toda mudanca de status.
 
 Entregue em 3 PRs: **PR 1** dominio/API/banco (cenarios TS-01..TS-10), **PR 2** outbox + consumidores SQS (TS-11..TS-13), **PR 3** NodePort + rename do repositorio (TS-14..TS-15).
 
@@ -27,8 +27,8 @@ Entregue em 3 PRs: **PR 1** dominio/API/banco (cenarios TS-01..TS-10), **PR 2** 
 
 ### TS-03: Maquina de estados completa
 - **Tipo:** Automatizado (`ordem-de-servico.entity.spec.ts`)
-- **Criterio:** `AGUARDANDO_PAGAMENTO` entre aprovacao e execucao; cancelamento com motivo
-- **Passos:** percorrer RECEBIDA -> EM_DIAGNOSTICO -> AGUARDANDO_APROVACAO -> AGUARDANDO_PAGAMENTO -> EM_EXECUCAO -> FINALIZADA -> ENTREGUE; tentar pular etapas; cancelar de cada status
+- **Criterio:** `AGUARDANDO_PAGAMENTO` entre execucao e finalizacao (cobranca apos a execucao); cancelamento com motivo
+- **Passos:** percorrer RECEBIDA -> EM_DIAGNOSTICO -> AGUARDANDO_APROVACAO -> EM_EXECUCAO -> AGUARDANDO_PAGAMENTO -> FINALIZADA -> ENTREGUE; tentar pular etapas; cancelar de cada status
 - **Resultado esperado:** caminho feliz passa; pular etapa lanca `InvalidStatusTransitionError`; cancelar so antes de EM_EXECUCAO e grava `motivoCancelamento`
 
 ### TS-04: Snapshot do diagnostico
@@ -82,7 +82,7 @@ Entregue em 3 PRs: **PR 1** dominio/API/banco (cenarios TS-01..TS-10), **PR 2** 
 - **Tipo:** Automatizado (`eventos.handlers.spec.ts`; e2e "handlers traduzem o contrato")
 - **Criterio:** Consome `execucao.*` e `billing.*` com idempotencia
 - **Passos:** entregar envelopes AsyncAPI aos handlers (`execucao.enfileirada` -> `diagnostico-concluido` com `Item.servicoId` nos PRODUTOs -> `billing.orcamento-gerado`; `execucao.recusada`)
-- **Resultado esperado:** status/snapshot da OS seguem o contrato; 12 types cobertos sem duplicata; compensacoes cancelam com o motivo correto (`EXECUCAO_RECUSADA`, `ORCAMENTO_REJEITADO`, `PAGAMENTO_RECUSADO`); OS inexistente/evento incompativel lancam (sem ack -> retry -> DLQ)
+- **Resultado esperado:** status/snapshot da OS seguem o contrato; 13 types cobertos sem duplicata (inclui `billing.cobranca-criada`); compensacoes cancelam com o motivo correto (`EXECUCAO_RECUSADA`, `ORCAMENTO_REJEITADO`, `FALHA_INICIO_EXECUCAO`); OS inexistente/evento incompativel lancam (sem ack -> retry -> DLQ)
 
 ### TS-13: Ponta a ponta com LocalStack
 - **Tipo:** Manual
@@ -113,8 +113,8 @@ Entregue em 3 PRs: **PR 1** dominio/API/banco (cenarios TS-01..TS-10), **PR 2** 
 - Concorrencia: `POST :id/cancelar` enquanto um evento transiciona a mesma OS -> um dos lados recebe 409/`ConcurrentModificationError` (lock otimista, TS-16)
 - `PRODUTO` sem `servicoId` no diagnostico -> agrupado em "Pecas avulsas" (contrato permite; a Execucao deve enviar o campo)
 - `RegistrarDiagnostico` com `precoUnitario` string (`"200.00"`) ou number — ambos aceitos
-- Cancelamento manual durante `AGUARDANDO_PAGAMENTO` e permitido (compensacao no Billing via evento, PR 2)
-- Listagem ordena `EM_EXECUCAO > AGUARDANDO_PAGAMENTO > AGUARDANDO_APROVACAO > EM_DIAGNOSTICO > RECEBIDA`
+- Cancelamento manual durante `AGUARDANDO_PAGAMENTO` e rejeitado (400): o servico ja foi executado — pagamento pendente e tratado pelo reprocessamento (`billing.cobrar`)
+- Listagem ordena `AGUARDANDO_PAGAMENTO > EM_EXECUCAO > AGUARDANDO_APROVACAO > EM_DIAGNOSTICO > RECEBIDA`
 
 ## Rastreabilidade
 | Criterio | Cenarios |

@@ -11,15 +11,18 @@ import {
   RegistrarEnfileiramentoUseCase,
   RegistrarExecucaoFinalizadaUseCase,
   RegistrarExecucaoIniciadaUseCase,
-  RegistrarOrcamentoAprovadoUseCase,
   RegistrarOrcamentoGeradoUseCase,
+  RegistrarPagamentoAprovadoUseCase,
 } from '../../application/use-cases/transicoes';
 import { EventoSaga, ItemContrato, PassoSaga, Prazos, SagaOS, TransicaoOS } from '../domain/saga-os.entity';
 import { SagaNotFoundError } from '../domain/errors/saga-not-found.error';
 import { SAGA_REPOSITORY, SagaRepository } from '../domain/saga.repository';
 import { sagaPassoDuracao, sagaPassos } from '../../../observabilidade/metrics.registry';
 
-/** Prazos configuraveis por ambiente (demo usa minutos; producao dias/horas). */
+/**
+ * Prazos configuraveis por ambiente (demo usa minutos; producao dias/horas).
+ * O de aprovacao compensa; o de pagamento (pos-execucao) so marca o atraso.
+ */
 export function prazosDoAmbiente(env: NodeJS.ProcessEnv = process.env): Prazos {
   const dias = Number(env.SAGA_TIMEOUT_APROVACAO_DIAS ?? 3);
   const horas = Number(env.SAGA_TIMEOUT_PAGAMENTO_HORAS ?? 24);
@@ -53,9 +56,9 @@ export class OrquestradorSagaService {
     private readonly enfileiramento: RegistrarEnfileiramentoUseCase,
     private readonly diagnostico: RegistrarDiagnosticoUseCase,
     private readonly orcamentoGerado: RegistrarOrcamentoGeradoUseCase,
-    private readonly orcamentoAprovado: RegistrarOrcamentoAprovadoUseCase,
     private readonly execucaoIniciada: RegistrarExecucaoIniciadaUseCase,
     private readonly execucaoFinalizada: RegistrarExecucaoFinalizadaUseCase,
+    private readonly pagamentoAprovado: RegistrarPagamentoAprovadoUseCase,
     private readonly cancelamento: RegistrarCancelamentoUseCase,
   ) {}
 
@@ -183,14 +186,14 @@ export class OrquestradorSagaService {
       case 'aguardarAprovacao':
         await this.orcamentoGerado.execute({ numero, total: evento.data.total, tx });
         return;
-      case 'aguardarPagamento':
-        await this.orcamentoAprovado.execute({ numero, tx });
-        return;
       case 'iniciarExecucao':
         await this.execucaoIniciada.execute({ numero, tx });
         return;
+      case 'aguardarPagamento':
+        await this.execucaoFinalizada.execute({ numero, tx });
+        return;
       case 'finalizar':
-        await this.execucaoFinalizada.execute({ numero, causationId: evento.id, tx });
+        await this.pagamentoAprovado.execute({ numero, causationId: evento.id, tx });
         return;
       case 'cancelar':
         await this.cancelamento.execute({ numero, motivo: t.motivo, causationId: evento.id, tx });

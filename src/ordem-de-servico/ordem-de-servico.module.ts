@@ -35,8 +35,8 @@ import {
   RegistrarEnfileiramentoUseCase,
   RegistrarExecucaoFinalizadaUseCase,
   RegistrarExecucaoIniciadaUseCase,
-  RegistrarOrcamentoAprovadoUseCase,
   RegistrarOrcamentoGeradoUseCase,
+  RegistrarPagamentoAprovadoUseCase,
 } from './application/use-cases/transicoes';
 import { OrquestradorSagaService } from './saga/application/orquestrador-saga.service';
 import { SagaTimeoutsService } from './saga/application/saga-timeouts.service';
@@ -62,9 +62,9 @@ export const TRANSICOES_USE_CASES = [
   RegistrarEnfileiramentoUseCase,
   RegistrarDiagnosticoUseCase,
   RegistrarOrcamentoGeradoUseCase,
-  RegistrarOrcamentoAprovadoUseCase,
   RegistrarExecucaoIniciadaUseCase,
   RegistrarExecucaoFinalizadaUseCase,
+  RegistrarPagamentoAprovadoUseCase,
   RegistrarCancelamentoUseCase,
 ];
 

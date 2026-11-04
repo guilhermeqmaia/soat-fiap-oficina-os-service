@@ -72,7 +72,8 @@ describe('PrismaOrdemDeServicoRepository (integration)', () => {
 
     // reaplicar o diagnostico substitui o snapshot (nao duplica)
     const again = await repository.findById(os.id as string);
-    again!.aguardarPagamento();
+    again!.iniciarExecucao();
+    again!.aguardarPagamento(); // cobranca depois da execucao (ADR-0012)
     const saved2 = await repository.update(again!);
     expect(saved2.status).toBe(StatusOS.AGUARDANDO_PAGAMENTO);
     expect(await prisma.itemOrdemDeServicoServico.count({ where: { ordemDeServicoId: os.id } })).toBe(1);

@@ -17,8 +17,8 @@ de uma arquitetura orquestrada: a notificacao apenas assina fatos.
 
 ## Criterios de Aceite
 
-- [ ] Fila `notificacao` assinando `billing.orcamento-gerado`, `billing.pagamento-aprovado`, `billing.pagamento-recusado`, `os.finalizada`, `os.cancelada`
-- [ ] Mensagens com o **link de pagamento** quando houver
+- [ ] Fila `notificacao` assinando `billing.orcamento-gerado`, `billing.orcamento-aprovado`, `billing.cobranca-criada`, `billing.pagamento-aprovado`, `billing.pagamento-recusado`, `os.finalizada`, `os.cancelada`
+- [ ] Mensagens com o **link de pagamento** quando houver — o link vem em `billing.cobranca-criada` (cobranca criada apos a execucao, ADR-0012), nao em `billing.orcamento-aprovado`
 - [ ] Canais mantidos: webhook (HMAC) e e-mail; `GET /clientes/:cpf/notificacoes` inalterado
 - [ ] Consumidor idempotente (uma notificacao por `messageId`)
 ## Dependencias
@@ -29,6 +29,7 @@ de uma arquitetura orquestrada: a notificacao apenas assina fatos.
 
 O OS Service ainda notifica **in-process** (`OrdemDeServicoNotificacaoListener`: `OrcamentoProntoEvent`,
 `OsFinalizadaEvent`, `OsStatusAlteradoEvent`) e a fila `notificacao-eventos` ja assina
-`billing.orcamento-gerado`/`orcamento-aprovado`/`pagamento-aprovado` e `os.*`. Ao ligar o consumidor da fila,
-**remover (ou desligar por flag) as notificacoes in-process** para o cliente nao receber dois e-mails pelo mesmo
-fato — e incluir o `linkPagamento` de `billing.orcamento-aprovado` na mensagem de orcamento.
+`billing.orcamento-gerado`/`orcamento-aprovado`/`cobranca-criada`/`pagamento-aprovado`/`pagamento-recusado` e `os.*`.
+Ao ligar o consumidor da fila, **remover (ou desligar por flag) as notificacoes in-process** para o cliente nao
+receber dois e-mails pelo mesmo fato — e enviar o `linkPagamento` de `billing.cobranca-criada` na mensagem
+"servico concluido, pague para retirar o veiculo" (a mensagem de orcamento aprovado nao tem link).

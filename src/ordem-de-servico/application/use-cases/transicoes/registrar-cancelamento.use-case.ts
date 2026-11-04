@@ -15,7 +15,7 @@ export interface RegistrarCancelamentoInput {
   causationId?: string;
 }
 
-/** Compensacoes da saga (orcamento rejeitado, pagamento recusado, execucao recusada, timeouts) -> CANCELADA. */
+/** Compensacoes da saga (orcamento rejeitado, execucao recusada, timeout de aprovacao) ou cancelamento manual -> CANCELADA. */
 @Injectable()
 export class RegistrarCancelamentoUseCase implements UseCase<RegistrarCancelamentoInput, OrdemDeServico> {
   constructor(

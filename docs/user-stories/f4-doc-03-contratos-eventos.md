@@ -18,7 +18,7 @@ contrato ([US-F4-15](f4-15-testes-de-contrato.md)).
 ## Criterios de Aceite
 
 - [x] Arquivo `docs/contratos/asyncapi.yaml` (AsyncAPI 3) com canais, mensagens e schemas JSON
-- [x] **Eventos** (fatos, publicados pelo dono): `os.aberta`, `os.cancelada`, `os.finalizada`, `os.entregue`, `execucao.enfileirada`, `execucao.diagnostico-concluido` (itens com preco congelado), `execucao.iniciada`, `execucao.finalizada`, `execucao.reservas-liberadas`, `billing.orcamento-gerado`, `billing.orcamento-aprovado`, `billing.orcamento-rejeitado`, `billing.pagamento-aprovado`, `billing.pagamento-recusado`, `billing.orcamento-cancelado`
+- [x] **Eventos** (fatos, publicados pelo dono): `os.aberta`, `os.cancelada`, `os.finalizada`, `os.entregue`, `execucao.enfileirada`, `execucao.diagnostico-concluido` (itens com preco congelado), `execucao.iniciada`, `execucao.finalizada`, `execucao.reservas-liberadas`, `billing.orcamento-gerado`, `billing.orcamento-aprovado`, `billing.orcamento-rejeitado`, `billing.cobranca-criada`, `billing.pagamento-aprovado`, `billing.pagamento-recusado`, `billing.orcamento-cancelado`
 - [x] **Comandos** (ordens do orquestrador): `execucao.enfileirar`, `execucao.iniciar`, `execucao.liberar-reservas`, `billing.gerar-orcamento`, `billing.cancelar-orcamento`
 - [x] Envelope comum documentado (ver ADR-0009) e regra de versionamento (campo `version`, mudancas compativeis vs incompativeis)
 - [x] Tabela evento -> produtor -> consumidores -> fila SQS -> DLQ

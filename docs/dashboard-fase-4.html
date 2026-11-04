@@ -211,7 +211,7 @@
         <div><b>D5</b> Kit <code>@guilhermeqmaia/oficina-kit</code> no npm + template de serviço</div>
         <div><b>D6</b> Outbox transacional, consumidor idempotente, DLQ com runbook</div>
         <div><b>D7</b> SonarCloud com quality gate bloqueante</div>
-        <div><b>D8</b> Mercado Pago Checkout Pro na aprovação, status <code>AGUARDANDO_PAGAMENTO</code></div>
+        <div><b>D8</b> Mercado Pago Checkout Pro após a execução (<code>billing.cobrar</code>), status <code>AGUARDANDO_PAGAMENTO</code> antes de <code>FINALIZADA</code></div>
         <div><b>D9</b> Mesmo API Gateway, um NLB com 3 target groups por prefixo</div>
         <div><b>D10</b> Postgres <code>oficina_os</code> e <code>oficina_billing</code>, RDS único</div>
         <div><b>D11</b> Monólito renomeado para <code>soat-fiap-oficina-os-service</code>, continua hub de docs</div>
@@ -226,7 +226,7 @@
         <li><b>Contrato a respeitar:</b> <code>Item.servicoId</code> nos produtos do diagnóstico; <code>execucao.liberar-reservas</code> = cancelar na Execução; <code>billing.cancelar-orcamento</code> sempre responde <code>billing.orcamento-cancelado</code>.</li>
         <li><b>Contas:</b> sandbox do Mercado Pago e token do SonarCloud (Guilherme).</li>
         <li><b>AWS:</b> cluster desligado por custo; religar só para o deploy final.</li>
-        <li><b>Regras abertas:</b> cancelar após pagamento aprovado segue permitido com estorno; notificação in-process sai na US-F4-12 para não duplicar e-mails.</li>
+        <li><b>Regras decididas (03/11):</b> cobrança só após a execução — sem estorno em compensação; pagamento recusado/em atraso retém a OS em <code>AGUARDANDO_PAGAMENTO</code> (sem cancelar); notificação in-process sai na US-F4-12 para não duplicar e-mails.</li>
         <li><b>Já pronto para quem vai começar:</b> kit 0.2.1, <code>scripts/new-service.sh</code>, LocalStack com a topologia da RFC-0006, AsyncAPI validado, QA plans de 01/02/03/05/06/10.</li>
       </ul>
     </section>
