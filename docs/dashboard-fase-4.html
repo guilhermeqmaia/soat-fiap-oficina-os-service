@@ -219,7 +219,7 @@
         <div><b>D7</b> SonarCloud com quality gate bloqueante</div>
         <div><b>D8</b> Mercado Pago Checkout Pro após a execução (<code>billing.cobrar</code>), status <code>AGUARDANDO_PAGAMENTO</code> antes de <code>FINALIZADA</code></div>
         <div><b>D9</b> Mesmo API Gateway, um NLB com 3 target groups por prefixo — Execução incluída; chamadas entre serviços não passam pelo gateway</div>
-        <div><b>D10</b> Postgres <code>oficina_os</code> e <code>oficina_billing</code>, RDS único</div>
+        <div><b>D10</b> Uma instância RDS por serviço (<code>oficina_mecanica</code> · <code>oficina_billing</code>) e VPC Endpoint para o DynamoDB (rev. 04/11, ADR-0014)</div>
         <div><b>D11</b> Monólito renomeado para <code>soat-fiap-oficina-os-service</code>, continua hub de docs</div>
         <div><b>D12</b> Ambiente local (compose) sem LocalStack</div>
       </div>

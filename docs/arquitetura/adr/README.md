@@ -22,6 +22,7 @@ Template: [TEMPLATE.md](TEMPLATE.md)
 | [ADR-0011](ADR-0011-qualidade-sonarcloud.md) | Validação de qualidade no CI com SonarCloud | Aceita | 2026-09-30 |
 | [ADR-0012](ADR-0012-pagamento-mercado-pago.md) | Pagamento com Mercado Pago (Checkout Pro via API de Orders + webhook) | Aceita | 2026-09-30 (rev. 2026-11-03) |
 | [ADR-0013](ADR-0013-api-gateway-multi-servico.md) | API Gateway multi-serviço | Aceita | 2026-09-30 (rev. 2026-11-03) |
+| [ADR-0014](ADR-0014-instancia-rds-por-servico-e-endpoint-dynamodb.md) | Uma instância RDS por serviço e VPC Endpoint para o DynamoDB | Aceita | 2026-11-04 |
 
 ## Ciclo de vida
 
