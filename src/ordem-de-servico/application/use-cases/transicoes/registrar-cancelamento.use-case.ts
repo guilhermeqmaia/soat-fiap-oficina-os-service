@@ -8,11 +8,9 @@ import { registrarTransicao } from './registrar-transicao.base';
 
 export interface RegistrarCancelamentoInput {
   numero: string;
-  /** Unit of work do orquestrador (OS + saga + outbox na mesma transacao). */
+  /** Unit of work do orquestrador (OS + saga na mesma transacao). */
   tx?: unknown;
   motivo: MotivoCancelamento;
-  /** id do envelope que causou a compensacao (ADR-0009) — vai em `os.cancelada`. */
-  causationId?: string;
 }
 
 /** Compensacoes da saga (orcamento rejeitado, execucao recusada, timeout de aprovacao) ou cancelamento manual -> CANCELADA. */
@@ -25,7 +23,7 @@ export class RegistrarCancelamentoUseCase implements UseCase<RegistrarCancelamen
 
   async execute(input: RegistrarCancelamentoInput): Promise<OrdemDeServico> {
     const { ordem } = await registrarTransicao(this.gateway, this.events, input.numero, StatusOS.CANCELADA, (os) =>
-      os.cancelar(input.motivo, input.causationId),
+      os.cancelar(input.motivo),
       input.tx
     );
     return ordem;

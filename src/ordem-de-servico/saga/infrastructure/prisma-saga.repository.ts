@@ -1,5 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
-import { criarEnvelope, OUTBOX_REPOSITORY, OutboxRepository } from '@guilhermeqmaia/oficina-kit/messaging';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { ConcurrentModificationError } from '../../domain/errors/concurrent-modification.error';
 import { Compensacao, PassoHistorico, PassoSaga, SagaOS, StatusSaga } from '../domain/saga-os.entity';
@@ -7,13 +6,10 @@ import { SagaRepository } from '../domain/saga.repository';
 
 type PrismaTx = { sagaOS: PrismaService['sagaOS'] };
 
-/** Tabela `saga_os`; os comandos pendentes vao para o outbox na mesma transacao. */
+/** Tabela `saga_os` (os comandos pendentes nao sao persistidos: saem por HTTP depois do commit). */
 @Injectable()
 export class PrismaSagaRepository implements SagaRepository {
-  constructor(
-    private readonly prisma: PrismaService,
-    @Inject(OUTBOX_REPOSITORY) private readonly outbox: OutboxRepository<unknown>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async findByNumero(numero: string, tx?: unknown): Promise<SagaOS | null> {
     const row = await this.db(tx).sagaOS.findUnique({ where: { numero } });
@@ -51,18 +47,6 @@ export class PrismaSagaRepository implements SagaRepository {
           data: { ...data, version: { increment: 1 } },
         });
         if (count === 0) throw new ConcurrentModificationError(`saga ${saga.numero}`);
-      }
-      for (const comando of saga.consumirComandos()) {
-        await this.outbox.gravar(
-          criarEnvelope({
-            type: comando.type,
-            data: comando.data,
-            producer: 'os-service',
-            correlationId: saga.numero,
-            causationId: comando.causationId,
-          }),
-          tx,
-        );
       }
       return tx.sagaOS.findUniqueOrThrow({ where: { id } });
     });

@@ -2,6 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UsuarioRepository, FindAllParams, PaginatedResult } from '../domain/usuario.repository';
 import { Usuario } from '../../auth/domain/usuario.entity';
+import { Role } from '@guilhermeqmaia/oficina-kit/auth';
+
+/** SERVICO e role de JWT entre servicos (RFC-0008), nunca de usuario — o dominio ja bloqueia. */
+type RoleDeUsuario = Exclude<Role, Role.SERVICO>;
 
 @Injectable()
 export class PrismaUsuarioRepository implements UsuarioRepository {
@@ -14,7 +18,7 @@ export class PrismaUsuarioRepository implements UsuarioRepository {
         email: usuario.email.value,
         cpf: usuario.cpf,
         senhaHash: usuario.senhaHash,
-        role: usuario.role,
+        role: usuario.role as RoleDeUsuario,
         ativo: usuario.ativo,
       },
     });
@@ -110,7 +114,7 @@ export class PrismaUsuarioRepository implements UsuarioRepository {
         nome: usuario.nome,
         email: usuario.email.value,
         cpf: usuario.cpf,
-        role: usuario.role,
+        role: usuario.role as RoleDeUsuario,
         ativo: usuario.ativo,
       },
     });

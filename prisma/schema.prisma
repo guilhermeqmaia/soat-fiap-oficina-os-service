@@ -75,7 +75,7 @@ model OrdemDeServico {
   status             StatusOrdemDeServico @default(RECEBIDA)
   /// Preenchido quando status=CANCELADA (compensacoes da saga — RFC-0005)
   motivoCancelamento String?              @map("motivo_cancelamento")
-  /// Lock otimista: HTTP (cancelar/entregar) e consumidores SQS mutam a mesma OS
+  /// Lock otimista: HTTP (cancelar/entregar) e callbacks dos participantes mutam a mesma OS
   version            Int      @default(0)
   createdAt          DateTime             @default(now()) @map("created_at")
   updatedAt          DateTime             @updatedAt @map("updated_at")
@@ -185,25 +185,10 @@ enum StatusNotificacao {
   FALHOU
 }
 
-// ─── Mensageria (ADR-0009) — contratos do PrismaOutboxRepository / PrismaProcessedMessageStore do kit ───
+// ─── Callbacks HTTP dos participantes (RFC-0008) ───
 
-/// Outbox transacional: eventos `os.*` gravados na mesma transacao da OS e entregues ao SNS pelo OutboxPoller.
-model Outbox {
-  id            String    @id
-  type          String
-  correlationId String    @map("correlation_id")
-  envelope      Json
-  status        String    @default("PENDENTE")
-  tentativas    Int       @default(0)
-  criadaEm      DateTime  @default(now()) @map("criada_em")
-  enviadaEm     DateTime? @map("enviada_em")
-  ultimoErro    String?   @map("ultimo_erro")
-
-  @@index([status, criadaEm])
-  @@map("outbox")
-}
-
-/// Deduplicacao do consumidor SQS (fila `os-eventos`): id do envelope ja processado.
+/// Deduplicacao dos callbacks `POST /ordens-servico/:numero/eventos`: `id` do envelope ja aplicado.
+/// Repeticao devolve `200 { aplicado: false, duplicado: true }`. Purgado apos CALLBACKS_RETENCAO_DIAS.
 model ProcessedMessage {
   id           String   @id
   type         String

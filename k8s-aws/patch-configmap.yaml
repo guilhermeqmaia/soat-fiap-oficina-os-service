@@ -34,13 +34,10 @@ data:
   DD_TRACE_ENABLED: "true"
   DD_SERVICE: "oficina-mecanica-app"
   DD_ENV: "producao"
-  # Mensageria (US-F4-06 / RFC-0006): topico que o OS Service PUBLICA e fila que
-  # CONSOME. Placeholders trocados pelo CD com as vars SNS_TOPIC_ARN / SQS_QUEUE_URL
-  # (propagadas do SSM do stage messaging/ pelo scripts/messaging-vars.sh do infra-k8s).
-  # Sem elas a app sobe sem broker (outbox acumula; consumer desligado).
-  SNS_TOPIC_ARN: "__SNS_TOPIC_ARN__"
-  SQS_QUEUE_URL: "__SQS_QUEUE_URL__"
-  AWS_REGION: "__AWS_REGION__"
+  # Comunicacao HTTP com a Execucao e o Billing (US-F4-18 / RFC-0008): mesmos
+  # Services do namespace `oficina` no EKS — chamadas internas nao passam pelo gateway.
+  EXECUCAO_SERVICE_URL: "http://execucao-service:3002"
+  BILLING_SERVICE_URL: "http://billing-service:3001"
   # Ambiente de DEMONSTRACAO da Fase 4: habilita x-simular-falha para o video da compensacao
   # (US-F4-11). Remover em qualquer ambiente real.
   SAGA_SIMULAR_FALHA_HABILITADO: "true"

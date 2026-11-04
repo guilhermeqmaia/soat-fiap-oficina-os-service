@@ -10,11 +10,9 @@
  */
 process.env.JWT_SECRET ??= 'test-jwt-secret-ci-0123456789abcdef-strong';
 process.env.NODE_ENV ??= 'test';
-// Mensageria (US-F4-06): registra MessagingModule + handlers da fila, mas com
-// poller/consumer parados — os e2e exercitam os handlers diretamente e leem a
-// tabela `outbox`. Nenhuma chamada de rede ao LocalStack/AWS acontece.
-process.env.SNS_TOPIC_ARN ??= 'arn:aws:sns:us-east-1:000000000000:oficina-os.fifo';
-process.env.SQS_QUEUE_URL ??= 'http://localhost:4566/000000000000/os-eventos.fifo';
-process.env.AWS_ENDPOINT ??= 'http://localhost:4566';
-process.env.AWS_REGION ??= 'us-east-1';
-process.env.MESSAGING_AUTOSTART ??= 'false';
+// Participantes da saga por HTTP (US-F4-18): nos e2e o gateway e substituido por
+// um fake em memoria; as URLs so precisam existir para o modulo subir.
+process.env.EXECUCAO_SERVICE_URL ??= 'http://localhost:3002';
+process.env.BILLING_SERVICE_URL ??= 'http://localhost:3001';
+// Relogio da saga e purga de callbacks ficam parados nos testes (chamados direto).
+process.env.AGENDADORES_AUTOSTART ??= 'false';

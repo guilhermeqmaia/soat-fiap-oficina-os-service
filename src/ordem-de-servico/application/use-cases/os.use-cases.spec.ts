@@ -26,7 +26,11 @@ const osComItens = (status = StatusOS.AGUARDANDO_APROVACAO) => {
     status: base.status, motivoCancelamento: null, createdAt: new Date('2026-10-01T10:00:00Z'), updatedAt: new Date('2026-10-02T10:00:00Z'), itensServico: [...base.itensServico],
   });
 };
-const orquestrador = { iniciar: jest.fn().mockResolvedValue(undefined), processar: jest.fn().mockResolvedValue(undefined) } as any;
+const orquestrador = {
+  iniciar: jest.fn(async () => ({ saga: { numero: 'OS-1' }, comandos: [{ type: 'execucao.enfileirar', data: {} }] })),
+  executarComandos: jest.fn().mockResolvedValue(undefined),
+  processar: jest.fn().mockResolvedValue(undefined),
+} as any;
 const uow = { executar: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn('tx-1')) } as any;
 const sagas = { deleteByNumero: jest.fn().mockResolvedValue(undefined) } as any;
 const gatewayCom = (os: OrdemDeServico | null) => ({
@@ -47,12 +51,16 @@ describe('CriarOrdemDeServicoUseCase', () => {
     // OS e saga na mesma transacao: o mesmo tx vai para o gateway e para o orquestrador
     expect(g.create).toHaveBeenCalledWith(expect.anything(), 'tx-1');
     expect(orquestrador.iniciar).toHaveBeenCalledWith(expect.objectContaining({ numero: os.numero }), { descricaoProblema: 'Barulho ao frenar', falhaSimulada: null }, 'tx-1');
-    // os.aberta pendente no agregado entregue ao gateway (vai para o outbox na mesma transacao)
-    const entregue: OrdemDeServico = g.create.mock.calls[0][0];
-    expect(entregue.eventosIntegracao[0]).toMatchObject({
-      type: 'os.aberta',
-      data: { cliente: { nome: 'Joao', cpfMascarado: '***.***.***-25' }, veiculo: { placa: 'ABC1D23', modelo: 'Corolla' }, descricaoProblema: 'Barulho ao frenar' },
-    });
+    // o comando execucao.enfileirar sai DEPOIS do commit, com a saga devolvida por iniciar
+    expect(orquestrador.executarComandos).toHaveBeenCalledWith({ numero: 'OS-1' }, [{ type: 'execucao.enfileirar', data: {} }]);
+    // a OS devolvida e relida apos a resposta sincrona da Execucao (pode ja estar EM_DIAGNOSTICO)
+    expect(g.findByNumero).toHaveBeenCalledWith(os.numero);
+  });
+  it('devolve a OS criada quando a releitura nao encontra (gateway em memoria)', async () => {
+    const g = gatewayCom(null);
+    g.findByNumero.mockResolvedValueOnce(null);
+    const os = await new CriarOrdemDeServicoUseCase(g, clienteGw, veiculoGw, orquestrador, uow).execute({ clienteId: 'cli-1', veiculoId: 'vei-1', descricaoInicial: 'Barulho ao frenar' });
+    expect(os.status).toBe(StatusOS.RECEBIDA);
   });
   it('valida cliente, veiculo e posse do veiculo', async () => {
     const uc = new CriarOrdemDeServicoUseCase(gatewayCom(null), clienteGw, veiculoGw, orquestrador, uow);

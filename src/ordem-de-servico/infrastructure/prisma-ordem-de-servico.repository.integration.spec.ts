@@ -8,8 +8,6 @@ import { ItemServicoOS } from '../domain/value-objects/item-servico-os.vo';
 import { ItemProdutoOS } from '../domain/value-objects/item-produto-os.vo';
 import { startTestDatabase, stopTestDatabase } from '../../test/database.container';
 import { ConcurrentModificationError } from '../domain/errors/concurrent-modification.error';
-import { OUTBOX_REPOSITORY } from '@guilhermeqmaia/oficina-kit/messaging';
-import { PrismaOutbox } from '../../messaging/prisma-messaging.adapters';
 
 jest.setTimeout(60000);
 
@@ -23,7 +21,7 @@ describe('PrismaOrdemDeServicoRepository (integration)', () => {
   beforeAll(async () => {
     process.env.DATABASE_URL = await startTestDatabase();
     const module: TestingModule = await Test.createTestingModule({
-      providers: [PrismaService, PrismaOrdemDeServicoRepository, PrismaOutbox, { provide: OUTBOX_REPOSITORY, useExisting: PrismaOutbox }],
+      providers: [PrismaService, PrismaOrdemDeServicoRepository],
     }).compile();
     prisma = module.get(PrismaService);
     repository = module.get(PrismaOrdemDeServicoRepository);
@@ -122,8 +120,5 @@ describe('PrismaOrdemDeServicoRepository (integration)', () => {
     b.iniciarDiagnostico();
     await expect(repository.update(b)).rejects.toThrow(ConcurrentModificationError);
     expect((await repository.findById(criada.id as string))?.status).toBe(StatusOS.CANCELADA);
-    // o evento da gravacao perdida nao foi para o outbox
-    const outbox = await prisma.outbox.findMany({ where: { correlationId: criada.numero } });
-    expect(outbox.map((o) => o.type)).toEqual(['os.cancelada']);
   });
 });

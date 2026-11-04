@@ -35,7 +35,8 @@ import { ApiHeader } from '@nestjs/swagger';
  * OS Service (Fase 4): apenas o ciclo de vida que e do Atendimento. Diagnostico,
  * itens e execucao ficam no Execucao Service (/execucao, /catalogo, /estoque);
  * orcamento, aprovacao e pagamento no Billing (/orcamentos, /pagamentos). As
- * transicoes correspondentes chegam por evento (ver application/use-cases/transicoes).
+ * transicoes correspondentes chegam pelas respostas HTTP e pelos callbacks dos participantes
+ * (ver application/use-cases/transicoes e saga/).
  */
 @ApiTags('Ordens de Servico')
 @ApiBearerAuth()
@@ -58,7 +59,7 @@ export class OrdemDeServicoController {
   @Post()
   @Roles(Role.ADMIN, Role.ATENDENTE)
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Abrir nova ordem de servico (publica os.aberta; o orquestrador da saga — US-F4-10 — enfileira na Execucao)' })
+  @ApiOperation({ summary: 'Abrir nova ordem de servico (a saga chama POST /execucao/ordens na hora: com 201 a OS ja volta EM_DIAGNOSTICO)' })
   @ApiCreatedResponse({ description: 'OS criada com sucesso' })
   @ApiNotFoundResponse({ description: 'Cliente ou veiculo nao encontrado' })
   @ApiBadRequestResponse({ description: 'Dados invalidos' })
@@ -158,7 +159,7 @@ export class OrdemDeServicoController {
   @Post(':id/entregar')
   @Roles(Role.ADMIN, Role.ATENDENTE)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Entregar veiculo (encerrar OS; publica os.entregue)' })
+  @ApiOperation({ summary: 'Entregar veiculo (encerrar OS; so depois de paga = FINALIZADA)' })
   @ApiConflictResponse({ description: 'OS alterada por outra operacao ao mesmo tempo (releia e repita)' })
   @ApiOkResponse({ description: 'Veiculo entregue com sucesso' })
   @ApiNotFoundResponse({ description: 'OS nao encontrada' })
@@ -171,7 +172,7 @@ export class OrdemDeServicoController {
   @Post(':id/cancelar')
   @Roles(Role.ADMIN, Role.ATENDENTE)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Cancelar OS (so antes da execucao comecar; publica os.cancelada — as compensacoes sao do orquestrador, US-F4-10)' })
+  @ApiOperation({ summary: 'Cancelar OS (so antes da execucao comecar; a saga chama DELETE /orcamentos e DELETE /execucao/ordens — US-F4-10/US-F4-18)' })
   @ApiConflictResponse({ description: 'OS alterada por outra operacao ao mesmo tempo (releia e repita)' })
   @ApiOkResponse({ description: 'OS cancelada' })
   @ApiNotFoundResponse({ description: 'OS nao encontrada' })

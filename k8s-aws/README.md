@@ -46,7 +46,6 @@ gerenciado pelo Terraform, não pelo cluster.
 | Secret do RDS (`DB_SECRET_ID`) | [soat-fiap-oficina-infra-db](https://github.com/guilhermeqmaia/soat-fiap-oficina-infra-db) |
 | Segredo do JWT (`JWT_SECRET_ID`) | Secrets Manager — **o mesmo** usado pela [Lambda](https://github.com/guilhermeqmaia/soat-fiap-oficina-auth-lambda) |
 | `GATEWAY_URL` | output `api_base_url` do stage `gateway/` |
-| `SNS_TOPIC_ARN` / `SQS_QUEUE_URL` | SSM do stage `messaging/` (`scripts/messaging-vars.sh` do infra-k8s) — vazios = sem broker |
 
 Os Secrets `oficina-db` e `oficina-app` **não são versionados**: o CD os
 sincroniza do Secrets Manager a cada deploy (contrato single-writer-per-Secret).
@@ -62,8 +61,6 @@ kubectl -n oficina create secret generic oficina-db --from-literal=DATABASE_URL=
   --from-literal=DB_HOST=... --from-literal=DB_PORT=5432
 cp k8s/secret.yaml.example k8s/secret.yaml   # preencha JWT_SECRET (o mesmo da Lambda)
 sed -i '' "s|__GATEWAY_URL__|https://<api-id>.execute-api.us-east-1.amazonaws.com|g" \
-  k8s-aws/patch-configmap.yaml
-sed -i '' "s|__SNS_TOPIC_ARN__|arn:aws:sns:us-east-1:<conta>:oficina-os.fifo|g; s|__SQS_QUEUE_URL__|https://sqs.us-east-1.amazonaws.com/<conta>/os-eventos.fifo|g; s|__AWS_REGION__|us-east-1|g" \
   k8s-aws/patch-configmap.yaml
 
 cd k8s-aws && kustomize edit set image oficina-mecanica-app=<conta>.dkr.ecr.us-east-1.amazonaws.com/oficina-mecanica-app:<sha>

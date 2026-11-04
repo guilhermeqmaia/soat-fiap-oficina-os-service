@@ -21,9 +21,24 @@ describe('validateEnv', () => {
     expect(() => validateEnv({ JWT_SECRET: 'test-secret' })).not.toThrow();
   });
 
-  it('accepts a strong secret in production', () => {
+  it('accepts a strong secret in production (com as URLs dos participantes)', () => {
     expect(() =>
-      validateEnv({ JWT_SECRET: 'a'.repeat(48), NODE_ENV: 'production' }),
+      validateEnv({ JWT_SECRET: 'a'.repeat(48), NODE_ENV: 'production', EXECUCAO_SERVICE_URL: 'http://execucao-service:3002', BILLING_SERVICE_URL: 'http://billing-service:3001' }),
     ).not.toThrow();
+  });
+});
+
+describe('validateEnv — URLs dos participantes (US-F4-18)', () => {
+  const ok = { JWT_SECRET: 'a'.repeat(48) };
+  it('fora de producao sao opcionais', () => {
+    expect(() => validateEnv({ ...ok })).not.toThrow();
+    expect(() => validateEnv({ ...ok, EXECUCAO_SERVICE_URL: '' })).not.toThrow();
+  });
+  it('em producao sao obrigatorias', () => {
+    expect(() => validateEnv({ ...ok, NODE_ENV: 'production', BILLING_SERVICE_URL: 'http://billing-service:3001' })).toThrow(/EXECUCAO_SERVICE_URL/);
+    expect(() => validateEnv({ ...ok, NODE_ENV: 'production', EXECUCAO_SERVICE_URL: 'http://execucao-service:3002', BILLING_SERVICE_URL: 'http://billing-service:3001' })).not.toThrow();
+  });
+  it('rejeita valor que nao e URL http(s)', () => {
+    expect(() => validateEnv({ ...ok, BILLING_SERVICE_URL: 'billing-service:3001' })).toThrow(/BILLING_SERVICE_URL/);
   });
 });

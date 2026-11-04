@@ -25,10 +25,10 @@ export interface CriarOrdemDeServicoInput {
 
 /**
  * Abre a OS (RECEBIDA). Servicos/pecas nao entram mais na abertura: sao
- * definidos no diagnostico pelo Execucao Service e chegam por evento
- * (`execucao.diagnostico-concluido`). A abertura anuncia `os.aberta` (outbox,
- * mesma transacao) e inicia a saga orquestrada (US-F4-10), que enfileira a OS
- * na Execucao.
+ * definidos no diagnostico pelo Execucao Service e chegam pelo callback
+ * `execucao.diagnostico-concluido`. A abertura grava OS + saga numa transacao e,
+ * DEPOIS do commit, a saga chama `POST /execucao/ordens` (US-F4-10/US-F4-18): se
+ * a Execucao responder na hora, a OS devolvida ja esta EM_DIAGNOSTICO.
  */
 @Injectable()
 export class CriarOrdemDeServicoUseCase implements UseCase<CriarOrdemDeServicoInput, OrdemDeServico> {
@@ -58,16 +58,18 @@ export class CriarOrdemDeServicoUseCase implements UseCase<CriarOrdemDeServicoIn
       veiculoId: input.veiculoId,
       descricaoInicial: input.descricaoInicial,
     });
-    ordem.registrarAbertura({
-      cliente: { nome: cliente.nome, cpfCnpj: cliente.cpfCnpj.value },
-      veiculo: { placa: veiculo.placa.value, modelo: veiculo.modelo },
-    });
-    // OS + os.aberta + saga + execucao.enfileirar numa unica transacao: nao
-    // existe OS sem saga nem saga sem comando (US-F4-10).
-    return this.uow.executar(async (tx) => {
+    // OS + saga numa unica transacao: nao existe OS sem saga (US-F4-10). O
+    // comando `execucao.enfileirar` so sai depois do commit (unit of work).
+    const { criada, saga, comandos } = await this.uow.executar(async (tx) => {
       const criada = await this.gateway.create(ordem, tx);
-      await this.orquestrador.iniciar(criada, { descricaoProblema: input.descricaoInicial, falhaSimulada: input.falhaSimulada ?? null }, tx);
-      return criada;
+      const { saga, comandos } = await this.orquestrador.iniciar(
+        criada,
+        { descricaoProblema: input.descricaoInicial, falhaSimulada: input.falhaSimulada ?? null },
+        tx,
+      );
+      return { criada, saga, comandos };
     });
+    await this.orquestrador.executarComandos(saga, comandos);
+    return (await this.gateway.findByNumero(criada.numero)) ?? criada;
   }
 }

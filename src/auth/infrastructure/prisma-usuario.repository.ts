@@ -29,7 +29,8 @@ export class PrismaUsuarioRepository implements UsuarioRepository {
         email: usuario.email.value,
         cpf: usuario.cpf,
         senhaHash: usuario.senhaHash,
-        role: usuario.role,
+        // SERVICO e role de JWT entre servicos, nunca de usuario (o dominio ja bloqueia).
+        role: usuario.role as Exclude<Role, Role.SERVICO>,
         ativo: usuario.ativo,
       },
     });
