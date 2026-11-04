@@ -24,6 +24,12 @@ com legenda linkando cada decisão às RFCs/ADRs (renderizados pelo GitHub):
 
 ➡️ **[docs/arquitetura/arquitetura-fase3.md](docs/arquitetura/arquitetura-fase3.md)**
 
+**Fase 4:** visão geral dos **três microsserviços, bancos e comunicação HTTP**,
+**rede (VPC)**, **máquina de estados e sequências da saga** (caminho feliz,
+compensação, pagamento recusado) e **deploy no EKS**:
+
+➡️ **[docs/arquitetura/arquitetura-fase4.md](docs/arquitetura/arquitetura-fase4.md)**
+
 ### Onde este repositório entra
 
 ```mermaid
@@ -50,7 +56,7 @@ flowchart LR
 
 | Entregável | Onde |
 |---|---|
-| Desenho da arquitetura (componentes, sequência, deploy) | [`docs/arquitetura/arquitetura-fase3.md`](docs/arquitetura/arquitetura-fase3.md) |
+| Desenho da arquitetura (componentes, sequência, deploy) | [`docs/arquitetura/arquitetura-fase4.md`](docs/arquitetura/arquitetura-fase4.md) (Fase 4) · [`arquitetura-fase3.md`](docs/arquitetura/arquitetura-fase3.md) |
 | RFCs (nuvem, banco, autenticação) | [`docs/arquitetura/rfcs/`](docs/arquitetura/rfcs/README.md) |
 | ADRs (comunicação, HPA, resource server, observabilidade, gateway, 4 repos) | [`docs/arquitetura/adr/`](docs/arquitetura/adr/README.md) |
 | Justificativa do banco + modelo ER | [`docs/arquitetura/banco-de-dados.md`](docs/arquitetura/banco-de-dados.md) |

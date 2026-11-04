@@ -10,6 +10,7 @@ documentos abaixo detalham cada tema.
 |---|---|
 | [RFCs](arquitetura/rfcs/README.md) | Decisões técnicas com alternativas (nuvem, banco, autenticação, microsserviços, saga, HTTP entre serviços) |
 | [ADRs](arquitetura/adr/README.md) | Decisões arquiteturais permanentes |
+| [Arquitetura Fase 4](arquitetura/arquitetura-fase4.md) | Microsserviços, bancos e comunicação HTTP; rede (VPC, subnets, NLB, VPC Link); máquina de estados e sequências da saga; deploy no EKS (US-F4-DOC-04) |
 | [Arquitetura Fase 3](arquitetura/arquitetura-fase3.md) | Diagrama de componentes (visão de nuvem AWS), sequências de autenticação por CPF e abertura de OS, fluxo de deploy dos 4 repos e legenda RFCs/ADRs (US-F3-DOC-03) |
 | [Arquitetura Fase 2](arquitetura/arquitetura-fase2.md) | Desenho da arquitetura da Fase 2 (Kubernetes, CI/CD, IaC) |
 | [Clean Architecture](arquitetura/clean-architecture.md) | Refatoração para Use Cases + Gateways + Presenters |
