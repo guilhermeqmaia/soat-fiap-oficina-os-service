@@ -90,7 +90,7 @@
   <header>
     <div>
       <h1>Fase 4 — Microsserviços e Saga · painel do time</h1>
-      <p class="sub">Tech Challenge FIAP SOAT · atualizado em 03/11/2026 · fonte: <code>docs/plano-execucao-fase-4.md</code>, Notion e PRs</p>
+      <p class="sub">Tech Challenge FIAP SOAT · atualizado em 04/11/2026 · fonte: <code>docs/plano-execucao-fase-4.md</code>, Notion e PRs</p>
     </div>
     <div class="toolbar">
       <button id="theme" aria-pressed="false">Modo escuro</button>
@@ -99,10 +99,10 @@
   </header>
 
   <div class="grid tiles">
-    <div class="card tile"><div class="label">Story points entregues</div><div class="value">55 <span class="muted">/ 138</span></div><div class="hint">40% da fase (US-F4-02 cancelada em 03/11; US-F4-18 adicionada)</div></div>
-    <div class="card tile"><div class="label">Stories concluídas</div><div class="value">9 <span class="muted">/ 23</span></div><div class="hint">DONE ou IN REVIEW</div></div>
-    <div class="card tile"><div class="label">Restante</div><div class="value">83 <span class="muted">SP</span></div><div class="hint">14 stories · 42 SP no caminho crítico</div></div>
-    <div class="card tile"><div class="label">Testes no OS Service</div><div class="value">634</div><div class="hint">428 unit (94%) + 206 integração/e2e</div></div>
+    <div class="card tile"><div class="label">Story points entregues</div><div class="value">71 <span class="muted">/ 138</span></div><div class="hint">51% da fase (US-F4-02 cancelada em 03/11; US-F4-18 entregue 03/11)</div></div>
+    <div class="card tile"><div class="label">Stories concluídas</div><div class="value">11 <span class="muted">/ 23</span></div><div class="hint">DONE no Notion (as demais viraram 5 cards de fluxo)</div></div>
+    <div class="card tile"><div class="label">Restante</div><div class="value">67 <span class="muted">SP</span></div><div class="hint">5 fluxos · fluxos 1, 2 e 3 no caminho crítico (37 SP)</div></div>
+    <div class="card tile"><div class="label">Testes no OS Service</div><div class="value">463</div><div class="hint">testes unitários após o pivot HTTP (PR #99) · integração/e2e no CI</div></div>
   </div>
 
   <div class="grid two">
@@ -111,23 +111,22 @@
       <ul class="notes">
         <li><b>Planejamento e contratos:</b> plano da Fase 4 com pesquisa de mercado (iFood, Mercado Livre, Nubank, Uber), 4 RFCs, 5 ADRs e o AsyncAPI com todos os eventos e comandos.</li>
         <li><b>Kit compartilhado</b> <code>@guilhermeqmaia/oficina-kit</code> no npm (auth, logs, métricas, health, testing) e gerador de serviço; o módulo de mensageria fica descontinuado.</li>
-        <li><b>Infra:</b> bancos por serviço (2 Postgres + DynamoDB), gateway com um NLB e rotas por serviço (inclusive Execução), 3 repositórios novos com CI/CD e OIDC. O stage SNS/SQS foi entregue e descartado em 03/11 (sai na US-F4-18).</li>
-        <li><b>OS Service:</b> monólito reduzido ao OS Service (catálogo, estoque e execução saíram), itens como snapshot, repositório renomeado; outbox e handlers SQS viram chamadas HTTP e um endpoint de callback na US-F4-18.</li>
+        <li><b>Infra:</b> bancos por serviço (2 Postgres + DynamoDB), gateway com um NLB e rotas por serviço (inclusive Execução), 3 repositórios novos com CI/CD e OIDC. O stage SNS/SQS foi entregue e removido em 03/11 (infra-k8s #34).</li>
+        <li><b>OS Service:</b> monólito reduzido ao OS Service (catálogo, estoque e execução saíram), itens como snapshot, repositório renomeado; outbox e handlers SQS substituídos por chamadas HTTP e pelo endpoint de callback (US-F4-18, PRs #98/#99).</li>
+        <li><b>Comunicação HTTP entre serviços (03/11):</b> kit <code>0.3.0</code> com cliente HTTP interno e <code>Role.SERVICO</code>, contrato <code>docs/contratos/http-interno.md</code>, RFC-0008, gateway com os 3 serviços e <code>/admin</code>; US-F4-11 (reprocessar saga, injeção de falhas, runbook) entregue.</li>
         <li><b>Saga orquestrada:</b> máquina de estados com 8 passos, compensações, timeouts, linha do tempo por API, tudo numa transação única com retry em conflito.</li>
-        <li><b>Qualidade:</b> duas reviews independentes aplicadas, 634 testes, validação manual ponta a ponta e QA plans de 6 stories.</li>
+        <li><b>Qualidade:</b> duas reviews independentes aplicadas, 463 testes unitários + integração/e2e no CI, npm audit zerado nos 4 repos, validação manual ponta a ponta e QA plans de 7 stories.</li>
       </ul>
     </section>
     <section class="card">
-      <h2>O que resta fazer</h2>
+      <h2>O que resta fazer (5 fluxos, sem dono fixo)</h2>
       <ul class="notes">
-        <li><b>Comunicação HTTP entre serviços</b> (Guilherme): kit <code>/http</code> + <code>Role.SERVICO</code>, OS Service sem outbox/SQS, endpoint de callback, infra sem <code>messaging/</code> (US-F4-18, RFC-0008). <span class="crit">Caminho crítico.</span></li>
-        <li><b>Execução Service</b> (Bruno): fila, diagnóstico, catálogo e estoque em DynamoDB, expondo os endpoints HTTP da saga e chamando os callbacks do OS. <span class="crit">Caminho crítico.</span></li>
-        <li><b>Billing Service</b> (Gabriel): orçamento, aprovação e rejeição; depois pagamento com Mercado Pago e webhook. <span class="crit">Caminho crítico.</span></li>
-        <li><b>Notificações</b> (Gabriel): notificação in-process alimentada pelos callbacks HTTP; link de pagamento vem em <code>billing.cobranca-criada</code>.</li>
-        <li><b>Compensações e reprocessamento</b> (Guilherme): endpoint de reprocessar saga, injeção de falhas para a demo, runbook de saga parada (sem DLQ).</li>
-        <li><b>Qualidade</b> (Lucas): BDD com Gherkin + Cucumber (exigência do professor: um <code>.feature</code> por fluxo em cada serviço + ponta a ponta), cobertura ≥ 80% com SonarCloud nos 3 serviços, QA plans restantes.</li>
-        <li><b>Observabilidade distribuída</b> (Guilherme): traces através das chamadas HTTP, dashboards de latência/erro entre serviços e alerta de saga parada.</li>
-        <li><b>Fechamento:</b> contratos OpenAPI e READMEs (Bruno), diagramas (Guilherme), deploy final na AWS, vídeo e PDF.</li>
+        <li><b>Fluxo 1 — Execução Service ponta a ponta:</b> endpoints da saga, diagnóstico, catálogo e estoque em DynamoDB, callbacks ao OS, testes/README/QA do repo. <span class="crit">Caminho crítico.</span></li>
+        <li><b>Fluxo 2 — Billing Service ponta a ponta:</b> orçamento, aprovação/rejeição, cobrança por Orders do Mercado Pago, webhook assinado, callbacks ao OS, testes/README/QA do repo. <span class="crit">Caminho crítico.</span></li>
+        <li><b>Fluxo 3 — OS ponta a ponta:</b> notificações pelos callbacks, teste manual com os três serviços, trace único por OS e alertas de saga parada. <span class="crit">Depende de 1 e 2.</span></li>
+        <li><b>Fluxo 4 — Qualidade:</b> BDD Gherkin + Cucumber do ciclo completo (exigência do professor), cobertura ≥ 80% com SonarCloud nos 3 repos, testes de contrato HTTP. Pode começar já, com stubs.</li>
+        <li><b>Fluxo 5 — Entrega:</b> diagramas, READMEs com evidências, QA plans, deploy final na AWS, vídeo e PDF.</li>
+        <li class="muted">Regra do time (03/11): ninguém é atribuído; cada pessoa pega o próximo fluxo livre no Notion conforme o tempo que tiver e marca <b>IN PROGRESS</b>.</li>
       </ul>
     </section>
   </div>
@@ -140,66 +139,71 @@
       <table id="ondas-table" class="hidden"><thead><tr><th>Onda</th><th class="num">Entregue</th><th class="num">Em progresso</th><th class="num">A fazer</th><th class="num">Total</th></tr></thead><tbody></tbody></table>
     </section>
     <section class="card">
-      <h2>Carga proposta por pessoa (SP restantes)</h2>
-      <div class="legend"><span style="--sw: var(--s1)">Guilherme</span><span style="--sw: var(--s2)">Bruno</span><span style="--sw: var(--s3)">Gabriel</span><span style="--sw: var(--s4)">Lucas</span></div>
-      <div id="pessoas"></div>
-      <table id="pessoas-table" class="hidden"><thead><tr><th>Pessoa</th><th>Stories</th><th class="num">SP</th></tr></thead><tbody></tbody></table>
-      <p class="muted">Divisão proposta, não decidida. Nomes e colunas são editáveis na reunião.</p>
+      <h2>Restante por fluxo (SP)</h2>
+      <div id="fluxos"></div>
+      <table id="fluxos-table" class="hidden"><thead><tr><th>Fluxo</th><th>Stories absorvidas</th><th class="num">SP</th></tr></thead><tbody></tbody></table>
+      <p class="muted">Um card por fluxo no Notion; as stories continuam como especificação em <code>docs/user-stories/</code>.</p>
     </section>
   </div>
 
   <section class="card">
-    <h2>Proposta de divisão do restante (83 SP)</h2>
+    <h2>Fluxos em ordem de pegada (67 SP restantes)</h2>
     <div class="grid cols">
       <div class="person card" style="--c: var(--s1)">
-        <h3>Guilherme</h3><div class="role">OS Service, saga e plataforma</div>
+        <h3>Fluxo 1 — Execução</h3><div class="role">Execução Service ponta a ponta</div>
         <ul>
-          <li><span class="crit">US-F4-18 Comunicação HTTP entre serviços (kit, OS, Billing, Execução, infra)</span> <small>8 SP · caminho crítico</small></li>
-          <li>US-F4-11 Compensações e rollback <small>8 SP</small></li>
-          <li>US-F4-16 Observabilidade distribuída <small>5 SP</small></li>
-          <li>US-F4-DOC-04 Diagramas e sequências <small>3 SP</small></li>
-          <li>US-F4-17 Entrega: vídeo e PDF <small>3 SP</small></li>
-        </ul><div class="total">27 SP</div>
+          <li><span class="crit">US-F4-07 fila, diagnóstico, catálogo, estoque (DynamoDB)</span> <small>13 SP · caminho crítico</small></li>
+          <li>Lado Execução do contrato HTTP (US-F4-18): <code>POST /execucao/ordens</code>, iniciar, cancelar, callbacks</li>
+          <li>Testes ≥ 80%, README e QA plan do repo</li>
+        </ul><div class="total">13 SP</div>
       </div>
-      <div class="person card" style="--c: var(--s2)">
-        <h3>Bruno</h3><div class="role">Execução Service, contratos e READMEs</div>
+      <div class="person card" style="--c: var(--s1)">
+        <h3>Fluxo 2 — Cobrança</h3><div class="role">Billing Service ponta a ponta</div>
         <ul>
-          <li><span class="crit">US-F4-07 Execução: fila, diagnóstico, catálogo, estoque (DynamoDB)</span> <small>13 SP · caminho crítico</small></li>
-          <li>US-F4-15 Testes de contrato das APIs HTTP (OpenAPI) <small>3 SP</small></li>
-          <li>US-F4-DOC-05 READMEs por serviço com evidências <small>3 SP</small></li>
-        </ul><div class="total">19 SP</div>
+          <li><span class="crit">US-F4-08 orçamento, aprovação, rejeição</span> <small>8 SP · caminho crítico</small></li>
+          <li>US-F4-09 pagamento por Orders do Mercado Pago + webhook <small>8 SP</small></li>
+          <li>Lado Billing do contrato HTTP; sandbox e contas de teste já no card</li>
+        </ul><div class="total">16 SP</div>
       </div>
-      <div class="person card" style="--c: var(--s3)">
-        <h3>Gabriel</h3><div class="role">Billing Service e notificações</div>
+      <div class="person card" style="--c: var(--s1)">
+        <h3>Fluxo 3 — OS ponta a ponta</h3><div class="role">Integração real dos três serviços</div>
         <ul>
-          <li><span class="crit">US-F4-08 Billing: orçamento, aprovação, rejeição</span> <small>8 SP · caminho crítico</small></li>
-          <li>US-F4-09 Pagamento com Mercado Pago <small>8 SP</small></li>
-          <li>US-F4-12 Notificações (callbacks HTTP) <small>3 SP</small></li>
-        </ul><div class="total">19 SP</div>
+          <li>US-F4-12 notificações pelos callbacks <small>3 SP</small></li>
+          <li>US-F4-16 trace único por OS, dashboards, alerta de saga parada <small>5 SP</small></li>
+          <li>Teste manual com os 3 serviços e fechamento da US-F4-18</li>
+        </ul><div class="total">8 SP</div>
       </div>
-      <div class="person card" style="--c: var(--s4)">
-        <h3>Lucas</h3><div class="role">Qualidade e documentação</div>
+      <div class="person card" style="--c: var(--s1)">
+        <h3>Fluxo 4 — Qualidade</h3><div class="role">BDD, cobertura e contratos</div>
         <ul>
-          <li>US-F4-14 BDD Gherkin + Cucumber: um .feature por fluxo + ponta a ponta <small>8 SP · exigência do professor</small></li>
-          <li>US-F4-13 Cobertura ≥ 80% + SonarCloud nos 3 serviços <small>5 SP</small></li>
-          <li>US-F4-DOC-06 QA plans da Fase 4 <small>5 SP</small></li>
-        </ul><div class="total">18 SP</div>
+          <li>US-F4-14 BDD Gherkin + Cucumber do ciclo completo <small>8 SP · exigência do professor</small></li>
+          <li>US-F4-13 cobertura ≥ 80% + SonarCloud nos 3 repos <small>5 SP</small></li>
+          <li>US-F4-15 testes de contrato HTTP <small>3 SP</small></li>
+        </ul><div class="total">16 SP</div>
+      </div>
+      <div class="person card" style="--c: var(--s1)">
+        <h3>Fluxo 5 — Entrega</h3><div class="role">Documentação e material final</div>
+        <ul>
+          <li>DOC-04 diagramas <small>3 SP</small> · DOC-05 READMEs <small>3 SP</small></li>
+          <li>DOC-06 QA plans <small>5 SP</small></li>
+          <li>US-F4-17 deploy final, vídeo e PDF <small>3 SP</small></li>
+        </ul><div class="total">14 SP</div>
       </div>
     </div>
     <h2 style="margin-top:18px">Sequência sugerida</h2>
     <div class="weeks">
-      <div class="week"><b>Semana 1 — destravar o fluxo</b>18 HTTP entre serviços (kit primeiro) · 07 Execução · 08 Billing · 12 Notificações · 11 Compensações</div>
-      <div class="week"><b>Semana 2 — fechar ponta a ponta</b>09 Mercado Pago · 15 Contratos · 14 BDD · 13 Sonar/cobertura · 16 Observabilidade · religar o EKS</div>
-      <div class="week"><b>Semana 3 — entrega</b>DOC-04/05/06 · deploy final na AWS · vídeo e PDF (17)</div>
+      <div class="week"><b>Agora — em paralelo</b>Fluxo 1 (Execução) e Fluxo 2 (Billing) por quem estiver livre · Fluxo 4 começa com os <code>.feature</code> e stubs · Fluxo 5 adianta diagramas e READMEs</div>
+      <div class="week"><b>Depois — fechar o ciclo</b>Fluxo 3 com os três serviços no compose · Cucumber rodando contra os serviços reais · religar o EKS</div>
+      <div class="week"><b>Por fim — entrega</b>Deploy final na AWS · QA plans · vídeo e PDF</div>
     </div>
   </section>
 
   <section class="card">
-    <h2>Stories (23 ativas + US-F4-02 cancelada)</h2>
+    <h2>Stories detalhadas (23 ativas + US-F4-02 cancelada) e o fluxo que as agrupa</h2>
     <div class="filters">
       <button data-f="all" aria-pressed="true">Todas</button><button data-f="done">Entregues</button><button data-f="prog">Em progresso</button><button data-f="todo">A fazer</button><button data-f="crit">Caminho crítico</button>
     </div>
-    <table id="stories"><thead><tr><th>Story</th><th>Onda</th><th>Repositório</th><th class="num">SP</th><th>Status</th><th>Responsável proposto</th></tr></thead><tbody></tbody></table>
+    <table id="stories"><thead><tr><th>Story</th><th>Onda</th><th>Repositório</th><th class="num">SP</th><th>Status</th><th>Fluxo no Notion</th></tr></thead><tbody></tbody></table>
   </section>
 
   <div class="grid two">
@@ -222,61 +226,62 @@
       <p class="muted">Base: artigos de engenharia do iFood, Mercado Livre, Nubank e Uber, resumidos no plano para o PDF e o vídeo.</p>
     </section>
     <section class="card">
-      <h2>Para decidir na reunião</h2>
+      <h2>Combinados do time (03/11)</h2>
       <ul class="notes">
-        <li><b>Caminho crítico:</b> US-F4-18 (kit <code>/http</code>) destrava US-F4-07 e US-F4-08, que travam BDD, ponta a ponta, vídeo. Repos já têm CI, banco, contrato (<code>http-interno.md</code>) e o orquestrador esperando as respostas/callbacks.</li>
+        <li><b>Sem atribuição fixa:</b> os cards do Notion são 5 fluxos inteiros; cada pessoa pega o próximo livre conforme a disponibilidade. Fluxos 1 e 2 destravam o 3, o BDD contra serviços reais e o vídeo. Repos já têm CI, banco, contrato (<code>http-interno.md</code>) e o orquestrador esperando as respostas/callbacks.</li>
         <li><b>Contrato a respeitar:</b> <code>docs/contratos/http-interno.md</code> — <code>Item.servicoId</code> nos produtos do diagnóstico; <code>DELETE /execucao/ordens/{n}</code> = cancelar na Execução; <code>DELETE /orcamentos/{n}</code> sempre responde <code>200</code> (idempotente); callbacks com JWT <code>SERVICO</code>; cada story traz "APIs que expõe / consome / o que salva no banco".</li>
-        <li><b>Contas:</b> sandbox do Mercado Pago e token do SonarCloud (Guilherme).</li>
+        <li><b>Contas:</b> sandbox do Mercado Pago (credenciais e contas de teste no card do Fluxo 2) e token do SonarCloud.</li>
         <li><b>AWS:</b> cluster desligado por custo; religar só para o deploy final.</li>
         <li><b>Regras decididas (03/11):</b> cobrança só após a execução — sem estorno em compensação; pagamento recusado/em atraso retém a OS em <code>AGUARDANDO_PAGAMENTO</code> (sem cancelar); notificação in-process sai na US-F4-12 para não duplicar e-mails.</li>
-        <li><b>Já pronto para quem vai começar:</b> kit 0.2.1, <code>scripts/new-service.sh</code>, <code>http-interno.md</code> + AsyncAPI como vocabulário, QA plans de 01/03/05/06/10/11/18.</li>
+        <li><b>Já pronto para quem vai começar:</b> kit 0.3.0 (<code>/http</code>, <code>Role.SERVICO</code>), scaffolds de Billing e Execução sem mensageria e com audit limpo, <code>http-interno.md</code>, QA plans de 01/03/05/06/10/11/18.</li>
       </ul>
     </section>
   </div>
-  <p class="muted">Entregue: DOC-01, DOC-02, DOC-03, US-F4-01, 03..06 e 10 (PRs #78–#97 no hub, #29–#32 no infra-k8s, #9–#10 no infra-db, #1–#7 no kit); US-F4-02 entregue e cancelada em 03/11 (RFC-0008). Validação manual registrada em <code>docs/qa-plans/QA_PLAN_US-F4-10.md</code> (TS-11).</p>
+  <p class="muted">Entregue: DOC-01, DOC-02, DOC-03, US-F4-01, 03..06, 10, 11 e 18 (PRs #78–#100 no hub, #29–#34 no infra-k8s, #9–#10 no infra-db, #1–#10 no kit, #1–#4 em billing e execução); US-F4-02 entregue e cancelada em 03/11 (RFC-0008). Board do Notion consolidado em 5 cards de fluxo em 04/11. Validação manual registrada em <code>docs/qa-plans/QA_PLAN_US-F4-10.md</code> (TS-11).</p>
 </div>
 <div class="tip" id="tip"></div>
 
 <script>
 const ONDAS = [
   { n: '0 Decisões e contratos', done: 8, prog: 0, todo: 0 },
-  { n: '1 Plataforma', done: 26, prog: 0, todo: 8 },
+  { n: '1 Plataforma', done: 34, prog: 0, todo: 0 },
   { n: '2 Serviços', done: 8, prog: 0, todo: 24 },
-  { n: '3 Saga e pagamento', done: 13, prog: 0, todo: 16 },
+  { n: '3 Saga e pagamento', done: 21, prog: 0, todo: 8 },
   { n: '4 Qualidade', done: 0, prog: 8, todo: 8 },
   { n: '5 Observabilidade e docs', done: 0, prog: 5, todo: 11 },
   { n: '6 Entrega', done: 0, prog: 0, todo: 3 },
 ];
-const PESSOAS = [
-  { n: 'Guilherme', sp: 27, c: 'var(--s1)', s: '18, 11, 16, DOC-04, 17' },
-  { n: 'Bruno', sp: 19, c: 'var(--s2)', s: '07, 15, DOC-05' },
-  { n: 'Gabriel', sp: 19, c: 'var(--s3)', s: '08, 09, 12' },
-  { n: 'Lucas', sp: 18, c: 'var(--s4)', s: '14, 13, DOC-06' },
+const FLUXOS = [
+  { n: '1 Execução', sp: 13, c: 'var(--s1)', s: 'US-F4-07 + lado Execução da 18' },
+  { n: '2 Cobrança', sp: 16, c: 'var(--s1)', s: 'US-F4-08, 09 + lado Billing da 18' },
+  { n: '3 OS ponta a ponta', sp: 8, c: 'var(--s1)', s: 'US-F4-12, 16 + fechamento da 18' },
+  { n: '4 Qualidade', sp: 16, c: 'var(--s1)', s: 'US-F4-13, 14, 15' },
+  { n: '5 Entrega', sp: 14, c: 'var(--s1)', s: 'DOC-04, 05, 06 + US-F4-17' },
 ];
 const STORIES = [
-  ['US-F4-DOC-01','RFCs: decomposição, saga, mensageria, NoSQL',0,'hub',3,'done','Guilherme',0],
-  ['US-F4-DOC-02','ADRs: outbox, kit, Sonar, Mercado Pago, gateway',0,'hub',2,'done','Guilherme',0],
-  ['US-F4-DOC-03','Contratos de eventos (AsyncAPI)',0,'hub',3,'review','Guilherme',0],
-  ['US-F4-01','Kit compartilhado + template',1,'kit',8,'done','Guilherme',0],
-  ['US-F4-03','Bancos por serviço (Postgres ×2, DynamoDB)',1,'infra-db',5,'review','Guilherme',0],
-  ['US-F4-04','Repos + CI/CD por serviço',1,'todos',8,'review','Guilherme',0],
-  ['US-F4-05','API Gateway multi-serviço + webhook MP',1,'infra-k8s',5,'review','Guilherme',0],
-  ['US-F4-18','Comunicação HTTP entre serviços (kit, OS, Billing, Execução, infra) — RFC-0008',1,'kit / os-service / billing / execucao / infra-k8s',8,'todo','Guilherme',1],
-  ['US-F4-06','OS Service: strangler do monólito',2,'os-service',8,'review','Guilherme',0],
-  ['US-F4-07','Execução Service: fila, diagnóstico, catálogo, estoque (DynamoDB)',2,'execucao-service',13,'todo','Bruno',1],
-  ['US-F4-08','Billing Service: orçamento, aprovação, rejeição',2,'billing-service',8,'todo','Gabriel',1],
-  ['US-F4-12','Notificações (callbacks HTTP, link de pagamento)',2,'os-service',3,'todo','Gabriel',0],
-  ['US-F4-09','Billing: pagamento Mercado Pago',3,'billing-service',8,'todo','Gabriel',1],
-  ['US-F4-10','Saga orquestrada da OS',3,'os-service',13,'review','Guilherme',0],
-  ['US-F4-11','Compensações e rollback seguro',3,'os-service',8,'todo','Guilherme',0],
-  ['US-F4-13','Cobertura ≥ 80% + quality gate',4,'todos',5,'todo','Lucas',0],
-  ['US-F4-14','BDD Gherkin + Cucumber: um .feature por fluxo + ponta a ponta (exigência do professor)',4,'hub + serviços',8,'prog','Lucas',1],
-  ['US-F4-15','Testes de contrato das APIs HTTP (OpenAPI por serviço)',4,'hub + serviços',3,'todo','Bruno',0],
-  ['US-F4-16','Observabilidade distribuída (traces HTTP, saga parada)',5,'os-service / infra-k8s',5,'todo','Guilherme',0],
-  ['US-F4-DOC-04','Diagrama geral + sequências da saga',5,'hub',3,'todo','Guilherme',0],
-  ['US-F4-DOC-05','READMEs por serviço com evidências',5,'todos',3,'todo','Bruno',0],
-  ['US-F4-DOC-06','QA plans da Fase 4',5,'hub',5,'prog','Lucas',0],
-  ['US-F4-17','Entrega: vídeo, PDF, diagrama',6,'todos',3,'todo','Guilherme',1],
+  ['US-F4-DOC-01','RFCs: decomposição, saga, mensageria, NoSQL',0,'hub',3,'done','—',0],
+  ['US-F4-DOC-02','ADRs: outbox, kit, Sonar, Mercado Pago, gateway',0,'hub',2,'done','—',0],
+  ['US-F4-DOC-03','Contratos de eventos (AsyncAPI)',0,'hub',3,'done','—',0],
+  ['US-F4-01','Kit compartilhado + template',1,'kit',8,'done','—',0],
+  ['US-F4-03','Bancos por serviço (Postgres ×2, DynamoDB)',1,'infra-db',5,'done','—',0],
+  ['US-F4-04','Repos + CI/CD por serviço',1,'todos',8,'done','—',0],
+  ['US-F4-05','API Gateway multi-serviço + webhook MP',1,'infra-k8s',5,'done','—',0],
+  ['US-F4-18','Comunicação HTTP entre serviços — RFC-0008 (kit 0.3.0, OS, infra entregues; Billing/Execução nos fluxos 1 e 2)',1,'kit / os-service / billing / execucao / infra-k8s',8,'done','3 (fechamento)',1],
+  ['US-F4-06','OS Service: strangler do monólito',2,'os-service',8,'done','—',0],
+  ['US-F4-07','Execução Service: fila, diagnóstico, catálogo, estoque (DynamoDB)',2,'execucao-service',13,'todo','1',1],
+  ['US-F4-08','Billing Service: orçamento, aprovação, rejeição',2,'billing-service',8,'todo','2',1],
+  ['US-F4-12','Notificações (callbacks HTTP, link de pagamento)',2,'os-service',3,'todo','3',0],
+  ['US-F4-09','Billing: pagamento Mercado Pago',3,'billing-service',8,'todo','2',1],
+  ['US-F4-10','Saga orquestrada da OS',3,'os-service',13,'done','—',0],
+  ['US-F4-11','Compensações, reprocessar saga e injeção de falhas (PR #96)',3,'os-service',8,'done','—',0],
+  ['US-F4-13','Cobertura ≥ 80% + quality gate',4,'todos',5,'todo','4',0],
+  ['US-F4-14','BDD Gherkin + Cucumber: um .feature por fluxo + ponta a ponta (exigência do professor)',4,'hub + serviços',8,'prog','4',1],
+  ['US-F4-15','Testes de contrato das APIs HTTP (OpenAPI por serviço)',4,'hub + serviços',3,'todo','4',0],
+  ['US-F4-16','Observabilidade distribuída (traces HTTP, saga parada)',5,'os-service / infra-k8s',5,'todo','3',0],
+  ['US-F4-DOC-04','Diagrama geral + sequências da saga',5,'hub',3,'todo','5',0],
+  ['US-F4-DOC-05','READMEs por serviço com evidências',5,'todos',3,'todo','5',0],
+  ['US-F4-DOC-06','QA plans da Fase 4',5,'hub',5,'prog','5',0],
+  ['US-F4-17','Entrega: vídeo, PDF, diagrama',6,'todos',3,'todo','5',1],
 ];
 const STATUS = { done: ['st-done','Entregue'], review: ['st-review','Em review'], prog: ['st-prog','Em progresso'], todo: ['st-todo','A fazer'] };
 
@@ -311,13 +316,13 @@ function ondas() {
   const tb = document.querySelector('#ondas-table tbody');
   ONDAS.forEach(o => { const tr = document.createElement('tr'); tr.innerHTML = `<td>${o.n}</td><td class="num">${o.done}</td><td class="num">${o.prog}</td><td class="num">${o.todo}</td><td class="num">${o.done + o.prog + o.todo}</td>`; tb.appendChild(tr); });
 }
-// Barras por pessoa (uma série por entidade; legenda + rótulo direto)
-function pessoas() {
-  const W = 520, L = 110, rowH = 40, H = PESSOAS.length * rowH + 28, max = 30, bw = 20;
-  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Story points propostos por pessoa' });
+// Barras por fluxo (uma única medida: SP restantes; cor única, rótulo direto)
+function fluxos() {
+  const W = 520, L = 150, rowH = 40, H = FLUXOS.length * rowH + 28, max = 20, bw = 20;
+  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Story points restantes por fluxo' });
   const x = v => L + v / max * (W - L - 40);
-  [0, 5, 10, 15, 20, 25, 30].forEach(v => { svg.appendChild(svgEl('line', { x1: x(v), x2: x(v), y1: 4, y2: H - 22, stroke: 'var(--line)', 'stroke-width': 1 })); svg.appendChild(txt(x(v), H - 10, v, { anchor: 'middle', size: 11, fill: 'var(--text-muted)' })); });
-  PESSOAS.forEach((p, i) => {
+  [0, 5, 10, 15, 20].forEach(v => { svg.appendChild(svgEl('line', { x1: x(v), x2: x(v), y1: 4, y2: H - 22, stroke: 'var(--line)', 'stroke-width': 1 })); svg.appendChild(txt(x(v), H - 10, v, { anchor: 'middle', size: 11, fill: 'var(--text-muted)' })); });
+  FLUXOS.forEach((p, i) => {
     const y = 8 + i * rowH + (rowH - bw) / 2; const w = x(p.sp) - x(0);
     svg.appendChild(txt(L - 10, y + bw / 2, p.n, { anchor: 'end', fill: 'var(--text-primary)' }));
     const path = svgEl('path', { d: `M${x(0)},${y} H${x(0) + w - 4} a4,4 0 0 1 4,4 V${y + bw - 4} a4,4 0 0 1 -4,4 H${x(0)} Z`, fill: p.c });
@@ -325,9 +330,9 @@ function pessoas() {
     svg.appendChild(path);
     svg.appendChild(txt(x(p.sp) + 8, y + bw / 2, `${p.sp} SP`, { fill: 'var(--text-primary)', weight: 600 }));
   });
-  document.getElementById('pessoas').appendChild(svg);
-  const tb = document.querySelector('#pessoas-table tbody');
-  PESSOAS.forEach(p => { const tr = document.createElement('tr'); tr.innerHTML = `<td>${p.n}</td><td>${p.s}</td><td class="num">${p.sp}</td>`; tb.appendChild(tr); });
+  document.getElementById('fluxos').appendChild(svg);
+  const tb = document.querySelector('#fluxos-table tbody');
+  FLUXOS.forEach(p => { const tr = document.createElement('tr'); tr.innerHTML = `<td>${p.n}</td><td>${p.s}</td><td class="num">${p.sp}</td>`; tb.appendChild(tr); });
 }
 function stories(filter = 'all') {
   const tb = document.querySelector('#stories tbody'); tb.innerHTML = '';
@@ -336,12 +341,12 @@ function stories(filter = 'all') {
       tr.innerHTML = `<td><b>${s[0]}</b><br><span class="muted">${s[1]}</span></td><td>${s[2]}</td><td><code>${s[3]}</code></td><td class="num">${s[4]}</td><td><span class="pill ${cls}">${lbl}</span>${s[7] ? ' <span class="crit" title="caminho crítico">●</span>' : ''}</td><td>${s[6]}</td>`;
       tb.appendChild(tr); });
 }
-ondas(); pessoas(); stories();
+ondas(); fluxos(); stories();
 document.querySelectorAll('.filters button').forEach(b => b.addEventListener('click', () => { document.querySelectorAll('.filters button').forEach(o => o.setAttribute('aria-pressed', 'false')); b.setAttribute('aria-pressed', 'true'); stories(b.dataset.f); }));
 const themeBtn = document.getElementById('theme');
 themeBtn.addEventListener('click', () => { const dark = document.documentElement.getAttribute('data-theme') !== 'dark'; document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light'); themeBtn.setAttribute('aria-pressed', String(dark)); themeBtn.textContent = dark ? 'Modo claro' : 'Modo escuro'; });
 const tablesBtn = document.getElementById('tables');
-tablesBtn.addEventListener('click', () => { const on = tablesBtn.getAttribute('aria-pressed') !== 'true'; tablesBtn.setAttribute('aria-pressed', String(on)); ['ondas', 'pessoas'].forEach(id => { document.getElementById(id).classList.toggle('hidden', on); document.getElementById(id + '-table').classList.toggle('hidden', !on); }); });
+tablesBtn.addEventListener('click', () => { const on = tablesBtn.getAttribute('aria-pressed') !== 'true'; tablesBtn.setAttribute('aria-pressed', String(on)); ['ondas', 'fluxos'].forEach(id => { document.getElementById(id).classList.toggle('hidden', on); document.getElementById(id + '-table').classList.toggle('hidden', !on); }); });
 </script>
 </body>
 </html>
