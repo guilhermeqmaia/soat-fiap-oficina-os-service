@@ -1,6 +1,6 @@
 # US-F4-11: Compensacoes e Rollback Seguro da Saga
 
-**User Story:** Como Sistema, quero que qualquer falha em qualquer passo da saga dispare as compensacoes corretas (liberar reservas, cancelar orcamento, estornar pagamento, cancelar OS), para que nenhuma OS fique num estado inconsistente entre os servicos.
+**User Story:** Como Sistema, quero que qualquer falha em qualquer passo da saga dispare as compensacoes corretas (liberar reservas, cancelar orcamento, cancelar OS), para que nenhuma OS fique num estado inconsistente entre os servicos.
 
 **Prioridade:** Alta
 **Story Points:** 8
@@ -21,13 +21,14 @@ para tras). Toda compensacao e idempotente e pode ser reexecutada.
 - [x] Matriz passo -> falha -> compensacoes documentada e implementada (`saga/domain/saga-os.entity.ts`, metodo `compensar`; tabela abaixo):
   - enfileirar recusado -> OS `CANCELADA`
   - orcamento rejeitado -> `execucao.liberar-reservas` -> OS `CANCELADA`
-  - pagamento recusado/timeout -> `billing.cancelar-orcamento` + `execucao.liberar-reservas` -> OS `CANCELADA`
-  - falha ao iniciar execucao apos pagamento -> estorno (Billing) + liberar reservas -> OS `CANCELADA`
+  - timeout de aprovacao -> `billing.cancelar-orcamento` + `execucao.liberar-reservas` -> OS `CANCELADA`
+  - falha ao iniciar execucao (aprovado, nao pago, nao executado) -> `billing.cancelar-orcamento` + liberar reservas (sem estorno) -> OS `CANCELADA`
+  - pagamento recusado / em atraso (apos a execucao) -> **pendencia, nao compensacao**: OS permanece `AGUARDANDO_PAGAMENTO`, historico `pagamento-pendente`, alerta `oficina_os_sagas_paradas`, `reprocessar` reenvia `billing.cobrar`
 - [x] Compensacoes enfileiradas em ordem inversa (executadas em paralelo pelos participantes, filas distintas) e registradas em `saga_os.compensacoes` com `enviadaEm`/`confirmadaEm`
 - [x] Retry com backoff nos comandos (SQS visibility 30 s, `maxReceiveCount` 5 no infra-k8s) e **DLQ** com alarme `*-dlq-nao-vazia`; runbook [`docs/runbooks/saga-dlq-reprocessar.md`](../runbooks/saga-dlq-reprocessar.md) (triagem, redrive com `start-message-move-task`, nunca descartar)
 - [x] Endpoint interno `POST /admin/sagas/:numero/reprocessar` (ADMIN): reenvia pelo outbox o comando do passo atual ou as compensacoes nao confirmadas; nao altera a OS
-- [x] **Injecao de falhas para demo:** header `x-simular-falha=<passo>` no `POST /ordens-servico` (so com `SAGA_SIMULAR_FALHA_HABILITADO=true`): no passo marcado o evento de sucesso vira o de falha (`ENFILEIRAR_EXECUCAO`, `AGUARDAR_APROVACAO`, `AGUARDAR_PAGAMENTO`, `INICIAR_EXECUCAO`); cartoes de teste do Mercado Pago cobrem a falha real de pagamento (`docs/mercado-pago-sandbox.md`)
-- [x] Teste de integracao para cada linha da matriz (e2e `ordem-de-servico.e2e.spec.ts`, bloco "saga orquestrada": recusada, rejeitado, pagamento recusado, timeout de pagamento, falha ao iniciar execucao, cancelamento manual por passo, injecao de falhas, reprocessar)
+- [x] **Injecao de falhas para demo:** header `x-simular-falha=<passo>` no `POST /ordens-servico` (so com `SAGA_SIMULAR_FALHA_HABILITADO=true`): no passo marcado o evento de sucesso vira o de falha (`ENFILEIRAR_EXECUCAO`, `AGUARDAR_APROVACAO`, `INICIAR_EXECUCAO`; em `AGUARDAR_PAGAMENTO` demonstra o pagamento pendente pos-execucao); cartoes de teste do Mercado Pago cobrem a falha real de pagamento (`docs/mercado-pago-sandbox.md`)
+- [x] Teste de integracao para cada linha da matriz (e2e `ordem-de-servico.e2e.spec.ts`, bloco "saga orquestrada": recusada, rejeitado, timeout de aprovacao, falha ao iniciar execucao, cancelamento manual por passo, pagamento recusado mantem `AGUARDANDO_PAGAMENTO` + reprocessar reenvia `billing.cobrar`, cancelamento rejeitado apos a execucao, injecao de falhas)
 ## Dependencias
 
 - [US-F4-10](f4-10-saga-orquestrada.md)
@@ -39,9 +40,13 @@ para tras). Toda compensacao e idempotente e pode ser reexecutada.
 | ENFILEIRAR_EXECUCAO | `execucao.recusada` | — | `EXECUCAO_RECUSADA` |
 | AGUARDAR_APROVACAO | `billing.orcamento-rejeitado` | `execucao.liberar-reservas` | `ORCAMENTO_REJEITADO` |
 | AGUARDAR_APROVACAO | `saga.timeout` | `billing.cancelar-orcamento`, `execucao.liberar-reservas` | `TIMEOUT_APROVACAO` |
-| AGUARDAR_PAGAMENTO | `billing.pagamento-recusado` / `saga.timeout` | `billing.cancelar-orcamento`, `execucao.liberar-reservas` | `PAGAMENTO_RECUSADO` / `TIMEOUT_PAGAMENTO` |
-| INICIAR_EXECUCAO | `execucao.recusada` (apos pagamento) | `billing.cancelar-orcamento` (estorno), `execucao.liberar-reservas` | `FALHA_INICIO_EXECUCAO` |
+| INICIAR_EXECUCAO | `execucao.recusada` (aprovado, nao pago, nao executado) | `billing.cancelar-orcamento`, `execucao.liberar-reservas` (sem estorno) | `FALHA_INICIO_EXECUCAO` |
 | qualquer ate INICIAR_EXECUCAO | `POST :id/cancelar` (atendente) | conforme o passo: `execucao.liberar-reservas` desde o 1o passo; `billing.cancelar-orcamento` a partir de GERAR_ORCAMENTO | `OPERADOR` |
+| AGUARDAR_PAGAMENTO (apos a execucao) | `billing.pagamento-recusado` / prazo de pagamento vencido | **nenhuma** — pendencia: OS fica `AGUARDANDO_PAGAMENTO`, historico `pagamento-pendente` / `pagamento em atraso`, alerta `oficina_os_sagas_paradas`; `reprocessar` reenvia `billing.cobrar` | — (OS nao e cancelada) |
+
+A partir de `AGUARDAR_FINALIZACAO` nao ha cancelamento (manual ou por compensacao): o servico esta sendo ou ja foi
+executado. `PAGAMENTO_RECUSADO` e `TIMEOUT_PAGAMENTO` continuam no enum `MotivoCancelamento` por compatibilidade com
+dados antigos, mas sao **reservados/obsoletos** — a saga nao os usa mais (decisao de 03/11/2026, ADR-0012).
 
 Falha de **plataforma** (servico fora, timeout de rede, banco) nunca compensa: retry pelo
 SQS (5 tentativas) -> DLQ -> runbook. Recuperacao para frente.

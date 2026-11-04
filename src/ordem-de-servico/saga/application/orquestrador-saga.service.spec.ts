@@ -46,9 +46,9 @@ describe('OrquestradorSagaService', () => {
     jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     uow.executar.mockClear();
     repo = fakeRepo();
-    ucs = { enfileiramento: uc(), diagnostico: uc(), orcamentoGerado: uc(), orcamentoAprovado: uc(), execucaoIniciada: uc(), execucaoFinalizada: uc(), cancelamento: uc() };
+    ucs = { enfileiramento: uc(), diagnostico: uc(), orcamentoGerado: uc(), execucaoIniciada: uc(), execucaoFinalizada: uc(), pagamentoAprovado: uc(), cancelamento: uc() };
     ordens = { findByNumero: jest.fn(async () => null) };
-    svc = new OrquestradorSagaService(repo as any, ordens, uow, ucs.enfileiramento as any, ucs.diagnostico as any, ucs.orcamentoGerado as any, ucs.orcamentoAprovado as any, ucs.execucaoIniciada as any, ucs.execucaoFinalizada as any, ucs.cancelamento as any);
+    svc = new OrquestradorSagaService(repo as any, ordens, uow, ucs.enfileiramento as any, ucs.diagnostico as any, ucs.orcamentoGerado as any, ucs.execucaoIniciada as any, ucs.execucaoFinalizada as any, ucs.pagamentoAprovado as any, ucs.cancelamento as any);
   });
   afterEach(() => jest.restoreAllMocks());
 
@@ -70,13 +70,40 @@ describe('OrquestradorSagaService', () => {
     expect(repo.outbox.map((o) => o.type)).toEqual(['execucao.enfileirar', 'billing.gerar-orcamento']);
     await svc.processar({ type: 'billing.orcamento-gerado', id: 'e3', data: { numeroOS: 'OS-1', total: '1.00' } });
     expect(ucs.orcamentoGerado.execute).toHaveBeenCalledWith({ numero: 'OS-1', total: '1.00', tx: 'tx' });
-    await svc.processar({ type: 'billing.orcamento-aprovado', id: 'e4', data: { numeroOS: 'OS-1' } });
-    await svc.processar({ type: 'billing.pagamento-aprovado', id: 'e5', data: { numeroOS: 'OS-1' } });
+    // aprovado: nenhum use case de transicao (a OS so muda quando a Execucao confirma o inicio)
+    await svc.processar({ type: 'billing.orcamento-aprovado', id: 'e4', data: { numeroOS: 'OS-1', orcamentoId: 'o1' } });
     expect(repo.outbox.map((o) => o.type)).toContain('execucao.iniciar');
-    await svc.processar({ type: 'execucao.iniciada', id: 'e6', data: { numeroOS: 'OS-1' } });
-    const fim = await svc.processar({ type: 'execucao.finalizada', id: 'e7', data: { numeroOS: 'OS-1' } });
-    expect(ucs.execucaoFinalizada.execute).toHaveBeenCalledWith({ numero: 'OS-1', causationId: 'e7', tx: 'tx' });
+    expect(ucs.execucaoIniciada.execute).not.toHaveBeenCalled();
+    await svc.processar({ type: 'execucao.iniciada', id: 'e5', data: { numeroOS: 'OS-1' } });
+    expect(ucs.execucaoIniciada.execute).toHaveBeenCalledWith({ numero: 'OS-1', tx: 'tx' });
+    // executado: AGUARDANDO_PAGAMENTO + billing.cobrar (a cobranca vem depois da execucao)
+    const cobrando = await svc.processar({ type: 'execucao.finalizada', id: 'e6', data: { numeroOS: 'OS-1' } });
+    expect(ucs.execucaoFinalizada.execute).toHaveBeenCalledWith({ numero: 'OS-1', tx: 'tx' });
+    expect(cobrando.passo).toBe(PassoSaga.COBRAR);
+    expect(repo.outbox.map((o) => o.type)).toEqual(['execucao.enfileirar', 'billing.gerar-orcamento', 'execucao.iniciar', 'billing.cobrar']);
+    const aguardando = await svc.processar({ type: 'billing.cobranca-criada', id: 'e7', data: { numeroOS: 'OS-1', orderId: 'mp-1', linkPagamento: 'https://mp', valor: '1.00' } });
+    expect(aguardando.passo).toBe(PassoSaga.AGUARDAR_PAGAMENTO);
+    expect(ucs.pagamentoAprovado.execute).not.toHaveBeenCalled();
+    const fim = await svc.processar({ type: 'billing.pagamento-aprovado', id: 'e8', data: { numeroOS: 'OS-1', orderId: 'mp-1', valor: '1.00' } });
+    expect(ucs.pagamentoAprovado.execute).toHaveBeenCalledWith({ numero: 'OS-1', causationId: 'e8', tx: 'tx' });
     expect(fim.status).toBe(StatusSaga.CONCLUIDA);
+    expect(repo.outbox).toHaveLength(4);
+  });
+
+  it('pagamento recusado depois da execucao: OS intocada, saga segue EM_ANDAMENTO e reprocessar reenvia billing.cobrar', async () => {
+    await svc.iniciar(ordem(), { descricaoProblema: 'd' });
+    for (const [t, d] of [['execucao.enfileirada', {}], ['execucao.diagnostico-concluido', { mecanicoId: 'm', diagnostico: 'Pastilhas', itens: ITENS }], ['billing.orcamento-gerado', { total: '1.00' }], ['billing.orcamento-aprovado', {}], ['execucao.iniciada', {}], ['execucao.finalizada', {}], ['billing.cobranca-criada', { orderId: 'mp-1' }]] as const) {
+      await svc.processar({ type: t, id: t, data: { numeroOS: 'OS-1', ...d } });
+    }
+    const s = await svc.processar({ type: 'billing.pagamento-recusado', id: 'pr', data: { numeroOS: 'OS-1', orderId: 'mp-1', motivo: 'cartao recusado' } });
+    expect(s.status).toBe(StatusSaga.EM_ANDAMENTO); expect(s.passo).toBe(PassoSaga.AGUARDAR_PAGAMENTO);
+    expect(s.historico[s.historico.length - 1].resultado).toBe('pagamento-pendente');
+    expect(ucs.cancelamento.execute).not.toHaveBeenCalled();
+    expect(ucs.pagamentoAprovado.execute).not.toHaveBeenCalled();
+    const antes = repo.outbox.length;
+    const { reenviados } = await svc.reprocessar('OS-1');
+    expect(reenviados).toEqual(['billing.cobrar']);
+    expect(repo.outbox[antes]).toEqual({ type: 'billing.cobrar', data: { numeroOS: 'OS-1' } });
   });
 
   it('evento ignorado: nao toca a OS, mas persiste o historico', async () => {
@@ -101,10 +128,13 @@ describe('OrquestradorSagaService', () => {
 
   it('cancelamento manual rejeitado depois da execucao lanca transicao invalida', async () => {
     await svc.iniciar(ordem(), { descricaoProblema: 'd' });
-    for (const [t, d] of [['execucao.enfileirada', {}], ['execucao.diagnostico-concluido', { mecanicoId: 'm', diagnostico: 'Pastilhas', itens: ITENS }], ['billing.orcamento-gerado', { total: '1.00' }], ['billing.orcamento-aprovado', {}], ['billing.pagamento-aprovado', {}], ['execucao.iniciada', {}]] as const) {
+    for (const [t, d] of [['execucao.enfileirada', {}], ['execucao.diagnostico-concluido', { mecanicoId: 'm', diagnostico: 'Pastilhas', itens: ITENS }], ['billing.orcamento-gerado', { total: '1.00' }], ['billing.orcamento-aprovado', {}], ['execucao.iniciada', {}]] as const) {
       await svc.processar({ type: t, id: t, data: { numeroOS: 'OS-1', ...d } });
     }
     await expect(svc.processar({ type: 'os.cancelamento-manual', data: { numeroOS: 'OS-1', motivo: MotivoCancelamento.OPERADOR } })).rejects.toThrow(InvalidStatusTransitionError);
+    // tambem depois de executado, aguardando o pagamento
+    await svc.processar({ type: 'execucao.finalizada', id: 'f', data: { numeroOS: 'OS-1' } });
+    await expect(svc.processar({ type: 'os.cancelamento-manual', data: { numeroOS: 'OS-1' } })).rejects.toThrow(InvalidStatusTransitionError);
     expect(ucs.cancelamento.execute).not.toHaveBeenCalled();
   });
 
@@ -122,21 +152,25 @@ describe('OrquestradorSagaService', () => {
   });
 
   it('OS sem saga e adotada a partir do status; OS inexistente -> NOT_FOUND', async () => {
-    ordens.findByNumero.mockResolvedValueOnce(ordem(StatusOS.EM_EXECUCAO));
-    const s = await svc.processar({ type: 'execucao.finalizada', id: 'f', data: { numeroOS: 'OS-1' } });
+    ordens.findByNumero.mockResolvedValueOnce(ordem(StatusOS.AGUARDANDO_PAGAMENTO));
+    const s = await svc.processar({ type: 'billing.pagamento-aprovado', id: 'f', data: { numeroOS: 'OS-1', orderId: 'mp-1', valor: '1.00' } });
     expect(s.status).toBe(StatusSaga.CONCLUIDA);
-    expect(ucs.execucaoFinalizada.execute).toHaveBeenCalled();
+    expect(ucs.pagamentoAprovado.execute).toHaveBeenCalled();
+    ordens.findByNumero.mockResolvedValueOnce(ordem(StatusOS.EM_EXECUCAO));
+    const s2 = await svc.processar({ type: 'execucao.finalizada', id: 'f2', data: { numeroOS: 'OS-2' } });
+    expect(s2.passo).toBe(PassoSaga.COBRAR);
+    expect(repo.outbox[repo.outbox.length - 1]).toEqual({ type: 'billing.cobrar', data: { numeroOS: 'OS-2' } });
     await expect(svc.processar({ type: 'execucao.finalizada', data: { numeroOS: 'OS-404' } })).rejects.toThrow(OrdemDeServicoNotFoundError);
   });
 
   it('falha simulada (demo): o evento de sucesso vira falha no passo marcado e a saga compensa', async () => {
-    await svc.iniciar(ordem(), { descricaoProblema: 'd', falhaSimulada: PassoSaga.AGUARDAR_PAGAMENTO });
+    await svc.iniciar(ordem(), { descricaoProblema: 'd', falhaSimulada: PassoSaga.INICIAR_EXECUCAO });
     for (const [t, d] of [['execucao.enfileirada', {}], ['execucao.diagnostico-concluido', { mecanicoId: 'm', diagnostico: 'Pastilhas', itens: ITENS }], ['billing.orcamento-gerado', { total: '1.00' }], ['billing.orcamento-aprovado', {}]] as const) {
       await svc.processar({ type: t, id: t, data: { numeroOS: 'OS-1', ...d } });
     }
-    const s = await svc.processar({ type: 'billing.pagamento-aprovado', id: 'pa', data: { numeroOS: 'OS-1' } });
+    const s = await svc.processar({ type: 'execucao.iniciada', id: 'ei', data: { numeroOS: 'OS-1' } });
     expect(s.status).toBe(StatusSaga.COMPENSANDO);
-    expect(ucs.cancelamento.execute).toHaveBeenCalledWith(expect.objectContaining({ motivo: MotivoCancelamento.PAGAMENTO_RECUSADO }));
+    expect(ucs.cancelamento.execute).toHaveBeenCalledWith(expect.objectContaining({ motivo: MotivoCancelamento.FALHA_INICIO_EXECUCAO }));
     expect(repo.outbox.slice(-2).map((o) => o.type)).toEqual(['billing.cancelar-orcamento', 'execucao.liberar-reservas']);
     expect(s.falhaSimulada).toBeNull();
   });
@@ -183,6 +217,24 @@ describe('OrquestradorSagaService', () => {
       expect(ucs.cancelamento.execute).toHaveBeenCalledWith(expect.objectContaining({ motivo: MotivoCancelamento.TIMEOUT_APROVACAO }));
       expect(repo.store.get('OS-1')?.status).toBe(StatusSaga.COMPENSANDO);
       delete process.env.SAGA_TIMEOUT_APROVACAO_MS;
+    });
+    it('pagamento vencido (pos-execucao): o relogio registra o atraso e nao cancela', async () => {
+      process.env.SAGA_TIMEOUT_PAGAMENTO_MS = '1000';
+      await svc.iniciar(ordem(), { descricaoProblema: 'd' });
+      for (const [t, d] of [['execucao.enfileirada', {}], ['execucao.diagnostico-concluido', { mecanicoId: 'm', diagnostico: 'Pastilhas', itens: ITENS }], ['billing.orcamento-gerado', { total: '1.00' }], ['billing.orcamento-aprovado', {}], ['execucao.iniciada', {}], ['execucao.finalizada', {}]] as const) {
+        await svc.processar({ type: t, id: t, data: { numeroOS: 'OS-1', ...d } });
+      }
+      const t0 = new Date();
+      await svc.processar({ type: 'billing.cobranca-criada', id: 'cc', data: { numeroOS: 'OS-1', orderId: 'mp-1' } }, t0);
+      const relogio = new SagaTimeoutsService(repo as any, svc);
+      expect(await relogio.varrer(new Date(t0.getTime() + 1500))).toBe(1);
+      const s = repo.store.get('OS-1')!;
+      expect(s.status).toBe(StatusSaga.EM_ANDAMENTO); expect(s.passo).toBe(PassoSaga.AGUARDAR_PAGAMENTO); expect(s.prazoPagamento).toBeNull();
+      expect(s.historico[s.historico.length - 1].detalhe).toContain('pagamento em atraso');
+      expect(ucs.cancelamento.execute).not.toHaveBeenCalled();
+      // segunda varredura nao reencontra a saga
+      expect(await relogio.varrer(new Date(t0.getTime() + 3000))).toBe(0);
+      delete process.env.SAGA_TIMEOUT_PAGAMENTO_MS;
     });
     it('nao agenda com MESSAGING_AUTOSTART=false; agenda e limpa o timer caso contrario', () => {
       const r = new SagaTimeoutsService(repo as any, svc);

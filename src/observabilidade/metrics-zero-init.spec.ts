@@ -13,6 +13,13 @@ describe("inicializarSeriesDeNegocio", () => {
     expect(texto).toContain(
       'oficina_os_tempo_no_status_seconds_count{status="EM_EXECUCAO"} 0',
     );
+    // cobranca depois da execucao (ADR-0012)
+    expect(texto).toContain(
+      'oficina_os_transicoes_total{de="EM_EXECUCAO",para="AGUARDANDO_PAGAMENTO"} 0',
+    );
+    expect(texto).toContain(
+      'oficina_os_tempo_no_status_seconds_count{status="AGUARDANDO_PAGAMENTO"} 0',
+    );
   });
 
   it("e idempotente (nao zera contagens ja registradas)", async () => {

@@ -19,8 +19,8 @@ Enum StatusOrdemDeServico {
   RECEBIDA
   EM_DIAGNOSTICO
   AGUARDANDO_APROVACAO
-  AGUARDANDO_PAGAMENTO
   EM_EXECUCAO
+  AGUARDANDO_PAGAMENTO // apos a execucao (cobranca so pelo servico realizado, ADR-0012)
   FINALIZADA
   ENTREGUE
   CANCELADA
@@ -192,13 +192,13 @@ Table saga_os {
   cliente_id uuid [not null]
   veiculo_id uuid [not null]
   descricao_problema varchar [not null]
-  passo varchar [not null, note: 'ENFILEIRAR_EXECUCAO | AGUARDAR_DIAGNOSTICO | GERAR_ORCAMENTO | AGUARDAR_APROVACAO | AGUARDAR_PAGAMENTO | INICIAR_EXECUCAO | AGUARDAR_FINALIZACAO | CONCLUIDA']
+  passo varchar [not null, note: 'ENFILEIRAR_EXECUCAO | AGUARDAR_DIAGNOSTICO | GERAR_ORCAMENTO | AGUARDAR_APROVACAO | INICIAR_EXECUCAO | AGUARDAR_FINALIZACAO | COBRAR | AGUARDAR_PAGAMENTO | CONCLUIDA']
   status varchar [not null, note: 'EM_ANDAMENTO | COMPENSANDO | CONCLUIDA | CANCELADA']
   passo_desde timestamp [not null, note: 'entrada no passo atual']
-  historico jsonb [not null, note: '[{em, passo, evento, resultado, detalhe}]']
+  historico jsonb [not null, note: '[{em, passo, evento, resultado, detalhe}]; resultado inclui pagamento-pendente (pagamento recusado/em atraso apos a execucao)']
   compensacoes jsonb [not null, note: '[{comando, enviadaEm, confirmadaEm}]']
   prazo_aprovacao timestamp
-  prazo_pagamento timestamp
+  prazo_pagamento timestamp [note: 'so para metrica/alerta de pagamento em atraso — nao cancela (ADR-0012)']
   falha_simulada varchar [note: 'demo: passo em que a saga simula a falha (US-F4-11)']
   version int [not null, default: 0]
   created_at timestamp [default: `now()`]

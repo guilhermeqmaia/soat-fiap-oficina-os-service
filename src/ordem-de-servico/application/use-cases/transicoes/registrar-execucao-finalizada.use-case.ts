@@ -2,7 +2,6 @@ import { Inject, Injectable } from '@nestjs/common';
 import { UseCase, DOMAIN_EVENT_PUBLISHER, DomainEventPublisher } from '@guilhermeqmaia/oficina-kit/core';
 import { OrdemDeServico } from '../../../domain/ordem-de-servico.entity';
 import { StatusOS } from '../../../domain/value-objects/status-os.vo';
-import { OsFinalizadaEvent } from '../../../../shared/domain/events/os-finalizada.event';
 import { ORDEM_DE_SERVICO_GATEWAY, OrdemDeServicoGateway } from '../../gateways/ordem-de-servico.gateway';
 import { registrarTransicao } from './registrar-transicao.base';
 
@@ -10,10 +9,12 @@ export interface RegistrarExecucaoFinalizadaInput {
   numero: string;
   /** Unit of work do orquestrador (OS + saga + outbox na mesma transacao). */
   tx?: unknown;
-  causationId?: string;
 }
 
-/** `execucao.finalizada` -> FINALIZADA + notificacao "veiculo pronto". */
+/**
+ * `execucao.finalizada` -> AGUARDANDO_PAGAMENTO (ADR-0012: a cobranca vem depois
+ * do servico executado). `os.finalizada` so sai com `billing.pagamento-aprovado`.
+ */
 @Injectable()
 export class RegistrarExecucaoFinalizadaUseCase implements UseCase<RegistrarExecucaoFinalizadaInput, OrdemDeServico> {
   constructor(
@@ -22,13 +23,10 @@ export class RegistrarExecucaoFinalizadaUseCase implements UseCase<RegistrarExec
   ) {}
 
   async execute(input: RegistrarExecucaoFinalizadaInput): Promise<OrdemDeServico> {
-    const { ordem, aplicada } = await registrarTransicao(this.gateway, this.events, input.numero, StatusOS.FINALIZADA, (os) =>
-      os.finalizar(input.causationId),
+    const { ordem } = await registrarTransicao(this.gateway, this.events, input.numero, StatusOS.AGUARDANDO_PAGAMENTO, (os) =>
+      os.aguardarPagamento(),
       input.tx,
     );
-    if (aplicada && ordem.id) {
-      this.events.publish(new OsFinalizadaEvent(ordem.id, ordem.numero, ordem.clienteId));
-    }
     return ordem;
   }
 }

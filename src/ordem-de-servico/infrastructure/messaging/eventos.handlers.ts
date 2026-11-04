@@ -57,6 +57,10 @@ export class BillingOrcamentoRejeitadoHandler extends EventoSagaHandler {
   readonly type = 'billing.orcamento-rejeitado';
 }
 @Injectable()
+export class BillingCobrancaCriadaHandler extends EventoSagaHandler {
+  readonly type = 'billing.cobranca-criada';
+}
+@Injectable()
 export class BillingPagamentoAprovadoHandler extends EventoSagaHandler {
   readonly type = 'billing.pagamento-aprovado';
 }

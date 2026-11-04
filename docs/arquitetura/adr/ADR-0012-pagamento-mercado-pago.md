@@ -1,7 +1,7 @@
 # ADR-0012: Pagamento com Mercado Pago (Checkout Pro + webhook)
 
 **Status:** Aceita
-**Data:** 2026-09-30 (revisada em 2026-11-03)
+**Data:** 2026-09-30 (revisada em 2026-11-03: Orders; momento do pagamento)
 
 ## Contexto
 
@@ -28,10 +28,23 @@ recurso de integração.
   nenhum dado de cartão passa pelo nosso sistema. O `id` da order é a chave externa
   da `Cobranca`. Não há `notification_url` por order: o webhook é o da **aplicação**
   (painel → Configuração de webhooks, evento **Order**), um por ambiente.
-- **Momento:** o pagamento acontece **na aprovação do orçamento** — novo status
-  **`AGUARDANDO_PAGAMENTO`** entre `AGUARDANDO_APROVACAO` e `EM_EXECUCAO`. A
-  execução só começa com pagamento aprovado (é o que torna a compensação
-  "pagamento recusado → liberar reservas → cancelar" demonstrável).
+- **Momento:** o pagamento acontece **depois da execução do serviço** —
+  `EM_EXECUCAO → AGUARDANDO_PAGAMENTO → FINALIZADA`. A aprovação do orçamento
+  (`billing.orcamento-aprovado`) apenas libera a execução; ao receber
+  `execucao.finalizada` o orquestrador envia o comando **`billing.cobrar`**, o
+  Billing cria a order com o total do orçamento aprovado e publica
+  **`billing.cobranca-criada`** (link de pagamento para a Notificação). Com
+  `billing.pagamento-aprovado` a OS vai para `FINALIZADA`; o veículo **só é
+  entregue** (`ENTREGUE`) depois do pagamento.
+- **Sem estorno por compensação:** nada é pago antes de executar, então as
+  compensações da saga (orçamento rejeitado, timeout de aprovação, falha ao
+  iniciar a execução, cancelamento manual) nunca precisam reembolsar — apenas
+  cancelam o orçamento e liberam reservas.
+- **Inadimplência:** pagamento recusado ou em atraso **não cancela** a OS (o
+  serviço já foi feito). A OS fica retida em `AGUARDANDO_PAGAMENTO`, a saga
+  registra `pagamento-pendente` e a gauge `oficina_os_sagas_paradas` dispara o
+  alerta; `POST /admin/sagas/:numero/reprocessar` reenvia `billing.cobrar`
+  (nova order). O motivo `TIMEOUT_PAGAMENTO` fica reservado/obsoleto.
 - **Webhook** `POST /webhooks/mercadopago` público no gateway (sem JWT), validado
   no Billing pelo cabeçalho **`x-signature`** (`ts` + `v1`, HMAC com a assinatura
   secreta do painel, calculado sobre `x-request-id` e `data.id`; os SDKs oficiais
@@ -41,10 +54,10 @@ recurso de integração.
   idempotente por **id da order**.
 - **Reconciliação:** job periódico consulta por `GET /v1/orders/{id}` as cobranças
   `PENDENTE` há mais de 15 min (webhook perdido) — recuperação para frente.
-- **Estorno/cancelamento** pelos endpoints de Orders quando a compensação exigir
-  (reembolso da order paga; cancelamento da order ainda não paga); **ledger**
-  append-only registra orçamento, cobrança, pagamento e estorno (nunca se edita
-  um lançamento).
+- **Cancelamento da order** pelos endpoints de Orders quando uma nova cobrança
+  é emitida (reprocessamento) ou a order expira; **ledger** append-only registra
+  orçamento, cobrança e pagamento (nunca se edita um lançamento). Reembolso fica
+  fora do fluxo da saga (só por operação manual).
 - **SDK:** `mercadopago` 2.x para Node, classe `Order` (`order.create`).
 - Credenciais (access token, assinatura secreta do webhook) no **Secrets Manager**;
   credenciais de teste, contas de teste e cartões de teste (titular `APRO`
@@ -60,11 +73,21 @@ recurso de integração.
   recurso legado significaria migrar em seguida.
 - **Checkout Transparente / Bricks** — exigiria tratar dados de cartão (ou
   tokenização) no nosso front; mais superfície de segurança sem ganho didático.
+- **Pagar na aprovação do orçamento** (`AGUARDANDO_PAGAMENTO` antes de
+  `EM_EXECUCAO`, modelo desta ADR até 03/11/2026) — tornava a compensação
+  "pagamento recusado → estorno → cancelar" demonstrável, mas cobrava o cliente
+  por um serviço ainda não realizado e exigia estorno em várias compensações.
+  Rejeitada em 03/11/2026: o time preferiu cobrar só pelo serviço efetivamente
+  realizado.
 
 ## Consequências
 
-- Máquina de estados da OS ganha um status; UIs `admin`/`cliente` mostram o link de pagamento.
-- A notificação "orçamento aprovado" passa a carregar o link de pagamento (`checkout_url` da order).
+- Máquina de estados da OS ganha um status (`AGUARDANDO_PAGAMENTO`, entre
+  `EM_EXECUCAO` e `FINALIZADA`); UIs `admin`/`cliente` mostram o link de pagamento.
+- A notificação de "cobrança criada" (`billing.cobranca-criada`) carrega o link de
+  pagamento (`checkout_url` da order); a de "orçamento aprovado" não tem link.
+- A saga não tem compensação para falha de pagamento: pagamento recusado/em atraso
+  é pendência operacional (OS retida, alerta, nova cobrança por reprocessamento).
 - O evento `billing.pagamento-aprovado` carrega o `orderId` (id da order) no lugar
   de um `payment.id`; o OS Service apenas repassa esse valor.
 - O webhook é configurado por aplicação no painel (não por order): a URL pública
@@ -78,6 +101,9 @@ recurso de integração.
 - 2026-11-03: revisada de Preferences para Orders — Preferences passou a ser
   tratada como legado pelo Mercado Pago. Aplicação `oficina-billing-fiap` criada
   no painel com a API de Orders.
+- 2026-11-03: momento do pagamento movido da aprovação para após a execução
+  (decisão do time). Novos `billing.cobrar` / `billing.cobranca-criada`;
+  `billing.orcamento-aprovado` sem cobrança.
 
 ## Referências
 

@@ -20,11 +20,11 @@ nunca corrigir saldo "so na memoria da maquina").
 
 - [ ] Consome `billing.gerar-orcamento` (comando com itens e precos congelados) -> cria `Orcamento` (itens, subtotal, total, validade) -> publica `billing.orcamento-gerado`
 - [ ] `GET /orcamentos/:id` e `GET /orcamentos?os=` com posse por CPF (claim) para CLIENTE
-- [ ] `POST /orcamentos/:id/aprovar` -> cria a cobranca ([US-F4-09](f4-09-billing-mercado-pago.md)) -> publica `billing.orcamento-aprovado` (com link de pagamento)
+- [ ] `POST /orcamentos/:id/aprovar` -> publica `billing.orcamento-aprovado` `{ numeroOS, orcamentoId }` (**sem** cobranca: a order so e criada ao receber `billing.cobrar`, apos a execucao — [US-F4-09](f4-09-billing-mercado-pago.md))
 - [ ] `POST /orcamentos/:id/rejeitar` -> publica `billing.orcamento-rejeitado`
-- [ ] Consome `billing.cancelar-orcamento` (compensacao) -> cancela orcamento e cobranca pendente -> `billing.orcamento-cancelado` (idempotente)
+- [ ] Consome `billing.cancelar-orcamento` (compensacao, so antes da execucao) -> cancela orcamento -> `billing.orcamento-cancelado` (idempotente; `estornado` sempre false)
 - [ ] Orcamento e imutavel apos aprovado; nova versao exige novo diagnostico
-- [ ] Tabela `ledger` append-only com todo lancamento (orcamento, cobranca, pagamento, estorno)
+- [ ] Tabela `ledger` append-only com todo lancamento (orcamento, cobranca, pagamento)
 - [ ] Testes >= 80%; Swagger
 ## Dependencias
 
