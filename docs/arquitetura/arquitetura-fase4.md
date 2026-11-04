@@ -2,7 +2,7 @@
 
 Desenho da arquitetura final da Fase 4: o monólito virou **três microsserviços**
 (OS, Billing e Execução) que conversam por **HTTP direto com callbacks**
-(RFC-0008), cada um com o **próprio banco** (dois Postgres + DynamoDB), todos
+(RFC-0008), cada um com o **próprio banco** (duas instâncias RDS Postgres + DynamoDB), todos
 atrás do **mesmo API Gateway** e orquestrados por uma **saga** que vive no OS
 Service. Os diagramas estão em [Mermaid](https://mermaid.js.org/) e são
 renderizados diretamente pelo GitHub. A Fase 4 é uma **evolução** da
@@ -55,7 +55,9 @@ flowchart TB
                 EXEC["<b>Execução Service</b> :3002<br/>fila, diagnóstico,<br/>catálogo e estoque"]
             end
 
-            RDS[("RDS PostgreSQL Multi-AZ<br/>oficina_mecanica (OS) · oficina_billing")]
+            RDSOS[("RDS PostgreSQL do OS<br/>oficina_mecanica")]
+            RDSBI[("RDS PostgreSQL do Billing<br/>oficina_billing")]
+            VPCE["VPC Gateway Endpoint<br/>DynamoDB (política por tabela)"]
         end
 
         DYNAMO[("DynamoDB<br/>tabela única da Execução<br/>PK/SK + GSI1 + GSI2")]
@@ -74,10 +76,10 @@ flowchart TB
     EXEC -. "callback: diagnostico-concluido, finalizada" .-> OS
     BILL -. "callback: orcamento-aprovado/rejeitado,<br/>pagamento-aprovado/recusado" .-> OS
 
-    OS --> RDS
-    BILL --> RDS
-    LAMBDA -- "consulta CPF/status" --> RDS
-    EXEC --> DYNAMO
+    OS --> RDSOS
+    BILL --> RDSBI
+    LAMBDA -- "consulta CPF/status" --> RDSOS
+    EXEC --> VPCE --> DYNAMO
     BILL -- "POST /v1/orders" --> MP
     MP -- "webhook order (x-signature)" --> GW
 ```
@@ -90,9 +92,9 @@ Datadog** no cluster recolhe traces, logs e métricas dos três serviços.
 
 | Serviço | Repositório | Banco | O que guarda |
 |---|---|---|---|
-| OS Service | `soat-fiap-oficina-os-service` (este, hub de docs) | Postgres `oficina_mecanica` | clientes, veículos, OS com snapshot dos itens, `saga_os`, `processed_messages`, notificações, usuários |
-| Billing Service | `soat-fiap-oficina-billing-service` | Postgres `oficina_billing` | orçamentos e itens, aprovação/rejeição, cobranças (order do Mercado Pago), eventos de webhook |
-| Execução Service | `soat-fiap-oficina-execucao-service` | DynamoDB (tabela única) | fila de execução, diagnóstico, catálogo de serviços/produtos, reservas e movimentos de estoque |
+| OS Service | `soat-fiap-oficina-os-service` (este, hub de docs) | RDS próprio, Postgres `oficina_mecanica` | clientes, veículos, OS com snapshot dos itens, `saga_os`, `processed_messages`, notificações, usuários |
+| Billing Service | `soat-fiap-oficina-billing-service` | RDS próprio, Postgres `oficina_billing` | orçamentos e itens, aprovação/rejeição, cobranças (order do Mercado Pago), eventos de webhook |
+| Execução Service | `soat-fiap-oficina-execucao-service` | DynamoDB (tabela única, via VPC Endpoint) | fila de execução, diagnóstico, catálogo de serviços/produtos, reservas e movimentos de estoque |
 
 ---
 
@@ -100,10 +102,12 @@ Datadog** no cluster recolhe traces, logs e métricas dos três serviços.
 
 Uma VPC `10.0.0.0/16` em **duas zonas de disponibilidade**, com uma subnet
 pública e uma privada por AZ. Tudo o que executa fica nas **subnets privadas**:
-nodes do EKS, NLB interno, RDS e as ENIs da Lambda. As subnets públicas só têm
+nodes do EKS, NLB interno, as duas instâncias RDS e as ENIs da Lambda. O
+DynamoDB é um serviço regional e não tem interface na VPC; ele é alcançado por
+um **VPC Gateway Endpoint** (gratuito) nas route tables privadas, com política
+restrita à tabela da Execução, sem passar pelo NAT. As subnets públicas só têm
 o **Internet Gateway** e um **NAT Gateway** (um só, na primeira AZ, por custo),
-por onde os nodes saem para ECR, DynamoDB, Secrets Manager, Datadog e Mercado
-Pago. Não há nenhum load balancer público: a entrada é sempre o API Gateway,
+por onde os nodes saem para ECR, Secrets Manager, Datadog e Mercado Pago. Não há nenhum load balancer público: a entrada é sempre o API Gateway,
 que alcança o NLB pelo **VPC Link**.
 
 ```mermaid
@@ -124,16 +128,19 @@ flowchart TB
 
         subgraph PRIV["Subnets privadas 10.0.128.0/20 (AZ a) · 10.0.144.0/20 (AZ b)"]
             NODES["Managed node group EKS<br/>t3.medium · 2 a 4 nodes · espalhados nas 2 AZs<br/>pods: os-service · billing-service · execucao-service · datadog"]
-            RDS[("RDS PostgreSQL Multi-AZ<br/>primário AZ a · standby AZ b<br/>oficina_mecanica · oficina_billing")]
+            RDSOS[("RDS do OS Service<br/>Multi-AZ · oficina_mecanica")]
+            RDSBI[("RDS do Billing<br/>Multi-AZ · oficina_billing")]
         end
+
+        VPCE["VPC Gateway Endpoint · DynamoDB<br/>nas route tables privadas · política só para a tabela oficina-execucao"]
 
         CP["EKS control plane (gerenciado pela AWS)<br/>endpoint público + privado"]
     end
 
+    DYN[("DynamoDB<br/>tabela oficina-execucao")]
     subgraph REG["Serviços regionais (endpoints públicos, via NAT)"]
         ECR["ECR"]
         SM["Secrets Manager · SSM"]
-        DYN[("DynamoDB")]
         CW["CloudWatch"]
     end
     EXT["Datadog (SaaS) · Mercado Pago"]
@@ -142,8 +149,9 @@ flowchart TB
     GW -- "POST /auth · authorizer" --> LAMBDA
     GW -- "VPC Link" --> VPCLINK --> NLB
     NLB -- "TCP → NodePort" --> NODES
-    NODES -- "5432 (SG dos nodes)" --> RDS
-    LAMBDA -- "5432 (SG auth_lambda)" --> RDS
+    NODES -- "5432 (SG dos nodes)" --> RDSOS & RDSBI
+    LAMBDA -- "5432 (SG auth_lambda)" --> RDSOS
+    NODES -- "rota do prefixo do DynamoDB" --> VPCE --> DYN
     CP -. "kubelet / API" .- NODES
     NODES -- "0.0.0.0/0" --> NAT --> IGW
     IGW --> REG
@@ -152,14 +160,15 @@ flowchart TB
 
 Regras de segurança que importam:
 
-- **RDS** aceita 5432 só dos security groups dos nodes e da Lambda (`rds_ingress_sg`), nunca da internet (`publicly_accessible = false`).
+- **RDS**: uma instância por serviço (ADR-0014), cada uma com o próprio security group aceitando 5432 só dos nodes (e da Lambda, no caso do OS), nunca da internet (`publicly_accessible = false`). O segredo de cada serviço só contém o próprio host.
+- **DynamoDB** só é alcançado pelo VPC Gateway Endpoint, cuja política permite apenas a tabela `oficina-execucao` e seus índices; o tráfego nunca sai para a internet.
 - **NLB** é `internal = true`; o target group aponta para os **nodes** (NodePort), por isso não precisa de AWS Load Balancer Controller.
 - **VPC Link** tem SG próprio com saída apenas para o NLB/nodes.
 - A **Lambda** fica na VPC para chegar ao RDS; sai para o Secrets Manager pelo NAT.
 - As chamadas **entre serviços** nunca saem do cluster: `http://billing-service:3001`, `http://execucao-service:3002` (DNS do namespace `oficina`).
 
 Custo: o desenho é o mínimo para alta disponibilidade do banco e do cluster
-(duas AZs, RDS Multi-AZ) com um único NAT Gateway; o cluster fica **desligado**
+(duas AZs, RDS Multi-AZ) com um único NAT Gateway e um endpoint de gateway gratuito; o cluster fica **desligado**
 fora das janelas de demo e é recriado pelo CI do `infra-k8s`.
 
 ---
@@ -390,8 +399,9 @@ flowchart LR
     end
 
     NLB["NLB interno<br/>listener 3000 → TG 30080<br/>listener 3001 → TG 30081<br/>listener 3002 → TG 30082"]
-    RDS[("RDS: oficina_mecanica · oficina_billing")]
-    DYN[("DynamoDB")]
+    RDSOS[("RDS do OS: oficina_mecanica")]
+    RDSBI[("RDS do Billing: oficina_billing")]
+    DYN[("DynamoDB (via VPC Endpoint)")]
 
     CIOS & CIBI & CIEX --> ECR
     CIOS --> DOS & JOS
@@ -401,7 +411,8 @@ flowchart LR
     NLB --> SOS --> DOS
     NLB --> SBI --> DBI
     NLB --> SEX --> DEX
-    DOS & JOS & DBI & JBI --> RDS
+    DOS & JOS --> RDSOS
+    DBI & JBI --> RDSBI
     DEX --> DYN
     DOS -- "DNS interno" --> SBI & SEX
     MS -. métricas .-> DOS & DBI & DEX
@@ -420,4 +431,4 @@ flowchart LR
 | Kit compartilhado e cliente HTTP interno | [ADR-0010](adr/) |
 | Mercado Pago via API de Orders, cobrança após a execução | [ADR-0012](adr/ADR-0012-pagamento-mercado-pago.md) |
 | Gateway único com NLB e um listener por serviço | [ADR-0013](adr/) |
-| Bancos por serviço no mesmo RDS | [US-F4-03](../user-stories/f4-03-bancos-por-servico.md) |
+| Uma instância RDS por serviço e VPC Endpoint para o DynamoDB | [ADR-0014](adr/ADR-0014-instancia-rds-por-servico-e-endpoint-dynamodb.md), [US-F4-03](../user-stories/f4-03-bancos-por-servico.md) |
