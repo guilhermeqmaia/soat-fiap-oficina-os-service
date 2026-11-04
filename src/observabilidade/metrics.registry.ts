@@ -80,11 +80,12 @@ export function inicializarSeriesDeNegocio(): void {
     ['EM_DIAGNOSTICO', 'AGUARDANDO_APROVACAO'],
     ['AGUARDANDO_APROVACAO', 'EM_EXECUCAO'],
     ['AGUARDANDO_APROVACAO', 'CANCELADA'],
-    ['EM_EXECUCAO', 'FINALIZADA'],
+    ['EM_EXECUCAO', 'AGUARDANDO_PAGAMENTO'],
+    ['AGUARDANDO_PAGAMENTO', 'FINALIZADA'],
     ['FINALIZADA', 'ENTREGUE'],
   ];
   for (const [de, para] of transicoes) osTransicoes.inc({ de, para }, 0);
-  for (const status of ['RECEBIDA', 'EM_DIAGNOSTICO', 'AGUARDANDO_APROVACAO', 'EM_EXECUCAO', 'FINALIZADA']) {
+  for (const status of ['RECEBIDA', 'EM_DIAGNOSTICO', 'AGUARDANDO_APROVACAO', 'EM_EXECUCAO', 'AGUARDANDO_PAGAMENTO', 'FINALIZADA']) {
     osTempoNoStatus.zero({ status });
   }
   for (const resultado of ['sucesso', 'falha']) {

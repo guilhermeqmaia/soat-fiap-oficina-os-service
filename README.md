@@ -573,19 +573,27 @@ awslocal sqs receive-message --queue-url http://localhost:4566/000000000000/noti
 O ciclo de vida da OS atravessa três serviços e três bancos; a consistência é garantida por uma
 **saga orquestrada**, com o orquestrador dentro do OS Service (decisão e justificativa na
 [RFC-0005](docs/arquitetura/rfcs/RFC-0005-estrategia-de-saga.md): o OS Service já é o dono da
-máquina de estados da OS, o fluxo tem 8 passos e 4 cenários de compensação cruzada, e o estado
+máquina de estados da OS, o fluxo tem 9 passos e 4 cenários de compensação cruzada, e o estado
 precisa ser explícito e consultável).
 
 - **Estado persistido** em `saga_os` (passo, status, histórico, compensações, prazos) e exposto em
   `GET /ordens-servico/numero/:numero/saga`.
 - **Passos:** `ENFILEIRAR_EXECUCAO → AGUARDAR_DIAGNOSTICO → GERAR_ORCAMENTO → AGUARDAR_APROVACAO →
-  AGUARDAR_PAGAMENTO → INICIAR_EXECUCAO → AGUARDAR_FINALIZACAO → CONCLUIDA`. Cada passo envia um
-  **comando** pelo outbox (`execucao.enfileirar`, `billing.gerar-orcamento`, `execucao.iniciar`) e só
-  avança com o **evento** esperado; duplicados e fora de ordem são ignorados e registrados.
+  INICIAR_EXECUCAO → AGUARDAR_FINALIZACAO → COBRAR → AGUARDAR_PAGAMENTO → CONCLUIDA`. Cada passo envia um
+  **comando** pelo outbox (`execucao.enfileirar`, `billing.gerar-orcamento`, `execucao.iniciar`,
+  `billing.cobrar`) e só avança com o **evento** esperado; duplicados e fora de ordem são ignorados e
+  registrados. A **cobrança acontece depois da execução** (decisão do time, 03/11 — ADR-0012):
+  `execucao.finalizada` leva a OS a `AGUARDANDO_PAGAMENTO` e dispara `billing.cobrar`; o link de
+  pagamento chega em `billing.cobranca-criada`; `billing.pagamento-aprovado` leva a `FINALIZADA`.
 - **Compensação** (recuperação para trás): `billing.cancelar-orcamento` e/ou
   `execucao.liberar-reservas`, enfileirados em ordem inversa e executados em paralelo pelos
   participantes (filas distintas); OS `CANCELADA` com o motivo; a saga fica `COMPENSANDO` até
-  todas as confirmações chegarem. Toda compensação é idempotente nos participantes. **Timeouts** de aprovação/pagamento (`SAGA_TIMEOUT_*`) disparam a mesma compensação.
+  todas as confirmações chegarem. Toda compensação é idempotente nos participantes e nunca envolve
+  estorno (nada é pago antes de executar). O **timeout de aprovação** (`SAGA_TIMEOUT_APROVACAO_*`)
+  dispara a mesma compensação. Cancelar só é possível até a execução começar.
+- **Pagamento recusado / em atraso** (após a execução) **não** compensa: a OS fica retida em
+  `AGUARDANDO_PAGAMENTO`, a saga registra `pagamento-pendente` e `oficina_os_sagas_paradas` alerta;
+  `POST /admin/sagas/:numero/reprocessar` reenvia `billing.cobrar` (nova cobrança).
   Falha de plataforma nunca compensa: retry pelo SQS e DLQ.
 - Notificação fica **coreografada** (só assina fatos) — os dois estilos convivem onde cada um cabe.
 - **Consistência:** cada evento roda numa única transação (OS + saga + outbox no mesmo Postgres);

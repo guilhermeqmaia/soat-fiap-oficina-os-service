@@ -15,8 +15,8 @@ import {
   RegistrarEnfileiramentoUseCase,
   RegistrarExecucaoFinalizadaUseCase,
   RegistrarExecucaoIniciadaUseCase,
-  RegistrarOrcamentoAprovadoUseCase,
   RegistrarOrcamentoGeradoUseCase,
+  RegistrarPagamentoAprovadoUseCase,
 } from './index';
 
 /** Gateway em memoria: guarda a OS por numero e conta updates. */
@@ -38,11 +38,11 @@ const comId = (os: OrdemDeServico) =>
 const nova = (status = StatusOS.RECEBIDA) => {
   const os = OrdemDeServico.create({ clienteId: 'cli-1', veiculoId: 'vei-1', descricaoInicial: 'Barulho ao frenar' });
   if (status !== StatusOS.RECEBIDA) os.iniciarDiagnostico();
-  if ([StatusOS.AGUARDANDO_APROVACAO, StatusOS.AGUARDANDO_PAGAMENTO, StatusOS.EM_EXECUCAO, StatusOS.FINALIZADA].includes(status)) {
+  if ([StatusOS.AGUARDANDO_APROVACAO, StatusOS.EM_EXECUCAO, StatusOS.AGUARDANDO_PAGAMENTO, StatusOS.FINALIZADA].includes(status)) {
     os.registrarDiagnostico({ diagnostico: 'Pastilhas gastas', mecanicoId: 'mec-1', itens: [] }); os.aguardarAprovacao();
   }
-  if ([StatusOS.AGUARDANDO_PAGAMENTO, StatusOS.EM_EXECUCAO, StatusOS.FINALIZADA].includes(status)) os.aguardarPagamento();
-  if ([StatusOS.EM_EXECUCAO, StatusOS.FINALIZADA].includes(status)) os.iniciarExecucao();
+  if ([StatusOS.EM_EXECUCAO, StatusOS.AGUARDANDO_PAGAMENTO, StatusOS.FINALIZADA].includes(status)) os.iniciarExecucao();
+  if ([StatusOS.AGUARDANDO_PAGAMENTO, StatusOS.FINALIZADA].includes(status)) os.aguardarPagamento();
   if (status === StatusOS.FINALIZADA) os.finalizar();
   return comId(os);
 };
@@ -105,26 +105,43 @@ describe('transicoes dirigidas por eventos (idempotentes — ADR-0009)', () => {
     expect(events.publicados).toHaveLength(0);
   });
 
-  it('billing.orcamento-aprovado -> AGUARDANDO_PAGAMENTO; execucao.iniciada -> EM_EXECUCAO', async () => {
+  it('execucao.iniciada -> EM_EXECUCAO direto de AGUARDANDO_APROVACAO (a aprovacao nao muda a OS)', async () => {
     const os = nova(StatusOS.AGUARDANDO_APROVACAO); const g = fakeGateway(os);
-    expect((await new RegistrarOrcamentoAprovadoUseCase(g, events).execute({ numero: os.numero })).status).toBe(StatusOS.AGUARDANDO_PAGAMENTO);
     expect((await new RegistrarExecucaoIniciadaUseCase(g, events).execute({ numero: os.numero })).status).toBe(StatusOS.EM_EXECUCAO);
   });
 
-  it('execucao.finalizada -> FINALIZADA + OsFinalizadaEvent (uma vez)', async () => {
+  it('execucao.finalizada -> AGUARDANDO_PAGAMENTO, sem OsFinalizadaEvent (a cobranca vem depois da execucao)', async () => {
     const os = nova(StatusOS.EM_EXECUCAO); const g = fakeGateway(os);
     const uc = new RegistrarExecucaoFinalizadaUseCase(g, events);
-    await uc.execute({ numero: os.numero }); await uc.execute({ numero: os.numero });
+    expect((await uc.execute({ numero: os.numero })).status).toBe(StatusOS.AGUARDANDO_PAGAMENTO);
+    expect(events.publicados.find((e) => e instanceof OsStatusAlteradoEvent)).toMatchObject({ statusAnterior: StatusOS.EM_EXECUCAO, statusAtual: StatusOS.AGUARDANDO_PAGAMENTO });
+    expect(events.publicados.filter((e) => e instanceof OsFinalizadaEvent)).toHaveLength(0);
+    await uc.execute({ numero: os.numero });
+    expect(g.updates).toBe(1);
+  });
+
+  it('billing.pagamento-aprovado -> FINALIZADA + OsFinalizadaEvent (uma vez) + os.finalizada com causationId', async () => {
+    const os = nova(StatusOS.AGUARDANDO_PAGAMENTO); const g = fakeGateway(os);
+    const uc = new RegistrarPagamentoAprovadoUseCase(g, events);
+    const r = await uc.execute({ numero: os.numero, causationId: 'env-pg' }); await uc.execute({ numero: os.numero });
+    expect(r.status).toBe(StatusOS.FINALIZADA);
+    expect(r.eventosIntegracao[0]).toMatchObject({ type: 'os.finalizada', causationId: 'env-pg' });
     expect(events.publicados.filter((e) => e instanceof OsFinalizadaEvent)).toHaveLength(1);
   });
 
   it('compensacao: cancelamento com motivo da saga e causationId no evento os.cancelada', async () => {
-    const os = nova(StatusOS.AGUARDANDO_PAGAMENTO); const g = fakeGateway(os);
-    const r = await new RegistrarCancelamentoUseCase(g, events).execute({ numero: os.numero, motivo: MotivoCancelamento.PAGAMENTO_RECUSADO, causationId: 'env-1' });
+    const os = nova(StatusOS.AGUARDANDO_APROVACAO); const g = fakeGateway(os);
+    const r = await new RegistrarCancelamentoUseCase(g, events).execute({ numero: os.numero, motivo: MotivoCancelamento.ORCAMENTO_REJEITADO, causationId: 'env-1' });
     expect(r.status).toBe(StatusOS.CANCELADA);
-    expect(r.motivoCancelamento).toBe(MotivoCancelamento.PAGAMENTO_RECUSADO);
+    expect(r.motivoCancelamento).toBe(MotivoCancelamento.ORCAMENTO_REJEITADO);
     expect(r.eventosIntegracao[0]).toMatchObject({ type: 'os.cancelada', causationId: 'env-1' });
     // reentrega e no-op mesmo com motivo diferente
-    expect((await new RegistrarCancelamentoUseCase(g, events).execute({ numero: os.numero, motivo: MotivoCancelamento.OPERADOR })).motivoCancelamento).toBe(MotivoCancelamento.PAGAMENTO_RECUSADO);
+    expect((await new RegistrarCancelamentoUseCase(g, events).execute({ numero: os.numero, motivo: MotivoCancelamento.OPERADOR })).motivoCancelamento).toBe(MotivoCancelamento.ORCAMENTO_REJEITADO);
+  });
+
+  it('compensacao depois da execucao (AGUARDANDO_PAGAMENTO) e rejeitada: nao ha rollback do servico executado', async () => {
+    const os = nova(StatusOS.AGUARDANDO_PAGAMENTO); const g = fakeGateway(os);
+    await expect(new RegistrarCancelamentoUseCase(g, events).execute({ numero: os.numero, motivo: MotivoCancelamento.OPERADOR })).rejects.toThrow(InvalidStatusTransitionError);
+    expect(g.updates).toBe(0);
   });
 });

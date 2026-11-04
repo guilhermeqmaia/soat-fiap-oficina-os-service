@@ -89,7 +89,7 @@ export class OrdemDeServicoController {
   @ApiOperation({
     summary: 'Listar ordens de servico com paginacao, filtros e ordenacao por prioridade de status',
     description:
-      'Ordem: EM_EXECUCAO > AGUARDANDO_PAGAMENTO > AGUARDANDO_APROVACAO > EM_DIAGNOSTICO > RECEBIDA; mais antigas primeiro. ' +
+      'Ordem: AGUARDANDO_PAGAMENTO > EM_EXECUCAO > AGUARDANDO_APROVACAO > EM_DIAGNOSTICO > RECEBIDA; mais antigas primeiro. ' +
       'FINALIZADA/ENTREGUE/CANCELADA ficam de fora por padrao (incluirEncerradas=true para incluir).',
   })
   @ApiOkResponse({ description: 'Lista paginada de OS' })

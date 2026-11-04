@@ -1,7 +1,7 @@
 # QA Plan — US-F4-10: Saga Orquestrada da Ordem de Servico
 
 ## Resumo
-Valida o orquestrador da saga no OS Service (RFC-0005): estado persistido em `saga_os`, comandos enviados via outbox a cada passo, avanco so com o evento esperado, eventos duplicados/fora de ordem ignorados, compensacoes com confirmacao, timeouts de aprovacao/pagamento, linha do tempo em `GET /ordens-servico/numero/:numero/saga` e metricas.
+Valida o orquestrador da saga no OS Service (RFC-0005): estado persistido em `saga_os`, comandos enviados via outbox a cada passo, avanco so com o evento esperado, eventos duplicados/fora de ordem ignorados, compensacoes com confirmacao, timeout de aprovacao (pagamento em atraso so registra), cobranca apos a execucao (`billing.cobrar` / `billing.cobranca-criada`), linha do tempo em `GET /ordens-servico/numero/:numero/saga` e metricas.
 
 ## Pre-requisitos
 - Docker (testcontainers) para integracao/e2e; `npm ci && npx prisma generate`
@@ -19,8 +19,8 @@ Valida o orquestrador da saga no OS Service (RFC-0005): estado persistido em `sa
 ### TS-02: Caminho feliz passo a passo
 - **Tipo:** Automatizado (`saga-os.entity.spec.ts` "caminho feliz"; e2e "caminho feliz")
 - **Criterio:** Passos em ordem; transicoes da OS ligadas aos passos
-- **Passos:** entregar `execucao.enfileirada` -> `diagnostico-concluido` -> `billing.orcamento-gerado` -> `orcamento-aprovado` -> `pagamento-aprovado` -> `execucao.iniciada` -> `execucao.finalizada`
-- **Resultado esperado:** OS EM_DIAGNOSTICO -> AGUARDANDO_APROVACAO -> AGUARDANDO_PAGAMENTO -> EM_EXECUCAO -> FINALIZADA; comandos `billing.gerar-orcamento` (itens do diagnostico, `causationId`) e `execucao.iniciar`; saga `CONCLUIDA` com 8 entradas no historico
+- **Passos:** entregar `execucao.enfileirada` -> `diagnostico-concluido` -> `billing.orcamento-gerado` -> `orcamento-aprovado` -> `execucao.iniciada` -> `execucao.finalizada` -> `billing.cobranca-criada` -> `billing.pagamento-aprovado`; atendente entrega
+- **Resultado esperado:** OS EM_DIAGNOSTICO -> AGUARDANDO_APROVACAO -> (inalterada na aprovacao) -> EM_EXECUCAO -> AGUARDANDO_PAGAMENTO -> FINALIZADA -> ENTREGUE; comandos `billing.gerar-orcamento` (itens do diagnostico, `causationId`), `execucao.iniciar` e `billing.cobrar`; `os.finalizada` so no pagamento aprovado; saga `CONCLUIDA` com 9 entradas no historico
 
 ### TS-03: Idempotencia e ordem
 - **Tipo:** Automatizado (entity "duplicado e fora de ordem"; e2e "evento duplicado/fora de ordem")
@@ -31,14 +31,14 @@ Valida o orquestrador da saga no OS Service (RFC-0005): estado persistido em `sa
 ### TS-04: Compensacoes (matriz)
 - **Tipo:** Automatizado (entity "compensacoes"; e2e "orcamento rejeitado", "pagamento recusado", "falha ao iniciar execucao", "cancelamento manual em cada passo")
 - **Criterio:** Compensacoes em ordem inversa, registradas e confirmadas
-- **Passos:** `execucao.recusada` em ENFILEIRAR; `billing.orcamento-rejeitado`; `billing.pagamento-recusado`; `execucao.recusada` em INICIAR_EXECUCAO; `POST :id/cancelar` em cada passo (tabela no e2e)
-- **Resultado esperado:** OS CANCELADA com o motivo da matriz; comandos `billing.cancelar-orcamento` e/ou `execucao.liberar-reservas`; saga `COMPENSANDO` ate as confirmacoes (`billing.orcamento-cancelado`, `execucao.reservas-liberadas`) e entao `CANCELADA`; cancelar apos `execucao.iniciada` -> 400
+- **Passos:** `execucao.recusada` em ENFILEIRAR; `billing.orcamento-rejeitado`; `execucao.recusada` em INICIAR_EXECUCAO; `POST :id/cancelar` em cada passo ate INICIAR_EXECUCAO (tabela no e2e); `billing.pagamento-recusado` em AGUARDAR_PAGAMENTO
+- **Resultado esperado:** OS CANCELADA com o motivo da matriz; comandos `billing.cancelar-orcamento` e/ou `execucao.liberar-reservas` (nunca estorno); saga `COMPENSANDO` ate as confirmacoes (`billing.orcamento-cancelado`, `execucao.reservas-liberadas`) e entao `CANCELADA`; cancelar apos `execucao.iniciada` ou em AGUARDANDO_PAGAMENTO -> 400; pagamento recusado **nao** compensa: OS segue AGUARDANDO_PAGAMENTO, historico `pagamento-pendente`
 
 ### TS-05: Timeouts
 - **Tipo:** Automatizado (entity "timeouts"; orquestrador "SagaTimeoutsService"; e2e "timeout de aprovacao" e "timeout de pagamento")
-- **Criterio:** Orcamento sem resposta / pagamento pendente -> compensacao
-- **Passos:** `SAGA_TIMEOUT_APROVACAO_MS=1`; chegar a AGUARDAR_APROVACAO; `SagaTimeoutsService.varrer(agora)`
-- **Resultado esperado:** OS CANCELADA `TIMEOUT_APROVACAO` (ou `TIMEOUT_PAGAMENTO`); compensacoes enviadas; gauge `oficina_os_sagas{status}` atualizada
+- **Criterio:** Orcamento sem resposta -> compensacao; pagamento em atraso (pos-execucao) -> so registro + alerta
+- **Passos:** `SAGA_TIMEOUT_APROVACAO_MS=1`; chegar a AGUARDAR_APROVACAO; `SagaTimeoutsService.varrer(agora)`; `SAGA_TIMEOUT_PAGAMENTO_MS=1`; chegar a AGUARDAR_PAGAMENTO; varrer
+- **Resultado esperado:** OS CANCELADA `TIMEOUT_APROVACAO`; compensacoes enviadas; gauge `oficina_os_sagas{status}` atualizada. No pagamento: OS continua AGUARDANDO_PAGAMENTO, historico `ignorado` com detalhe `pagamento em atraso`, saga `EM_ANDAMENTO`, `oficina_os_sagas_paradas` cobre o alerta
 
 ### TS-06: Linha do tempo
 - **Tipo:** Automatizado (e2e) + Manual (video)
@@ -77,7 +77,8 @@ Valida o orquestrador da saga no OS Service (RFC-0005): estado persistido em `sa
 - Confirmacao de compensacao repetida: ignorada
 - Dois pods: a saga tem lock otimista (`version`) — a segunda gravacao concorrente falha e o consumer reentrega
 - `execucao.recusada` fora de ENFILEIRAR/INICIAR_EXECUCAO: ignorada (nao e um cenario da matriz)
-- Prazos: entrar em AGUARDAR_APROVACAO zera o prazo de pagamento e vice-versa; compensacao limpa ambos
+- Prazos: entrar em AGUARDAR_APROVACAO zera o prazo de pagamento e vice-versa; compensacao limpa ambos; o prazo de pagamento nunca cancela (`TIMEOUT_PAGAMENTO` reservado/obsoleto)
+- `billing.cobranca-criada` repetido em AGUARDAR_PAGAMENTO (nova cobranca apos `reprocessar`): registrado sem mudar passo nem OS
 
 ## Rastreabilidade
 | Criterio | Cenarios |

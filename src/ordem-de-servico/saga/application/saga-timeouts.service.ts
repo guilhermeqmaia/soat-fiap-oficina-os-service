@@ -5,7 +5,9 @@ import { sagasParadas, sagasPorStatus } from '../../../observabilidade/metrics.r
 
 /**
  * Relogio da saga: varre sagas com prazo de aprovacao/pagamento vencido e
- * entrega `saga.timeout` ao orquestrador (compensacao, US-F4-11). Tambem
+ * entrega `saga.timeout` ao orquestrador (US-F4-11). Aprovacao vencida
+ * compensa; pagamento vencido (pos-execucao, ADR-0012) so e registrado como
+ * atraso — a OS fica retida em AGUARDANDO_PAGAMENTO. Tambem
  * atualiza as gauges de sagas por status e de sagas paradas (EM_ANDAMENTO no
  * mesmo passo ha mais de SAGA_ALERTA_PARADA_MIN minutos — insumo do alerta
  * "saga travada" ate a US-F4-11 trazer o reprocessamento).

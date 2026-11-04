@@ -1,4 +1,5 @@
 import {
+  BillingCobrancaCriadaHandler,
   BillingOrcamentoAprovadoHandler,
   BillingOrcamentoCanceladoHandler,
   BillingOrcamentoGeradoHandler,
@@ -26,6 +27,7 @@ export const OS_MESSAGE_HANDLERS = [
   BillingOrcamentoGeradoHandler,
   BillingOrcamentoAprovadoHandler,
   BillingOrcamentoRejeitadoHandler,
+  BillingCobrancaCriadaHandler,
   BillingPagamentoAprovadoHandler,
   BillingPagamentoRecusadoHandler,
   BillingOrcamentoCanceladoHandler,

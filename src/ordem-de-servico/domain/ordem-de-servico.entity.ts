@@ -34,12 +34,15 @@ export interface DiagnosticoProps {
   itens: ItemServicoOS[];
 }
 
-/** Status a partir dos quais a OS ainda pode ser cancelada (compensacao da saga). */
+/**
+ * Status a partir dos quais a OS ainda pode ser cancelada (compensacao da saga).
+ * Depois que a execucao comeca nao ha cancelamento — inclusive em
+ * AGUARDANDO_PAGAMENTO, que agora vem DEPOIS do servico executado (ADR-0012).
+ */
 const CANCELAVEIS: ReadonlySet<StatusOS> = new Set([
   StatusOS.RECEBIDA,
   StatusOS.EM_DIAGNOSTICO,
   StatusOS.AGUARDANDO_APROVACAO,
-  StatusOS.AGUARDANDO_PAGAMENTO,
 ]);
 
 /**
@@ -207,26 +210,26 @@ export class OrdemDeServico {
     this._status = StatusOSVO.create(StatusOS.AGUARDANDO_APROVACAO);
   }
 
-  /** `billing.orcamento-aprovado`: cobranca criada, aguardando o pagamento (ADR-0012). */
-  aguardarPagamento(): void {
-    this.exigirStatus(StatusOS.AGUARDANDO_APROVACAO, StatusOS.AGUARDANDO_PAGAMENTO);
-    this._status = StatusOSVO.create(StatusOS.AGUARDANDO_PAGAMENTO);
-  }
-
-  /** `execucao.iniciada`: pagamento confirmado e estoque baixado; oficina executando. */
+  /** `execucao.iniciada`: orcamento aprovado e estoque baixado; oficina executando. */
   iniciarExecucao(): void {
-    this.exigirStatus(StatusOS.AGUARDANDO_PAGAMENTO, StatusOS.EM_EXECUCAO);
+    this.exigirStatus(StatusOS.AGUARDANDO_APROVACAO, StatusOS.EM_EXECUCAO);
     this._status = StatusOSVO.create(StatusOS.EM_EXECUCAO);
   }
 
-  /** `execucao.finalizada`: veiculo pronto para retirada. `causationId` = id do envelope que originou. */
+  /** `execucao.finalizada`: servico executado; a cobranca e criada e aguarda o pagamento (ADR-0012). */
+  aguardarPagamento(): void {
+    this.exigirStatus(StatusOS.EM_EXECUCAO, StatusOS.AGUARDANDO_PAGAMENTO);
+    this._status = StatusOSVO.create(StatusOS.AGUARDANDO_PAGAMENTO);
+  }
+
+  /** `billing.pagamento-aprovado`: pago; veiculo pronto para retirada. `causationId` = id do envelope que originou. */
   finalizar(causationId?: string): void {
-    this.exigirStatus(StatusOS.EM_EXECUCAO, StatusOS.FINALIZADA);
+    this.exigirStatus(StatusOS.AGUARDANDO_PAGAMENTO, StatusOS.FINALIZADA);
     this._status = StatusOSVO.create(StatusOS.FINALIZADA);
     this._eventosIntegracao.push({ type: 'os.finalizada', data: { numeroOS: this._numero }, causationId });
   }
 
-  /** Acao do atendente: veiculo entregue, OS encerrada. */
+  /** Acao do atendente: veiculo entregue (so depois de pago = FINALIZADA), OS encerrada. */
   entregar(): void {
     this.exigirStatus(StatusOS.FINALIZADA, StatusOS.ENTREGUE);
     this._status = StatusOSVO.create(StatusOS.ENTREGUE);

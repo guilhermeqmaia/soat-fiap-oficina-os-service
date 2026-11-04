@@ -57,7 +57,7 @@ e `scripts/messaging-local.sh`).
 ## 3. Saga travada (sem mensagem na DLQ)
 
 Sintoma: `oficina_os_sagas_paradas > 0` ou saga `EM_ANDAMENTO` parada em
-`ENFILEIRAR_EXECUCAO`, `GERAR_ORCAMENTO`, `INICIAR_EXECUCAO` ou em `COMPENSANDO` sem
+`ENFILEIRAR_EXECUCAO`, `GERAR_ORCAMENTO`, `INICIAR_EXECUCAO`, `COBRAR` ou em `COMPENSANDO` sem
 confirmacao. O comando saiu, mas o participante nao respondeu (ou respondeu e a
 resposta esta na DLQ dele — ver item 1 na fila do outro servico).
 
@@ -68,10 +68,17 @@ curl -s -X POST $GW/admin/sagas/$NUMERO/reprocessar -H "Authorization: Bearer $T
 ```
 
 `reprocessar` reenvia pelo outbox o comando do passo atual (`execucao.enfileirar`,
-`billing.gerar-orcamento` com o snapshot da OS, `execucao.iniciar`) ou as compensacoes
-nao confirmadas. Nao altera a OS. Em passos que aguardam cliente/participante devolve
-`reenviados: []` — ai o problema esta no outro servico (ou e um timeout de negocio,
+`billing.gerar-orcamento` com o snapshot da OS, `execucao.iniciar`, `billing.cobrar`) ou as
+compensacoes nao confirmadas. Nao altera a OS. Em passos que aguardam cliente/participante
+devolve `reenviados: []` — ai o problema esta no outro servico (ou e um timeout de negocio,
 que o relogio da saga trata sozinho).
+
+**Pagamento recusado ou em atraso** (saga em `AGUARDAR_PAGAMENTO`, historico com
+`pagamento-pendente` / `pagamento em atraso`): o servico ja foi executado, entao a saga
+**nao compensa** e a OS fica em `AGUARDANDO_PAGAMENTO`. Combine com o cliente e chame
+`reprocessar`: em `COBRAR` e `AGUARDAR_PAGAMENTO` ele reenvia `billing.cobrar` (o Billing
+cancela a order anterior no Mercado Pago e cria uma nova; o link chega em
+`billing.cobranca-criada`).
 
 Comandos reenviados sao idempotentes nos participantes (AsyncAPI: `summary` de
 `execucao.liberar-reservas` e `billing.cancelar-orcamento`).

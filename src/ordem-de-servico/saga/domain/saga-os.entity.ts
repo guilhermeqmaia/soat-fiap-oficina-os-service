@@ -10,9 +10,12 @@ export enum PassoSaga {
   AGUARDAR_DIAGNOSTICO = 'AGUARDAR_DIAGNOSTICO',
   GERAR_ORCAMENTO = 'GERAR_ORCAMENTO',
   AGUARDAR_APROVACAO = 'AGUARDAR_APROVACAO',
-  AGUARDAR_PAGAMENTO = 'AGUARDAR_PAGAMENTO',
   INICIAR_EXECUCAO = 'INICIAR_EXECUCAO',
   AGUARDAR_FINALIZACAO = 'AGUARDAR_FINALIZACAO',
+  /** Servico executado: pede ao Billing a cobranca (`billing.cobrar`). */
+  COBRAR = 'COBRAR',
+  /** Cobranca criada; aguardando o cliente pagar (pos-execucao, sem rollback). */
+  AGUARDAR_PAGAMENTO = 'AGUARDAR_PAGAMENTO',
   CONCLUIDA = 'CONCLUIDA',
 }
 
@@ -29,6 +32,7 @@ export type TipoComando =
   | 'execucao.iniciar'
   | 'execucao.liberar-reservas'
   | 'billing.gerar-orcamento'
+  | 'billing.cobrar'
   | 'billing.cancelar-orcamento';
 
 export interface ComandoSaga {
@@ -64,7 +68,9 @@ export type ResultadoPasso =
   | 'concluida'
   | 'cancelada'
   | 'reprocessada'
-  | 'falha-simulada';
+  | 'falha-simulada'
+  /** Pagamento recusado apos a execucao: a saga continua esperando (sem compensacao). */
+  | 'pagamento-pendente';
 
 export interface PassoHistorico {
   em: string;
@@ -121,9 +127,10 @@ const ORDEM: PassoSaga[] = [
   PassoSaga.AGUARDAR_DIAGNOSTICO,
   PassoSaga.GERAR_ORCAMENTO,
   PassoSaga.AGUARDAR_APROVACAO,
-  PassoSaga.AGUARDAR_PAGAMENTO,
   PassoSaga.INICIAR_EXECUCAO,
   PassoSaga.AGUARDAR_FINALIZACAO,
+  PassoSaga.COBRAR,
+  PassoSaga.AGUARDAR_PAGAMENTO,
   PassoSaga.CONCLUIDA,
 ];
 const indice = (p: PassoSaga) => ORDEM.indexOf(p);
@@ -134,8 +141,8 @@ const PASSO_POR_STATUS: Record<StatusOS, PassoSaga> = {
   [StatusOS.RECEBIDA]: PassoSaga.ENFILEIRAR_EXECUCAO,
   [StatusOS.EM_DIAGNOSTICO]: PassoSaga.AGUARDAR_DIAGNOSTICO,
   [StatusOS.AGUARDANDO_APROVACAO]: PassoSaga.AGUARDAR_APROVACAO,
-  [StatusOS.AGUARDANDO_PAGAMENTO]: PassoSaga.AGUARDAR_PAGAMENTO,
   [StatusOS.EM_EXECUCAO]: PassoSaga.AGUARDAR_FINALIZACAO,
+  [StatusOS.AGUARDANDO_PAGAMENTO]: PassoSaga.AGUARDAR_PAGAMENTO,
   [StatusOS.FINALIZADA]: PassoSaga.CONCLUIDA,
   [StatusOS.ENTREGUE]: PassoSaga.CONCLUIDA,
   [StatusOS.CANCELADA]: PassoSaga.CONCLUIDA,
@@ -149,9 +156,14 @@ const PASSO_POR_STATUS: Record<StatusOS, PassoSaga> = {
  * Regras:
  * - cada passo so avanca com o evento esperado; outros eventos sao ignorados
  *   com registro no historico (duplicados / fora de ordem);
- * - falha de negocio -> COMPENSANDO: comandos de compensacao em ordem inversa,
- *   OS cancelada com o motivo; quando todas as confirmacoes chegam -> CANCELADA;
- * - timeouts (aprovacao/pagamento) sao eventos internos `saga.timeout`.
+ * - falha de negocio ANTES da execucao -> COMPENSANDO: comandos de compensacao
+ *   em ordem inversa, OS cancelada com o motivo; quando todas as confirmacoes
+ *   chegam -> CANCELADA;
+ * - a cobranca acontece DEPOIS da execucao (ADR-0012, decisao de 03/11): pagamento
+ *   recusado ou em atraso nao compensa nada — a OS fica retida em
+ *   AGUARDANDO_PAGAMENTO e a saga continua em AGUARDAR_PAGAMENTO;
+ * - timeouts sao eventos internos `saga.timeout`: o de aprovacao compensa, o de
+ *   pagamento so registra o atraso (o alerta vem da gauge de sagas paradas).
  */
 export class SagaOS {
   readonly id?: string;
@@ -326,7 +338,7 @@ export class SagaOS {
           return this.compensar(evento, agora, MotivoCancelamento.EXECUCAO_RECUSADA, []);
         }
         if (this._passo === PassoSaga.INICIAR_EXECUCAO) {
-          // Pagamento ja aprovado: estorno (Billing) + liberar reservas (ordem inversa)
+          // Orcamento aprovado mas nada pago nem executado: cancela o orcamento e libera reservas (ordem inversa)
           return this.compensar(evento, agora, MotivoCancelamento.FALHA_INICIO_EXECUCAO, [
             'billing.cancelar-orcamento',
             'execucao.liberar-reservas',
@@ -354,29 +366,16 @@ export class SagaOS {
           return { transicaoOS: { tipo: 'aguardarAprovacao' } };
         });
       case 'billing.orcamento-aprovado':
+        // Sem cobranca aqui: a OS continua AGUARDANDO_APROVACAO ate a Execucao confirmar o inicio.
         return this.esperado(evento, PassoSaga.AGUARDAR_APROVACAO, agora, () => {
-          this.avancar(PassoSaga.AGUARDAR_PAGAMENTO, agora, evento);
+          this.avancar(PassoSaga.INICIAR_EXECUCAO, agora, evento);
           this._prazoAprovacao = null;
-          this._prazoPagamento = new Date(agora.getTime() + prazos.pagamentoMs);
-          return { transicaoOS: { tipo: 'aguardarPagamento' } };
+          this.enviar({ type: 'execucao.iniciar', data: { numeroOS: this.numero }, causationId: evento.id });
+          return {};
         });
       case 'billing.orcamento-rejeitado':
         return this.esperado(evento, PassoSaga.AGUARDAR_APROVACAO, agora, () =>
           this.compensar(evento, agora, MotivoCancelamento.ORCAMENTO_REJEITADO, ['execucao.liberar-reservas']),
-        );
-      case 'billing.pagamento-aprovado':
-        return this.esperado(evento, PassoSaga.AGUARDAR_PAGAMENTO, agora, () => {
-          this.avancar(PassoSaga.INICIAR_EXECUCAO, agora, evento);
-          this._prazoPagamento = null;
-          this.enviar({ type: 'execucao.iniciar', data: { numeroOS: this.numero }, causationId: evento.id });
-          return {};
-        });
-      case 'billing.pagamento-recusado':
-        return this.esperado(evento, PassoSaga.AGUARDAR_PAGAMENTO, agora, () =>
-          this.compensar(evento, agora, MotivoCancelamento.PAGAMENTO_RECUSADO, [
-            'billing.cancelar-orcamento',
-            'execucao.liberar-reservas',
-          ]),
         );
       case 'execucao.iniciada':
         return this.esperado(evento, PassoSaga.INICIAR_EXECUCAO, agora, () => {
@@ -384,12 +383,40 @@ export class SagaOS {
           return { transicaoOS: { tipo: 'iniciarExecucao' } };
         });
       case 'execucao.finalizada':
+        // Servico executado: a OS fica AGUARDANDO_PAGAMENTO e o Billing cria a cobranca.
         return this.esperado(evento, PassoSaga.AGUARDAR_FINALIZACAO, agora, () => {
+          this.avancar(PassoSaga.COBRAR, agora, evento);
+          this.enviar({ type: 'billing.cobrar', data: { numeroOS: this.numero }, causationId: evento.id });
+          return { transicaoOS: { tipo: 'aguardarPagamento' } };
+        });
+      case 'billing.cobranca-criada':
+        if (this._passo === PassoSaga.AGUARDAR_PAGAMENTO) {
+          // Nova cobranca (reprocessamento apos recusa/atraso): so renova o prazo e registra.
+          this._prazoPagamento = new Date(agora.getTime() + prazos.pagamentoMs);
+          this.registrar(agora, evento.type, 'avancou', `nova cobranca registrada (orderId=${evento.data.orderId ?? '?'})`);
+          return { aplicado: true, comandos: [] };
+        }
+        return this.esperado(evento, PassoSaga.COBRAR, agora, () => {
+          this.avancar(PassoSaga.AGUARDAR_PAGAMENTO, agora, evento);
+          // Prazo so para metrica/alerta: vencido, registra o atraso — nao cancela (servico ja executado).
+          this._prazoPagamento = new Date(agora.getTime() + prazos.pagamentoMs);
+          return {};
+        });
+      case 'billing.pagamento-aprovado':
+        return this.esperado(evento, PassoSaga.AGUARDAR_PAGAMENTO, agora, () => {
           this._passo = PassoSaga.CONCLUIDA;
           this._passoDesde = agora;
           this._status = StatusSaga.CONCLUIDA;
+          this._prazoPagamento = null;
           this.registrar(agora, evento.type, 'concluida');
           return { transicaoOS: { tipo: 'finalizar' } };
+        });
+      case 'billing.pagamento-recusado':
+        // Servico ja executado: nao ha rollback. A OS fica retida em AGUARDANDO_PAGAMENTO
+        // (reprocessar reenvia `billing.cobrar`; a gauge de sagas paradas cobre o alerta).
+        return this.esperado(evento, PassoSaga.AGUARDAR_PAGAMENTO, agora, () => {
+          this.registrar(agora, evento.type, 'pagamento-pendente', `pagamento recusado: ${evento.data.motivo ?? 'sem motivo'}`);
+          return { comandos: [] };
         });
       case 'saga.timeout':
         return this.timeout(evento, agora);
@@ -421,7 +448,9 @@ export class SagaOS {
   /**
    * Retomada manual (ADMIN): reenvia o comando do passo atual ou as compensacoes
    * ainda nao confirmadas. Passos que esperam cliente/participante nao tem
-   * comando a reenviar. `itens` (snapshot da OS) so e usado em GERAR_ORCAMENTO.
+   * comando a reenviar — excecao: AGUARDAR_PAGAMENTO reenvia `billing.cobrar`
+   * (nova cobranca para pagamento recusado/em atraso). `itens` (snapshot da OS)
+   * so e usado em GERAR_ORCAMENTO.
    */
   reprocessar(dados: { itens?: ItemContrato[] }, agora: Date = new Date()): ComandoSaga[] {
     const antes = this._comandosPendentes.length;
@@ -446,6 +475,11 @@ export class SagaOS {
           break;
         case PassoSaga.INICIAR_EXECUCAO:
           this.enviar({ type: 'execucao.iniciar', data: { numeroOS: this.numero } });
+          break;
+        case PassoSaga.COBRAR:
+        case PassoSaga.AGUARDAR_PAGAMENTO:
+          // Nova cobranca (pagamento recusado/em atraso): o Billing cria outra order.
+          this.enviar({ type: 'billing.cobrar', data: { numeroOS: this.numero } });
           break;
         default:
           break;
@@ -556,10 +590,10 @@ export class SagaOS {
       ]);
     }
     if (this._passo === PassoSaga.AGUARDAR_PAGAMENTO && this._prazoPagamento && this._prazoPagamento <= agora) {
-      return this.compensar(evento, agora, MotivoCancelamento.TIMEOUT_PAGAMENTO, [
-        'billing.cancelar-orcamento',
-        'execucao.liberar-reservas',
-      ]);
+      // Pos-execucao: nao cancela (TIMEOUT_PAGAMENTO ficou reservado). Registra uma vez e
+      // limpa o prazo para o relogio nao reencontrar a saga; a gauge de sagas paradas alerta.
+      this._prazoPagamento = null;
+      return this.ignorar(evento, agora, 'pagamento em atraso (OS retida em AGUARDANDO_PAGAMENTO, sem compensacao)');
     }
     // Prazo obsoleto num passo que nao tem timeout: limpa para o relogio parar de reencontrar esta saga.
     if (this._passo !== PassoSaga.AGUARDAR_APROVACAO) this._prazoAprovacao = null;
@@ -569,7 +603,7 @@ export class SagaOS {
 
   /**
    * Atendente cancela: compensa conforme o passo; depois de a execucao comecar
-   * nao da mais. `execucao.enfileirar` ja saiu na abertura, entao desde o
+   * (AGUARDAR_FINALIZACAO em diante, inclusive aguardando o pagamento) nao da mais. `execucao.enfileirar` ja saiu na abertura, entao desde o
    * primeiro passo a Execucao recebe `execucao.liberar-reservas` (= tirar da
    * fila/abortar diagnostico e devolver reservas, ver AsyncAPI). Como comandos
    * da mesma OS vao para a mesma fila FIFO com o mesmo MessageGroupId, o
@@ -582,7 +616,6 @@ export class SagaOS {
       [PassoSaga.AGUARDAR_DIAGNOSTICO]: ['execucao.liberar-reservas'],
       [PassoSaga.GERAR_ORCAMENTO]: ['billing.cancelar-orcamento', 'execucao.liberar-reservas'],
       [PassoSaga.AGUARDAR_APROVACAO]: ['billing.cancelar-orcamento', 'execucao.liberar-reservas'],
-      [PassoSaga.AGUARDAR_PAGAMENTO]: ['billing.cancelar-orcamento', 'execucao.liberar-reservas'],
       [PassoSaga.INICIAR_EXECUCAO]: ['billing.cancelar-orcamento', 'execucao.liberar-reservas'],
     };
     const comandos = porPasso[this._passo];
@@ -608,8 +641,9 @@ export interface ItemContrato {
 const FALHA_SIMULADA: Partial<Record<PassoSaga, Record<string, string>>> = {
   [PassoSaga.ENFILEIRAR_EXECUCAO]: { 'execucao.enfileirada': 'execucao.recusada' },
   [PassoSaga.AGUARDAR_APROVACAO]: { 'billing.orcamento-aprovado': 'billing.orcamento-rejeitado' },
-  [PassoSaga.AGUARDAR_PAGAMENTO]: { 'billing.pagamento-aprovado': 'billing.pagamento-recusado' },
   [PassoSaga.INICIAR_EXECUCAO]: { 'execucao.iniciada': 'execucao.recusada' },
+  // Pos-execucao: demonstra o pagamento pendente (sem compensacao), nao um cancelamento.
+  [PassoSaga.AGUARDAR_PAGAMENTO]: { 'billing.pagamento-aprovado': 'billing.pagamento-recusado' },
 };
 /** Passos em que a demo pode simular falha. */
 export const PASSOS_COM_FALHA_SIMULAVEL = Object.keys(FALHA_SIMULADA) as PassoSaga[];

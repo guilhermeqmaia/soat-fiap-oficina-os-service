@@ -18,10 +18,11 @@ const ate = (passo: PassoSaga) => {
     [PassoSaga.AGUARDAR_DIAGNOSTICO, ev('execucao.enfileirada', { posicaoFila: 1 })],
     [PassoSaga.GERAR_ORCAMENTO, ev('execucao.diagnostico-concluido', { mecanicoId: 'm', diagnostico: 'Pastilhas', itens: ITENS })],
     [PassoSaga.AGUARDAR_APROVACAO, ev('billing.orcamento-gerado', { orcamentoId: 'o1', total: '300.00' })],
-    [PassoSaga.AGUARDAR_PAGAMENTO, ev('billing.orcamento-aprovado', { orcamentoId: 'o1', cobrancaId: 'c1', linkPagamento: 'https://mp' })],
-    [PassoSaga.INICIAR_EXECUCAO, ev('billing.pagamento-aprovado', { cobrancaId: 'c1', orderId: 'x', valor: '300.00' })],
+    [PassoSaga.INICIAR_EXECUCAO, ev('billing.orcamento-aprovado', { orcamentoId: 'o1' })],
     [PassoSaga.AGUARDAR_FINALIZACAO, ev('execucao.iniciada')],
-    [PassoSaga.CONCLUIDA, ev('execucao.finalizada', { finalizadaEm: T0.toISOString() })],
+    [PassoSaga.COBRAR, ev('execucao.finalizada', { finalizadaEm: T0.toISOString() })],
+    [PassoSaga.AGUARDAR_PAGAMENTO, ev('billing.cobranca-criada', { orderId: 'mp-1', linkPagamento: 'https://mp', valor: '300.00' })],
+    [PassoSaga.CONCLUIDA, ev('billing.pagamento-aprovado', { orderId: 'mp-1', valor: '300.00' })],
   ];
   let i = 1;
   for (const [alvo, e] of seq) {
@@ -45,7 +46,7 @@ describe('SagaOS — maquina de estados pura (RFC-0005)', () => {
     expect(s.historico[0]).toMatchObject({ evento: 'os.aberta', resultado: 'avancou' });
   });
 
-  it('caminho feliz: 7 eventos, transicoes da OS e comandos certos em cada passo', () => {
+  it('caminho feliz: 9 eventos, transicoes da OS e comandos certos em cada passo (cobranca depois da execucao)', () => {
     const s = nova(); s.consumirComandos();
     let r = s.aplicar(ev('execucao.enfileirada', { posicaoFila: 1 }), em(1), PRAZOS);
     expect(r.transicaoOS).toEqual({ tipo: 'iniciarDiagnostico' }); expect(r.comandos).toEqual([]);
@@ -56,19 +57,29 @@ describe('SagaOS — maquina de estados pura (RFC-0005)', () => {
     r = s.aplicar(ev('billing.orcamento-gerado', { total: '300.00' }), em(3), PRAZOS);
     expect(r.transicaoOS).toEqual({ tipo: 'aguardarAprovacao' });
     expect(s.prazoAprovacao).toEqual(new Date(em(3).getTime() + PRAZOS.aprovacaoMs));
-    r = s.aplicar(ev('billing.orcamento-aprovado'), em(4), PRAZOS);
-    expect(r.transicaoOS).toEqual({ tipo: 'aguardarPagamento' });
-    expect(s.prazoAprovacao).toBeNull(); expect(s.prazoPagamento).toEqual(new Date(em(4).getTime() + PRAZOS.pagamentoMs));
-    r = s.aplicar(ev('billing.pagamento-aprovado'), em(5), PRAZOS);
+    // aprovado: a OS NAO muda (continua AGUARDANDO_APROVACAO ate a Execucao confirmar); sem cobranca
+    r = s.aplicar(ev('billing.orcamento-aprovado', { orcamentoId: 'o1' }), em(4), PRAZOS);
     expect(r.transicaoOS).toBeUndefined();
-    expect(r.comandos).toEqual([{ type: 'execucao.iniciar', data: { numeroOS: 'OS-1' }, causationId: 'env-billing.pagamento-aprovado' }]);
-    expect(s.prazoPagamento).toBeNull(); s.consumirComandos();
-    r = s.aplicar(ev('execucao.iniciada'), em(6), PRAZOS);
+    expect(r.comandos).toEqual([{ type: 'execucao.iniciar', data: { numeroOS: 'OS-1' }, causationId: 'env-billing.orcamento-aprovado' }]);
+    expect(s.passo).toBe(PassoSaga.INICIAR_EXECUCAO);
+    expect(s.prazoAprovacao).toBeNull(); expect(s.prazoPagamento).toBeNull(); s.consumirComandos();
+    r = s.aplicar(ev('execucao.iniciada'), em(5), PRAZOS);
     expect(r.transicaoOS).toEqual({ tipo: 'iniciarExecucao' });
-    r = s.aplicar(ev('execucao.finalizada'), em(7), PRAZOS);
+    // executado: OS -> AGUARDANDO_PAGAMENTO e o Billing recebe `billing.cobrar`
+    r = s.aplicar(ev('execucao.finalizada'), em(6), PRAZOS);
+    expect(r.transicaoOS).toEqual({ tipo: 'aguardarPagamento' });
+    expect(r.comandos).toEqual([{ type: 'billing.cobrar', data: { numeroOS: 'OS-1' }, causationId: 'env-execucao.finalizada' }]);
+    expect(s.passo).toBe(PassoSaga.COBRAR); s.consumirComandos();
+    // cobranca criada: so o prazo (metrica/alerta), sem transicao da OS
+    r = s.aplicar(ev('billing.cobranca-criada', { orderId: 'mp-1', linkPagamento: 'https://mp', valor: '300.00' }), em(7), PRAZOS);
+    expect(r.transicaoOS).toBeUndefined(); expect(r.comandos).toEqual([]);
+    expect(s.passo).toBe(PassoSaga.AGUARDAR_PAGAMENTO);
+    expect(s.prazoPagamento).toEqual(new Date(em(7).getTime() + PRAZOS.pagamentoMs));
+    r = s.aplicar(ev('billing.pagamento-aprovado', { orderId: 'mp-1', valor: '300.00' }), em(8), PRAZOS);
     expect(r.transicaoOS).toEqual({ tipo: 'finalizar' });
+    expect(s.prazoPagamento).toBeNull();
     expect(s.passo).toBe(PassoSaga.CONCLUIDA); expect(s.status).toBe(StatusSaga.CONCLUIDA); expect(s.encerrada).toBe(true);
-    expect(s.historico.map((h) => h.resultado)).toEqual(['avancou', 'avancou', 'avancou', 'avancou', 'avancou', 'avancou', 'avancou', 'concluida']);
+    expect(s.historico.map((h) => h.resultado)).toEqual(['avancou', 'avancou', 'avancou', 'avancou', 'avancou', 'avancou', 'avancou', 'avancou', 'concluida']);
   });
 
   it('duplicado e fora de ordem sao ignorados com registro, sem transicao nem comando', () => {
@@ -103,22 +114,35 @@ describe('SagaOS — maquina de estados pura (RFC-0005)', () => {
       // confirmacao repetida e ignorada
       expect(s.aplicar(ev('execucao.reservas-liberadas'), em(13), PRAZOS).aplicado).toBe(false);
     });
-    it('pagamento recusado -> cancelar orcamento + liberar reservas; so CANCELADA com as duas confirmacoes', () => {
+    it('pagamento recusado (pos-execucao) NAO compensa: registra pagamento-pendente e continua em AGUARDAR_PAGAMENTO', () => {
       const s = ate(PassoSaga.AGUARDAR_PAGAMENTO);
-      const r = s.aplicar(ev('billing.pagamento-recusado', { cobrancaId: 'c1', motivo: 'cc' }), em(10), PRAZOS);
-      expect(r.comandos.map((c) => c.type)).toEqual(['billing.cancelar-orcamento', 'execucao.liberar-reservas']);
-      expect(r.comandos[0].data).toEqual({ numeroOS: 'OS-1', motivo: MotivoCancelamento.PAGAMENTO_RECUSADO });
-      s.aplicar(ev('execucao.reservas-liberadas'), em(11), PRAZOS);
-      expect(s.status).toBe(StatusSaga.COMPENSANDO);
-      s.aplicar(ev('billing.orcamento-cancelado', { orcamentoId: 'o1', estornado: false }), em(12), PRAZOS);
-      expect(s.status).toBe(StatusSaga.CANCELADA);
-      expect(s.compensacoes.every((c) => c.confirmadaEm)).toBe(true);
+      const r = s.aplicar(ev('billing.pagamento-recusado', { orderId: 'mp-1', motivo: 'cartao recusado' }), em(10), PRAZOS);
+      expect(r).toEqual({ aplicado: true, comandos: [] });
+      expect(r.transicaoOS).toBeUndefined();
+      expect(s.status).toBe(StatusSaga.EM_ANDAMENTO); expect(s.passo).toBe(PassoSaga.AGUARDAR_PAGAMENTO);
+      expect(s.compensacoes).toEqual([]);
+      expect(s.historico[s.historico.length - 1]).toMatchObject({ resultado: 'pagamento-pendente', detalhe: 'pagamento recusado: cartao recusado' });
+      // uma nova cobranca (reprocessamento) renova o prazo sem mudar o passo; o pagamento depois conclui
+      const nova = s.aplicar(ev('billing.cobranca-criada', { orderId: 'mp-2', linkPagamento: 'https://mp/2', valor: '300.00' }), em(20), PRAZOS);
+      expect(nova).toEqual({ aplicado: true, comandos: [] });
+      expect(s.passo).toBe(PassoSaga.AGUARDAR_PAGAMENTO);
+      expect(s.prazoPagamento).toEqual(new Date(em(20).getTime() + PRAZOS.pagamentoMs));
+      expect(s.historico[s.historico.length - 1].detalhe).toContain('mp-2');
+      expect(s.aplicar(ev('billing.pagamento-aprovado', { orderId: 'mp-2' }), em(21), PRAZOS).transicaoOS).toEqual({ tipo: 'finalizar' });
+      expect(s.status).toBe(StatusSaga.CONCLUIDA);
     });
-    it('falha ao iniciar execucao apos pagamento -> estorno + liberar reservas', () => {
+    it('falha ao iniciar execucao (aprovado, nada pago) -> cancelar orcamento + liberar reservas, sem estorno', () => {
       const s = ate(PassoSaga.INICIAR_EXECUCAO);
       const r = s.aplicar(ev('execucao.recusada', { motivo: 'estoque insuficiente' }), em(10), PRAZOS);
       expect(r.transicaoOS).toEqual({ tipo: 'cancelar', motivo: MotivoCancelamento.FALHA_INICIO_EXECUCAO });
       expect(r.comandos.map((c) => c.type)).toEqual(['billing.cancelar-orcamento', 'execucao.liberar-reservas']);
+      expect(r.comandos[0].data).toEqual({ numeroOS: 'OS-1', motivo: MotivoCancelamento.FALHA_INICIO_EXECUCAO });
+    });
+    it('execucao.finalizada e pagamento depois da execucao nunca cancelam a OS', () => {
+      const s = ate(PassoSaga.AGUARDAR_FINALIZACAO);
+      expect(s.aplicar(ev('execucao.recusada', { motivo: 'x' }), em(10), PRAZOS).aplicado).toBe(false);
+      expect(s.aplicar(ev('billing.pagamento-recusado'), em(11), PRAZOS).aplicado).toBe(false);
+      expect(s.status).toBe(StatusSaga.EM_ANDAMENTO);
     });
     it('execucao.recusada noutro passo e ignorada', () => {
       const s = ate(PassoSaga.AGUARDAR_APROVACAO);
@@ -134,10 +158,17 @@ describe('SagaOS — maquina de estados pura (RFC-0005)', () => {
       expect(r.transicaoOS).toEqual({ tipo: 'cancelar', motivo: MotivoCancelamento.TIMEOUT_APROVACAO });
       expect(r.comandos.map((c) => c.type)).toEqual(['billing.cancelar-orcamento', 'execucao.liberar-reservas']);
     });
-    it('pagamento vencido -> TIMEOUT_PAGAMENTO; sem prazo noutro passo e ignorado', () => {
+    it('pagamento vencido (pos-execucao) nao cancela: registra o atraso uma vez e limpa o prazo', () => {
       const s = ate(PassoSaga.AGUARDAR_PAGAMENTO);
+      expect(s.aplicar(ev('saga.timeout'), new Date(s.prazoPagamento!.getTime() - 1), PRAZOS).aplicado).toBe(false);
+      expect(s.prazoPagamento).not.toBeNull();
       const r = s.aplicar(ev('saga.timeout'), new Date(s.prazoPagamento!.getTime() + 1), PRAZOS);
-      expect(r.transicaoOS).toEqual({ tipo: 'cancelar', motivo: MotivoCancelamento.TIMEOUT_PAGAMENTO });
+      expect(r).toMatchObject({ aplicado: false, comandos: [] });
+      expect(r.transicaoOS).toBeUndefined();
+      expect(r.motivo).toContain('pagamento em atraso');
+      expect(s.status).toBe(StatusSaga.EM_ANDAMENTO); expect(s.passo).toBe(PassoSaga.AGUARDAR_PAGAMENTO);
+      expect(s.prazoPagamento).toBeNull(); // o relogio nao reencontra a saga; a gauge de paradas alerta
+      expect(s.compensacoes).toEqual([]);
       expect(ate(PassoSaga.AGUARDAR_DIAGNOSTICO).aplicar(ev('saga.timeout'), em(999), PRAZOS).aplicado).toBe(false);
     });
   });
@@ -148,7 +179,6 @@ describe('SagaOS — maquina de estados pura (RFC-0005)', () => {
       [PassoSaga.AGUARDAR_DIAGNOSTICO, ['execucao.liberar-reservas']],
       [PassoSaga.GERAR_ORCAMENTO, ['billing.cancelar-orcamento', 'execucao.liberar-reservas']],
       [PassoSaga.AGUARDAR_APROVACAO, ['billing.cancelar-orcamento', 'execucao.liberar-reservas']],
-      [PassoSaga.AGUARDAR_PAGAMENTO, ['billing.cancelar-orcamento', 'execucao.liberar-reservas']],
       [PassoSaga.INICIAR_EXECUCAO, ['billing.cancelar-orcamento', 'execucao.liberar-reservas']],
     ])('no passo %s envia %j', (passo, comandos) => {
       const s = ate(passo as PassoSaga);
@@ -158,11 +188,11 @@ describe('SagaOS — maquina de estados pura (RFC-0005)', () => {
       expect(r.comandos.map((c) => c.type)).toEqual(comandos);
       expect(s.status).toBe(comandos.length ? StatusSaga.COMPENSANDO : StatusSaga.CANCELADA);
     });
-    it('depois de a execucao comecar e rejeitado', () => {
-      const s = ate(PassoSaga.AGUARDAR_FINALIZACAO);
+    it.each([PassoSaga.AGUARDAR_FINALIZACAO, PassoSaga.COBRAR, PassoSaga.AGUARDAR_PAGAMENTO])('depois de a execucao comecar (%s) e rejeitado', (passo) => {
+      const s = ate(passo);
       const r = s.aplicar(ev('os.cancelamento-manual'), em(50), PRAZOS);
       expect(r).toMatchObject({ aplicado: false, rejeitado: true });
-      expect(s.status).toBe(StatusSaga.EM_ANDAMENTO);
+      expect(s.status).toBe(StatusSaga.EM_ANDAMENTO); expect(s.passo).toBe(passo);
     });
     it('motivo explicito (ex.: TIMEOUT_APROVACAO via API) e respeitado', () => {
       const s = ate(PassoSaga.AGUARDAR_APROVACAO);
@@ -204,6 +234,7 @@ describe('SagaOS — maquina de estados pura (RFC-0005)', () => {
   it('adotar: OS anterior a saga entra no passo equivalente ao status', () => {
     const base = { numero: 'OS-9', clienteId: 'c', veiculoId: 'v', descricaoProblema: 'd' };
     expect(SagaOS.adotar({ ...base, statusOS: StatusOS.AGUARDANDO_PAGAMENTO }, T0)).toMatchObject({ passo: PassoSaga.AGUARDAR_PAGAMENTO, status: StatusSaga.EM_ANDAMENTO });
+    expect(SagaOS.adotar({ ...base, statusOS: StatusOS.AGUARDANDO_APROVACAO }, T0).passo).toBe(PassoSaga.AGUARDAR_APROVACAO);
     expect(SagaOS.adotar({ ...base, statusOS: StatusOS.ENTREGUE }, T0)).toMatchObject({ passo: PassoSaga.CONCLUIDA, status: StatusSaga.CONCLUIDA });
     expect(SagaOS.adotar({ ...base, statusOS: StatusOS.CANCELADA }, T0).status).toBe(StatusSaga.CANCELADA);
     const adotada = SagaOS.adotar({ ...base, statusOS: StatusOS.EM_EXECUCAO }, T0);
@@ -212,12 +243,15 @@ describe('SagaOS — maquina de estados pura (RFC-0005)', () => {
     expect(SagaOS.adotar({ ...base, statusOS: StatusOS.EM_DIAGNOSTICO, temDiagnostico: true }, T0).passo).toBe(PassoSaga.GERAR_ORCAMENTO);
     expect(SagaOS.adotar({ ...base, statusOS: StatusOS.EM_DIAGNOSTICO }, T0).passo).toBe(PassoSaga.AGUARDAR_DIAGNOSTICO);
     expect(SagaOS.adotar({ ...base, statusOS: StatusOS.RECEBIDA }, T0).comandosPendentes.map((c) => c.type)).toEqual(['execucao.enfileirar']);
-    expect(adotada.aplicar(ev('execucao.finalizada', { numeroOS: 'OS-9' }), em(1), PRAZOS).transicaoOS).toEqual({ tipo: 'finalizar' });
+    const r = adotada.aplicar(ev('execucao.finalizada', { numeroOS: 'OS-9' }), em(1), PRAZOS);
+    expect(r.transicaoOS).toEqual({ tipo: 'aguardarPagamento' });
+    expect(r.comandos.map((c) => c.type)).toEqual(['billing.cobrar']);
+    expect(SagaOS.adotar({ ...base, statusOS: StatusOS.AGUARDANDO_PAGAMENTO }, T0).aplicar(ev('billing.pagamento-aprovado', { numeroOS: 'OS-9' }), em(1), PRAZOS).transicaoOS).toEqual({ tipo: 'finalizar' });
   });
 
   it('reconstitute preserva tudo (inclusive compensacoes pendentes)', () => {
-    const s = ate(PassoSaga.AGUARDAR_PAGAMENTO);
-    s.aplicar(ev('billing.pagamento-recusado'), em(10), PRAZOS);
+    const s = ate(PassoSaga.INICIAR_EXECUCAO);
+    s.aplicar(ev('execucao.recusada', { motivo: 'estoque' }), em(10), PRAZOS);
     const r = SagaOS.reconstitute({
       id: 'id', numero: s.numero, clienteId: s.clienteId, veiculoId: s.veiculoId, descricaoProblema: s.descricaoProblema, passo: s.passo, status: s.status,
       historico: [...s.historico], compensacoes: [...s.compensacoes], prazoAprovacao: null, prazoPagamento: null, version: 4,
@@ -231,9 +265,8 @@ describe('SagaOS — maquina de estados pura (RFC-0005)', () => {
     it.each([
       [PassoSaga.ENFILEIRAR_EXECUCAO, 'execucao.enfileirada', 'execucao.recusada', MotivoCancelamento.EXECUCAO_RECUSADA],
       [PassoSaga.AGUARDAR_APROVACAO, 'billing.orcamento-aprovado', 'billing.orcamento-rejeitado', MotivoCancelamento.ORCAMENTO_REJEITADO],
-      [PassoSaga.AGUARDAR_PAGAMENTO, 'billing.pagamento-aprovado', 'billing.pagamento-recusado', MotivoCancelamento.PAGAMENTO_RECUSADO],
       [PassoSaga.INICIAR_EXECUCAO, 'execucao.iniciada', 'execucao.recusada', MotivoCancelamento.FALHA_INICIO_EXECUCAO],
-    ] as const)('em %s troca %s por %s uma unica vez', (passo, sucesso, falha, motivo) => {
+    ] as const)('em %s troca %s por %s uma unica vez (compensa)', (passo, sucesso, falha, motivo) => {
       const s = SagaOS.iniciar({ numero: 'OS-1', clienteId: 'cli-1', veiculoId: 'vei-1', descricaoProblema: 'Barulho', falhaSimulada: passo }, T0);
       s.consumirComandos();
       // avanca ate o passo marcado sem disparar a simulacao em passos anteriores
@@ -241,8 +274,7 @@ describe('SagaOS — maquina de estados pura (RFC-0005)', () => {
         [PassoSaga.AGUARDAR_DIAGNOSTICO, ev('execucao.enfileirada')],
         [PassoSaga.GERAR_ORCAMENTO, ev('execucao.diagnostico-concluido', { mecanicoId: 'm', diagnostico: 'Pastilhas', itens: ITENS })],
         [PassoSaga.AGUARDAR_APROVACAO, ev('billing.orcamento-gerado', { total: '300.00' })],
-        [PassoSaga.AGUARDAR_PAGAMENTO, ev('billing.orcamento-aprovado')],
-        [PassoSaga.INICIAR_EXECUCAO, ev('billing.pagamento-aprovado')],
+        [PassoSaga.INICIAR_EXECUCAO, ev('billing.orcamento-aprovado')],
       ];
       let i = 1;
       for (const [alvo, e] of seq) {
@@ -264,6 +296,23 @@ describe('SagaOS — maquina de estados pura (RFC-0005)', () => {
       // segunda vez nao troca mais
       expect(s.simularFalha(ev(sucesso), em(52))).toEqual(ev(sucesso));
     });
+    it('em AGUARDAR_PAGAMENTO troca pagamento-aprovado por recusado: pagamento pendente, sem compensacao', () => {
+      const s = SagaOS.iniciar({ numero: 'OS-1', clienteId: 'cli-1', veiculoId: 'vei-1', descricaoProblema: 'Barulho', falhaSimulada: PassoSaga.AGUARDAR_PAGAMENTO }, T0);
+      s.consumirComandos();
+      const seq = [
+        ev('execucao.enfileirada'), ev('execucao.diagnostico-concluido', { mecanicoId: 'm', diagnostico: 'Pastilhas', itens: ITENS }), ev('billing.orcamento-gerado', { total: '300.00' }),
+        ev('billing.orcamento-aprovado'), ev('execucao.iniciada'), ev('execucao.finalizada'), ev('billing.cobranca-criada', { orderId: 'mp-1' }),
+      ];
+      seq.forEach((e, i) => { expect(s.simularFalha(e, em(i))).toBe(e); s.aplicar(e, em(i), PRAZOS); s.consumirComandos(); });
+      expect(s.passo).toBe(PassoSaga.AGUARDAR_PAGAMENTO);
+      const trocado = s.simularFalha(ev('billing.pagamento-aprovado'), em(50));
+      expect(trocado.type).toBe('billing.pagamento-recusado');
+      const r = s.aplicar(trocado, em(51), PRAZOS);
+      expect(r).toEqual({ aplicado: true, comandos: [] });
+      expect(s.status).toBe(StatusSaga.EM_ANDAMENTO);
+      expect(s.historico[s.historico.length - 1].resultado).toBe('pagamento-pendente');
+      expect(s.simularFalha(ev('billing.pagamento-aprovado'), em(52)).type).toBe('billing.pagamento-aprovado');
+    });
     it('sem falhaSimulada ou em passo diferente, o evento passa intacto', () => {
       const s = SagaOS.iniciar({ numero: 'OS-1', clienteId: 'c', veiculoId: 'v', descricaoProblema: 'd', falhaSimulada: PassoSaga.AGUARDAR_PAGAMENTO }, T0);
       const e = ev('execucao.enfileirada');
@@ -274,7 +323,7 @@ describe('SagaOS — maquina de estados pura (RFC-0005)', () => {
   });
 
   describe('reprocessar (retomada manual)', () => {
-    it('reenvia o comando do passo atual: enfileirar, gerar-orcamento (com itens), iniciar', () => {
+    it('reenvia o comando do passo atual: enfileirar, gerar-orcamento (com itens), iniciar, cobrar', () => {
       const s0 = nova(); s0.consumirComandos();
       expect(s0.reprocessar({}, em(1)).map((c) => c.type)).toEqual(['execucao.enfileirar']);
       expect(s0.historico[s0.historico.length - 1]).toMatchObject({ evento: 'saga.reprocessar', resultado: 'reprocessada' });
@@ -284,17 +333,20 @@ describe('SagaOS — maquina de estados pura (RFC-0005)', () => {
       expect(s2.reprocessar({ itens }, em(2))[0]).toMatchObject({ type: 'billing.gerar-orcamento', data: { numeroOS: 'OS-1', clienteId: 'cli-1', itens } });
       const s5 = ate(PassoSaga.INICIAR_EXECUCAO);
       expect(s5.reprocessar({}, em(1)).map((c) => c.type)).toEqual(['execucao.iniciar']);
+      // cobranca perdida ou pagamento recusado/em atraso: nova cobranca
+      expect(ate(PassoSaga.COBRAR).reprocessar({}, em(1))).toEqual([{ type: 'billing.cobrar', data: { numeroOS: 'OS-1' } }]);
+      expect(ate(PassoSaga.AGUARDAR_PAGAMENTO).reprocessar({}, em(1)).map((c) => c.type)).toEqual(['billing.cobrar']);
     });
     it('passos que aguardam cliente/participante e sagas encerradas nao reenviam nada', () => {
-      for (const passo of [PassoSaga.AGUARDAR_DIAGNOSTICO, PassoSaga.AGUARDAR_APROVACAO, PassoSaga.AGUARDAR_PAGAMENTO, PassoSaga.AGUARDAR_FINALIZACAO, PassoSaga.CONCLUIDA]) {
+      for (const passo of [PassoSaga.AGUARDAR_DIAGNOSTICO, PassoSaga.AGUARDAR_APROVACAO, PassoSaga.AGUARDAR_FINALIZACAO, PassoSaga.CONCLUIDA]) {
         const s = ate(passo);
         expect(s.reprocessar({}, em(1))).toEqual([]);
         expect(s.historico[s.historico.length - 1].detalhe).toContain('nada a reenviar');
       }
     });
     it('em COMPENSANDO reenvia so as compensacoes nao confirmadas', () => {
-      const s = ate(PassoSaga.AGUARDAR_PAGAMENTO);
-      s.aplicar(ev('billing.pagamento-recusado'), em(10), PRAZOS); s.consumirComandos();
+      const s = ate(PassoSaga.INICIAR_EXECUCAO);
+      s.aplicar(ev('execucao.recusada', { motivo: 'estoque' }), em(10), PRAZOS); s.consumirComandos();
       s.aplicar(ev('billing.orcamento-cancelado'), em(11), PRAZOS);
       const re = s.reprocessar({}, em(12));
       expect(re.map((c) => c.type)).toEqual(['execucao.liberar-reservas']);

@@ -11,7 +11,7 @@ export interface RegistrarExecucaoIniciadaInput {
   tx?: unknown;
 }
 
-/** `execucao.iniciada` -> EM_EXECUCAO. */
+/** `execucao.iniciada` -> EM_EXECUCAO (a aprovacao do orcamento, por si, nao muda a OS). */
 @Injectable()
 export class RegistrarExecucaoIniciadaUseCase implements UseCase<RegistrarExecucaoIniciadaInput, OrdemDeServico> {
   constructor(

@@ -48,7 +48,8 @@ Regras que a API aplica: `total_amount` = soma de `quantity × unit_price`; valo
 sao **strings com 2 casas**; `processing_mode` so aceita `manual` no Checkout Pro;
 `external_reference` ate 64 caracteres (use o numero da OS). A resposta (201) traz
 `id` (`ORD...`), `status: "created"` e **`checkout_url`** — e esse link que vai
-em `billing.orcamento-aprovado.linkPagamento`.
+em `billing.cobranca-criada.linkPagamento` (a order e criada ao receber `billing.cobrar`,
+depois da execucao do servico — ADR-0012; `billing.orcamento-aprovado` nao tem link).
 
 No Billing, o mesmo com o SDK: `new Order(new MercadoPagoConfig({ accessToken })).create({ body, requestOptions: { idempotencyKey } })`.
 
@@ -101,11 +102,12 @@ minusculas se for alfanumerico. O handler deve responder 200/201 em ate 22 s
 
 | Cenario | Como provocar | Resultado esperado |
 |---|---|---|
-| Pagamento aprovado | titular `APRO` | `order.processed` → `billing.pagamento-aprovado` → saga envia `execucao.iniciar` |
-| Pagamento recusado | titular `OTHE` | `billing.pagamento-recusado` → compensacoes (`billing.cancelar-orcamento`, `execucao.liberar-reservas`) → OS `CANCELADA` |
+| Cobranca criada | `execucao.finalizada` na saga → `billing.cobrar` | Billing cria a order → `billing.cobranca-criada` (link ao cliente); OS `AGUARDANDO_PAGAMENTO` |
+| Pagamento aprovado | titular `APRO` | `order.processed` → `billing.pagamento-aprovado` → OS `FINALIZADA` (`os.finalizada`); atendente entrega |
+| Pagamento recusado | titular `OTHE` | `billing.pagamento-recusado` → **sem compensacao** (servico ja executado): OS segue `AGUARDANDO_PAGAMENTO`, saga registra `pagamento-pendente`; `POST /admin/sagas/:numero/reprocessar` reenvia `billing.cobrar` (nova order) |
 | Pagamento pendente | titular `CONT` | cobranca segue PENDENTE; reconciliacao consulta a order |
 | Webhook perdido | pagar com a URL do webhook apontando para lugar nenhum | job de reconciliacao (`GET /v1/orders/{id}`) fecha a cobranca |
-| Timeout de pagamento | nao pagar; `SAGA_TIMEOUT_PAGAMENTO_MS` curto no OS Service | OS `CANCELADA` com `TIMEOUT_PAGAMENTO` |
+| Pagamento em atraso | nao pagar; `SAGA_TIMEOUT_PAGAMENTO_MS` curto no OS Service | OS **nao** e cancelada: historico `pagamento em atraso`, `oficina_os_sagas_paradas` alerta; `TIMEOUT_PAGAMENTO` e reservado/obsoleto |
 
 ## 6. Quando o Billing subir na AWS
 

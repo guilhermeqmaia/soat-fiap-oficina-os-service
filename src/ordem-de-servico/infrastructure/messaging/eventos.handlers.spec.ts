@@ -13,11 +13,11 @@ describe('handlers da fila os-eventos (-> orquestrador da saga)', () => {
   });
   beforeEach(() => jest.clearAllMocks());
 
-  it('cobre os 12 types assinados na fila, sem duplicatas', () => {
+  it('cobre os 13 types assinados na fila, sem duplicatas', () => {
     const types = OS_MESSAGE_HANDLERS.map((h) => get<{ type: string }>(h as any).type);
     expect(new Set(types).size).toBe(types.length);
     expect(types.sort()).toEqual([
-      'billing.orcamento-aprovado', 'billing.orcamento-cancelado', 'billing.orcamento-gerado', 'billing.orcamento-rejeitado', 'billing.pagamento-aprovado', 'billing.pagamento-recusado',
+      'billing.cobranca-criada', 'billing.orcamento-aprovado', 'billing.orcamento-cancelado', 'billing.orcamento-gerado', 'billing.orcamento-rejeitado', 'billing.pagamento-aprovado', 'billing.pagamento-recusado',
       'execucao.diagnostico-concluido', 'execucao.enfileirada', 'execucao.finalizada', 'execucao.iniciada', 'execucao.recusada', 'execucao.reservas-liberadas',
     ]);
   });

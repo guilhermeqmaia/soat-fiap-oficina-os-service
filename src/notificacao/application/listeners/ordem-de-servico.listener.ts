@@ -61,7 +61,7 @@ export class OrdemDeServicoNotificacaoListener {
         `Diagnostico: ${event.diagnostico}\n` +
         `Valor total estimado: ${valorFormatado}\n\n` +
         // Fase 4: aprovacao/rejeicao e pagamento acontecem no Billing; o link de
-        // pagamento chega na notificacao de `billing.orcamento-aprovado` (US-F4-12).
+        // pagamento chega na notificacao de `billing.cobranca-criada`, depois do servico executado (US-F4-12).
         `Acesse o portal do cliente para aprovar ou rejeitar o orcamento.\n`;
 
       await this.enviarNotificacao.execute({

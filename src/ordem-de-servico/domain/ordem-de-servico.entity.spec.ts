@@ -20,8 +20,8 @@ const ate = (status: StatusOS): OrdemDeServico => {
   const passos: Array<[StatusOS, () => void]> = [
     [StatusOS.EM_DIAGNOSTICO, () => os.iniciarDiagnostico()],
     [StatusOS.AGUARDANDO_APROVACAO, () => { diagnostico(os); os.aguardarAprovacao(); }],
-    [StatusOS.AGUARDANDO_PAGAMENTO, () => os.aguardarPagamento()],
     [StatusOS.EM_EXECUCAO, () => os.iniciarExecucao()],
+    [StatusOS.AGUARDANDO_PAGAMENTO, () => os.aguardarPagamento()],
     [StatusOS.FINALIZADA, () => os.finalizar()],
     [StatusOS.ENTREGUE, () => os.entregar()],
   ];
@@ -48,7 +48,7 @@ describe('OrdemDeServico (OS Service, Fase 4)', () => {
   });
 
   describe('caminho feliz dirigido por eventos', () => {
-    it('RECEBIDA -> EM_DIAGNOSTICO -> AGUARDANDO_APROVACAO -> AGUARDANDO_PAGAMENTO -> EM_EXECUCAO -> FINALIZADA -> ENTREGUE', () => {
+    it('RECEBIDA -> EM_DIAGNOSTICO -> AGUARDANDO_APROVACAO -> EM_EXECUCAO -> AGUARDANDO_PAGAMENTO -> FINALIZADA -> ENTREGUE', () => {
       const os = ate(StatusOS.ENTREGUE);
       expect(os.status).toBe(StatusOS.ENTREGUE);
       expect(os.mecanicoId).toBe('mec-1');
@@ -81,8 +81,8 @@ describe('OrdemDeServico (OS Service, Fase 4)', () => {
     it.each([
       ['iniciarDiagnostico', StatusOS.EM_DIAGNOSTICO],
       ['aguardarAprovacao', StatusOS.AGUARDANDO_APROVACAO],
-      ['aguardarPagamento', StatusOS.AGUARDANDO_PAGAMENTO],
       ['iniciarExecucao', StatusOS.EM_EXECUCAO],
+      ['aguardarPagamento', StatusOS.AGUARDANDO_PAGAMENTO],
       ['finalizar', StatusOS.FINALIZADA],
       ['entregar', StatusOS.ENTREGUE],
     ] as const)('%s rejeita quando o status atual nao e o esperado', (metodo, alvo) => {
@@ -96,17 +96,18 @@ describe('OrdemDeServico (OS Service, Fase 4)', () => {
   });
 
   describe('cancelamento (compensacao da saga)', () => {
-    it.each([StatusOS.RECEBIDA, StatusOS.EM_DIAGNOSTICO, StatusOS.AGUARDANDO_APROVACAO, StatusOS.AGUARDANDO_PAGAMENTO])(
+    it.each([StatusOS.RECEBIDA, StatusOS.EM_DIAGNOSTICO, StatusOS.AGUARDANDO_APROVACAO])(
       'pode cancelar a partir de %s e guarda o motivo',
       (status) => {
         const os = ate(status);
         expect(os.podeSerCancelada()).toBe(true);
-        os.cancelar(MotivoCancelamento.PAGAMENTO_RECUSADO);
+        os.cancelar(MotivoCancelamento.ORCAMENTO_REJEITADO);
         expect(os.status).toBe(StatusOS.CANCELADA);
-        expect(os.motivoCancelamento).toBe(MotivoCancelamento.PAGAMENTO_RECUSADO);
+        expect(os.motivoCancelamento).toBe(MotivoCancelamento.ORCAMENTO_REJEITADO);
       },
     );
-    it.each([StatusOS.EM_EXECUCAO, StatusOS.FINALIZADA, StatusOS.ENTREGUE])('nao cancela a partir de %s', (status) => {
+    // AGUARDANDO_PAGAMENTO vem depois do servico executado (ADR-0012): sem rollback
+    it.each([StatusOS.EM_EXECUCAO, StatusOS.AGUARDANDO_PAGAMENTO, StatusOS.FINALIZADA, StatusOS.ENTREGUE])('nao cancela a partir de %s', (status) => {
       const os = ate(status);
       expect(os.podeSerCancelada()).toBe(false);
       expect(() => os.cancelar(MotivoCancelamento.OPERADOR)).toThrow(InvalidStatusTransitionError);
@@ -152,8 +153,8 @@ describe('OrdemDeServico (OS Service, Fase 4)', () => {
       os.entregar();
       expect(os.eventosIntegracao.map((e) => e.type)).toEqual(['os.finalizada', 'os.entregue']);
       const cancelada = nova();
-      cancelada.cancelar(MotivoCancelamento.TIMEOUT_PAGAMENTO);
-      expect(cancelada.eventosIntegracao).toEqual([{ type: 'os.cancelada', data: { numeroOS: cancelada.numero, motivo: MotivoCancelamento.TIMEOUT_PAGAMENTO } }]);
+      cancelada.cancelar(MotivoCancelamento.TIMEOUT_APROVACAO);
+      expect(cancelada.eventosIntegracao).toEqual([{ type: 'os.cancelada', data: { numeroOS: cancelada.numero, motivo: MotivoCancelamento.TIMEOUT_APROVACAO } }]);
     });
     it('consumirEventosIntegracao entrega e esvazia (o repositorio consome na transacao)', () => {
       const os = nova();
@@ -162,8 +163,8 @@ describe('OrdemDeServico (OS Service, Fase 4)', () => {
       expect(os.consumirEventosIntegracao()).toHaveLength(0);
       expect(os.eventosIntegracao).toHaveLength(0);
     });
-    it('transicoes intermediarias (diagnostico, aprovacao, pagamento, execucao) nao geram evento os.*', () => {
-      const os = ate(StatusOS.EM_EXECUCAO);
+    it('transicoes intermediarias (diagnostico, aprovacao, execucao, aguardando pagamento) nao geram evento os.*', () => {
+      const os = ate(StatusOS.AGUARDANDO_PAGAMENTO);
       expect(os.eventosIntegracao).toHaveLength(0);
     });
     it('mascararDocumento cobre CPF e CNPJ, com ou sem pontuacao', () => {

@@ -25,12 +25,12 @@ EXC=$(queue execucao-comandos); BIC=$(queue billing-comandos); OSE=$(queue os-ev
 
 # comandos do orquestrador (publicados no topico do OS Service)
 subscribe "$OS" "$EXC" "execucao.enfileirar,execucao.iniciar,execucao.liberar-reservas"
-subscribe "$OS" "$BIC" "billing.gerar-orcamento,billing.cancelar-orcamento"
+subscribe "$OS" "$BIC" "billing.gerar-orcamento,billing.cobrar,billing.cancelar-orcamento"
 # eventos dos participantes -> orquestrador
 subscribe "$EX" "$OSE" "execucao.enfileirada,execucao.recusada,execucao.diagnostico-concluido,execucao.iniciada,execucao.finalizada,execucao.reservas-liberadas"
-subscribe "$BI" "$OSE" "billing.orcamento-gerado,billing.orcamento-aprovado,billing.orcamento-rejeitado,billing.pagamento-aprovado,billing.pagamento-recusado,billing.orcamento-cancelado"
+subscribe "$BI" "$OSE" "billing.orcamento-gerado,billing.orcamento-aprovado,billing.orcamento-rejeitado,billing.cobranca-criada,billing.pagamento-aprovado,billing.pagamento-recusado,billing.orcamento-cancelado"
 # notificacao (coreografada)
-subscribe "$BI" "$NOT" "billing.orcamento-gerado,billing.orcamento-aprovado,billing.pagamento-aprovado,billing.pagamento-recusado"
+subscribe "$BI" "$NOT" "billing.orcamento-gerado,billing.orcamento-aprovado,billing.cobranca-criada,billing.pagamento-aprovado,billing.pagamento-recusado"
 subscribe "$OS" "$NOT" "os.aberta,os.finalizada,os.cancelada,os.entregue"
 
 echo "mensageria local pronta: topicos oficina-{os,execucao,billing}.fifo · filas execucao-comandos, billing-comandos, os-eventos, notificacao-eventos (+ DLQs)"
