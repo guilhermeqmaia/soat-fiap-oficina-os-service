@@ -9,9 +9,13 @@ Legenda: ✅ tem QA Plan · ⚠️ pendente (nao prioritario neste ciclo) · —
 | Story | Titulo | QA Plan |
 |---|---|---|
 | US-F4-01 | Kit Compartilhado dos Servicos | ✅ [QA_PLAN_US-F4-01](QA_PLAN_US-F4-01.md) |
-| US-F4-02 | Mensageria — SNS + SQS FIFO com DLQ | ✅ [QA_PLAN_US-F4-02](QA_PLAN_US-F4-02.md) |
+| ~~US-F4-02~~ | Mensageria — SNS + SQS FIFO com DLQ (cancelada em 03/11) | ✅ [QA_PLAN_US-F4-02](QA_PLAN_US-F4-02.md) *(historico)* |
 | US-F4-03 | Bancos por Servico (Postgres + DynamoDB) | ✅ [QA_PLAN_US-F4-03](QA_PLAN_US-F4-03.md) |
 | US-F4-05 | API Gateway Multi-servico | ✅ [QA_PLAN_US-F4-05](QA_PLAN_US-F4-05.md) |
+| US-F4-06 | OS Service — strangler | ✅ [QA_PLAN_US-F4-06](QA_PLAN_US-F4-06.md) |
+| US-F4-10 | Saga orquestrada | ✅ [QA_PLAN_US-F4-10](QA_PLAN_US-F4-10.md) |
+| US-F4-11 | Compensacoes e rollback | ✅ [QA_PLAN_US-F4-11](QA_PLAN_US-F4-11.md) |
+| US-F4-18 | Comunicacao HTTP entre servicos (RFC-0008) | ✅ [QA_PLAN_US-F4-18](QA_PLAN_US-F4-18.md) *(plano previo a implementacao)* |
 
 ## Fase 3 (`f3-*`) — cobertura completa das historias testaveis
 

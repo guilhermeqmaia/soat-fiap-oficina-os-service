@@ -95,16 +95,17 @@ curl -s -X POST "http://localhost:3001/webhooks/mercadopago?type=order&data.id=$
 Atencao: `data.id` no manifest e o valor da **query string** (`data.id`), em
 minusculas se for alfanumerico. O handler deve responder 200/201 em ate 22 s
 (senao o Mercado Pago reenvia a cada 15 min), validar a assinatura, e **consultar
-`GET /v1/orders/{id}`** antes de publicar `billing.pagamento-aprovado` /
-`billing.pagamento-recusado`. Idempotencia por id da order.
+`GET /v1/orders/{id}`** antes de enviar o callback `billing.pagamento-aprovado` /
+`billing.pagamento-recusado` ao OS Service (`POST /ordens-servico/{numeroOS}/eventos`,
+JWT `SERVICO`, retry 3x — RFC-0008). Idempotencia por id da order.
 
 ## 5. Cenarios para o BDD / video
 
 | Cenario | Como provocar | Resultado esperado |
 |---|---|---|
-| Cobranca criada | `execucao.finalizada` na saga → `billing.cobrar` | Billing cria a order → `billing.cobranca-criada` (link ao cliente); OS `AGUARDANDO_PAGAMENTO` |
-| Pagamento aprovado | titular `APRO` | `order.processed` → `billing.pagamento-aprovado` → OS `FINALIZADA` (`os.finalizada`); atendente entrega |
-| Pagamento recusado | titular `OTHE` | `billing.pagamento-recusado` → **sem compensacao** (servico ja executado): OS segue `AGUARDANDO_PAGAMENTO`, saga registra `pagamento-pendente`; `POST /admin/sagas/:numero/reprocessar` reenvia `billing.cobrar` (nova order) |
+| Cobranca criada | callback `execucao.finalizada` → OS chama `POST /orcamentos/{n}/cobrar` (≙ `billing.cobrar`) | Billing cria a order e responde `201 { orderId, linkPagamento, valor }` (≙ `billing.cobranca-criada`; link ao cliente); OS `AGUARDANDO_PAGAMENTO` |
+| Pagamento aprovado | titular `APRO` | `order.processed` → callback `billing.pagamento-aprovado` → OS `FINALIZADA`; atendente entrega |
+| Pagamento recusado | titular `OTHE` | callback `billing.pagamento-recusado` → **sem compensacao** (servico ja executado): OS segue `AGUARDANDO_PAGAMENTO`, saga registra `pagamento-pendente`; `POST /admin/sagas/:numero/reprocessar` repete `POST /orcamentos/{n}/cobrar` (nova order) — runbook `docs/runbooks/saga-reprocessar.md` |
 | Pagamento pendente | titular `CONT` | cobranca segue PENDENTE; reconciliacao consulta a order |
 | Webhook perdido | pagar com a URL do webhook apontando para lugar nenhum | job de reconciliacao (`GET /v1/orders/{id}`) fecha a cobranca |
 | Pagamento em atraso | nao pagar; `SAGA_TIMEOUT_PAGAMENTO_MS` curto no OS Service | OS **nao** e cancelada: historico `pagamento em atraso`, `oficina_os_sagas_paradas` alerta; `TIMEOUT_PAGAMENTO` e reservado/obsoleto |

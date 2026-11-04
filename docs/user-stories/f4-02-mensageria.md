@@ -4,10 +4,20 @@
 
 **Prioridade:** Alta
 **Story Points:** 5
-**Status:** Em revisão — stage mergeado (infra-k8s PR #30), plan real 41 recursos; validacao com mensagens reais no proximo ciclo de deploy. QA: [QA_PLAN_US-F4-02](../qa-plans/QA_PLAN_US-F4-02.md)
+**Status:** Cancelada (03/11/2026) — substituída pela [US-F4-18](f4-18-comunicacao-http-entre-servicos.md). Historico: stage mergeado (infra-k8s PR #30), plan real 41 recursos; QA: [QA_PLAN_US-F4-02](../qa-plans/QA_PLAN_US-F4-02.md)
 **DDD Domain:** Transversal
 **DDD Layer:** Infrastructure (Terraform)
 **Repositorio:** 2 — `soat-fiap-oficina-infra-k8s` (stage `messaging/`)
+
+## Cancelamento (03/11/2026)
+
+Em 03/11 o time decidiu trocar a mensageria SNS/SQS por **comunicacao HTTP direta
+entre os servicos** (chamadas sincronas com retry + callbacks HTTP para o OS
+Service) — [RFC-0008](../arquitetura/rfcs/RFC-0008-comunicacao-http-entre-servicos.md),
+contrato em [`docs/contratos/http-interno.md`](../contratos/http-interno.md). O stage
+`messaging/` do infra-k8s, o LocalStack e as variaveis `SNS_TOPIC_ARN`/`SQS_QUEUE_URL`
+sao **removidos na US-F4-18**. Os criterios abaixo ficam como historico do que foi
+entregue (infra-k8s PR #30) e nao devem ser evoluidos.
 
 ## Contexto
 

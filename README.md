@@ -547,19 +547,36 @@ com as dependências apontando para o domínio (Clean Architecture).
 
 ---
 
-## Comunicação entre serviços (HTTP — Fase 4, US-F4-18)
+## Comunicação entre serviços (Fase 4 — RFC-0008, US-F4-18)
 
-Desde 03/11/2026 o OS Service fala com a Execução e o Billing por **HTTP direto** (RFC-0008; a mensageria
-SNS/SQS da US-F4-06 foi removida). As chamadas vão pelo DNS interno do cluster
-(`EXECUCAO_SERVICE_URL=http://execucao-service:3002`, `BILLING_SERVICE_URL=http://billing-service:3001`),
-sem passar pelo API Gateway, com o `ClienteHttpInterno` do kit (`@guilhermeqmaia/oficina-kit/http`): JWT de
-serviço (`role: SERVICO`, mesmo `JWT_SECRET` da Lambda), `x-correlation-id` = número da OS, timeout de 5 s e
-3 tentativas com backoff (200 ms, 800 ms, 3 s) só para 5xx/timeout/rede. A **resposta síncrona** de cada
-comando vira o evento da saga (`201` ≙ sucesso, `409 { motivo }` ≙ recusa); o que depende de uma pessoa ou do
-Mercado Pago chega por **callback** em `POST /ordens-servico/:numero/eventos` (role `SERVICO`, envelope com
-`id` uuid, `type`, `version`, `occurredAt`, `producer`, `data`), deduplicado pelo `id` em `processed_messages`
-(`200 { aplicado: false, duplicado: true }` na repetição). A especificação completa — endpoints, respostas,
-callbacks, retry, idempotência — está em [`docs/contratos/http-interno.md`](docs/contratos/http-interno.md).
+Desde **03/11/2026** o OS Service conversa com a Execução e o Billing por **HTTP direto**
+([RFC-0008](docs/arquitetura/rfcs/RFC-0008-comunicacao-http-entre-servicos.md); contrato em
+[`docs/contratos/http-interno.md`](docs/contratos/http-interno.md)). A mensageria SNS/SQS com
+outbox (RFC-0006, ADR-0009, implementada na US-F4-06) foi descartada; o código de outbox,
+poller e handlers SQS é removido na [US-F4-18](docs/user-stories/f4-18-comunicacao-http-entre-servicos.md).
+
+- **Chama** a Execução (`POST /execucao/ordens`, `POST /execucao/ordens/{n}/iniciar`,
+  `DELETE /execucao/ordens/{n}`) e o Billing (`POST /orcamentos`, `POST /orcamentos/{n}/cobrar`,
+  `DELETE /orcamentos/{n}`) pelo DNS interno do cluster, com o cliente HTTP do kit
+  `@guilhermeqmaia/oficina-kit/http`: timeout 5 s, **3 tentativas com backoff** (200 ms, 800 ms,
+  3 s) só para `5xx`/timeout/rede, JWT de serviço (`role: SERVICO`, mesmo `JWT_SECRET` da Lambda),
+  `x-correlation-id` = número da OS e `traceparent`. A resposta síncrona é o evento da saga
+  (`201` ≙ `execucao.enfileirada`, `409 { motivo }` ≙ `execucao.recusada`, ...).
+- **Recebe callbacks** em `POST /ordens-servico/{numero}/eventos` (role `SERVICO`) com o envelope
+  `{ id, type, version, occurredAt, producer, data }` para o que depende de pessoa ou do Mercado
+  Pago (`execucao.diagnostico-concluido`, `execucao.finalizada`, `billing.orcamento-aprovado`,
+  `billing.orcamento-rejeitado`, `billing.pagamento-aprovado`, `billing.pagamento-recusado`).
+  Deduplicação por `id` em `processed_messages` (`200 { aplicado: false, duplicado: true }`);
+  `409` em conflito de versão (o participante relê e repete).
+- **Idempotência:** comandos por `numeroOS`; callbacks por `id` do envelope. Retry esgotado →
+  a saga fica no passo → alerta de saga parada → `POST /admin/sagas/:numero/reprocessar`.
+- Vocabulário dos `type`s e schemas de `data`: [`docs/contratos/asyncapi.yaml`](docs/contratos/asyncapi.yaml).
+- Chamadas entre serviços **não passam** pelo API Gateway; usuários entram pelo gateway
+  (prefixos `/ordens-servico|/clientes|/veiculos|/usuario|/notificacoes|/auth/me|/admin` → OS;
+  `/orcamentos|/pagamentos|/webhooks` → Billing; `/execucao|/catalogo|/estoque` → Execução).
+
+Localmente: `EXECUCAO_SERVICE_URL=http://localhost:3002`, `BILLING_SERVICE_URL=http://localhost:3001`
+no `.env`; sem LocalStack.
 
 ---
 
@@ -603,6 +620,9 @@ precisa ser explícito e consultável).
 - Métricas: `oficina_os_saga_passos_total`, `oficina_os_saga_passo_duracao_seconds`, `oficina_os_sagas`,
   `oficina_os_sagas_paradas` (alerta de saga travada, `SAGA_ALERTA_PARADA_MIN`),
   `oficina_integracoes_total{integracao="execucao-service"|"billing-service"}`.
+- **Operação (US-F4-11):** chamada que falha 3 vezes deixa a saga parada e dispara o alerta; o runbook
+  [`docs/runbooks/saga-reprocessar.md`](docs/runbooks/saga-reprocessar.md) cobre triagem e reenvio.
+  `POST /admin/sagas/:numero/reprocessar` (ADMIN) repete a chamada pendente de uma saga travada.
 - **Demo de falha:** com `SAGA_SIMULAR_FALHA_HABILITADO=true`, o header `x-simular-falha=<passo>` no
   `POST /ordens-servico` faz a saga tratar o sucesso daquele passo como falha e compensar.
 
