@@ -1,7 +1,7 @@
 # ADR-0013: API Gateway multi-serviço
 
 **Status:** Aceita
-**Data:** 2026-09-30
+**Data:** 2026-09-30 (revisada em 2026-11-03)
 
 ## Contexto
 
@@ -29,3 +29,16 @@ domínio: serviços internos mudam (meia-vida de 1,5 ano), o contrato externo n�
 - O CD de cada serviço publica seu NodePort/target; o stage `gateway/` lê esses
   valores (SSM/outputs) — ordem de deploy documentada nos scripts `aws-deploy-all.sh`.
 - Adicionar um quarto serviço = novo prefixo + novo listener, sem tocar nos existentes.
+
+## Revisão (03/11/2026)
+
+- Confirmado que a **Execução também fica atrás do gateway** (prefixos `/execucao*`,
+  `/catalogo*`, `/estoque*`), como já previsto acima: o mecânico diagnostica e
+  finaliza pela API da Execução passando pelo gateway, com o mesmo JWT.
+- **Chamadas entre serviços não passam pelo gateway**: OS → Execução/Billing e os
+  callbacks Execução/Billing → OS vão direto pelo DNS interno do cluster
+  (`http://execucao-service:3002`, `http://billing-service:3001`,
+  `http://os-service:3000`), autenticadas por JWT de serviço (`role: SERVICO`).
+  Ver [RFC-0008](../rfcs/RFC-0008-comunicacao-http-entre-servicos.md) e
+  [`docs/contratos/http-interno.md`](../../contratos/http-interno.md).
+- A rota `/admin*` (reprocessar saga) entra no prefixo do OS Service.

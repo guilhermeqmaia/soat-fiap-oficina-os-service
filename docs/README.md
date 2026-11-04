@@ -8,7 +8,7 @@ documentos abaixo detalham cada tema.
 
 | Documento | Descrição |
 |---|---|
-| [RFCs](arquitetura/rfcs/README.md) | Decisões técnicas em discussão (nuvem, banco, autenticação) |
+| [RFCs](arquitetura/rfcs/README.md) | Decisões técnicas com alternativas (nuvem, banco, autenticação, microsserviços, saga, HTTP entre serviços) |
 | [ADRs](arquitetura/adr/README.md) | Decisões arquiteturais permanentes |
 | [Arquitetura Fase 3](arquitetura/arquitetura-fase3.md) | Diagrama de componentes (visão de nuvem AWS), sequências de autenticação por CPF e abertura de OS, fluxo de deploy dos 4 repos e legenda RFCs/ADRs (US-F3-DOC-03) |
 | [Arquitetura Fase 2](arquitetura/arquitetura-fase2.md) | Desenho da arquitetura da Fase 2 (Kubernetes, CI/CD, IaC) |
@@ -24,7 +24,7 @@ documentos abaixo detalham cada tema.
 
 ## User Stories
 
-- [Índice das histórias por fase](user-stories/README.md) — Fase 1 (US-00 a US-23), Fase 2 (`f2-*`) e Fase 3 (`f3-*`), com status.
+- [Índice das histórias por fase](user-stories/README.md) — Fase 1 (US-00 a US-23), Fase 2 (`f2-*`), Fase 3 (`f3-*`) e Fase 4 (`f4-*`), com status.
 
 ## QA Plans
 
@@ -74,8 +74,11 @@ documentos abaixo detalham cada tema.
 
 ## Fase 4
 
-- [plano-execucao-fase-4.md](plano-execucao-fase-4.md) — plano da Fase 4 (insights de mercado, decisões, ondas, 23 histórias)
-- [contratos/](contratos/README.md) — catálogo AsyncAPI dos eventos e comandos da Fase 4 (fonte dos testes de contrato)
+- [plano-execucao-fase-4.md](plano-execucao-fase-4.md) — plano da Fase 4 (insights de mercado, decisões revisadas em 03/11, ondas, 23 histórias)
+- [contratos/http-interno.md](contratos/http-interno.md) — **contrato efetivo** da comunicação HTTP entre os serviços (RFC-0008): endpoints, callbacks, envelope, retry/idempotência
+- [contratos/](contratos/README.md) — AsyncAPI (vocabulário/payloads dos eventos), OpenAPI por serviço (`openapi/`) e exemplos
+- [runbooks/saga-reprocessar.md](runbooks/saga-reprocessar.md) — saga parada / retry esgotado → reprocessar (sem DLQ)
+- [mercado-pago-sandbox.md](mercado-pago-sandbox.md) — sandbox, orders de teste e webhook local do Mercado Pago
 - [tech-challenges/fase-4-tech-challenge.pdf](tech-challenges/fase-4-tech-challenge.pdf) — enunciado
 
 ## Painel da Fase 4

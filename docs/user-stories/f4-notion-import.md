@@ -4,7 +4,7 @@ Este arquivo prepara a criação das histórias da Fase 4 no board do Notion.
 A criação em si é feita **sob demanda** (peça "criar as histórias da Fase 4 no
 Notion") — este manifesto é a fonte de verdade para essa etapa.
 
-## Historias a criar (23)
+## Historias a criar (23 + US-F4-18 em 03/11; US-F4-02 cancelada)
 
 | Card (`Nome`) | `Descrição` (User Story) | Arquivo |
 |---|---|---|
@@ -12,10 +12,11 @@ Notion") — este manifesto é a fonte de verdade para essa etapa.
 | US-F4-DOC-02: ADRs — Outbox, Kit Compartilhado, SonarCloud, Mercado Pago e Gateway Multi-servico | Como Arquiteto do time, quero registrar as decisoes permanentes de implementacao em ADRs, para que os tres servicos sigam as mesmas regras de consistencia, qualidade e integracao. | `f4-doc-02-adrs.md` |
 | US-F4-DOC-03: Contratos de Eventos e Comandos (AsyncAPI) | Como Desenvolvedor de qualquer um dos servicos, quero um catalogo versionado de todos os eventos e comandos trocados pelo broker, para implementar produtores e consumidores sem depender de conversas informais. | `f4-doc-03-contratos-eventos.md` |
 | US-F4-01: Kit Compartilhado dos Servicos (`@guilhermeqmaia/oficina-kit`) | Como Desenvolvedor de um microsservico, quero um pacote compartilhado com autenticacao, logs, metricas, mensageria e outbox prontos, para que os tres servicos nasçam iguais e eu escreva apenas codigo de dominio. | `f4-01-kit-compartilhado.md` |
-| US-F4-02: Mensageria — SNS + SQS FIFO com DLQ (Terraform) | Como Plataforma, quero topicos e filas provisionados por Terraform com DLQ e ordenacao por OS, para que os servicos se integrem de forma assincrona e desacoplada sem perder mensagens. | `f4-02-mensageria.md` |
+| [CANCELADA] US-F4-02: Mensageria — SNS + SQS FIFO com DLQ (Terraform) | Como Plataforma, quero topicos e filas provisionados por Terraform com DLQ e ordenacao por OS, para que os servicos se integrem de forma assincrona e desacoplada sem perder mensagens. | `f4-02-mensageria.md` |
 | US-F4-03: Bancos por Servico — Postgres (OS, Billing) e DynamoDB (Execucao) | Como Plataforma, quero que cada microsservico tenha seu proprio banco com credenciais exclusivas, para que nenhum servico acesse os dados de outro e o requisito SQL + NoSQL seja atendido. | `f4-03-bancos-por-servico.md` |
 | US-F4-04: Repositorios dos Servicos com CI/CD Independente (Build, Testes, Sonar, Deploy EKS) | Como Time, quero um repositorio por microsservico com pipeline propria (build, testes, quality gate e deploy automatizado no EKS) e `main` protegida, para que cada servico evolua e seja publicado de forma independente. | `f4-04-repos-e-cicd-por-servico.md` |
 | US-F4-05: API Gateway Multi-servico e Webhook Publico do Mercado Pago | Como Cliente ou Staff, quero continuar usando uma unica URL publica com o mesmo token JWT, para que a quebra em microsservicos seja invisivel para quem consome a API. | `f4-05-gateway-multi-servico.md` |
+| US-F4-18: Comunicacao HTTP entre servicos (kit, OS, Billing, Execucao, infra) | Como Desenvolvedor de qualquer um dos tres servicos, quero que o orquestrador chame a Execucao e o Billing por HTTP com retry e que eles avisem o OS Service por callbacks HTTP autenticados, para que os servicos se integrem sem broker, outbox, DLQ ou LocalStack e o fluxo seja depuravel com `curl`, logs e traces. | `f4-18-comunicacao-http-entre-servicos.md` |
 | US-F4-06: OS Service — Evolucao do Monolito (Strangler) e Publicacao de Eventos | Como Atendente, quero abrir e acompanhar ordens de servico num servico dedicado que publica eventos confiaveis, para que diagnostico, orcamento e execucao aconteçam em outros servicos sem que a OS perca consistencia. | `f4-06-os-service-strangler.md` |
 | US-F4-07: Execucao Service — Fila de Execucao, Diagnostico, Catalogo e Estoque em DynamoDB | Como Mecanico, quero uma fila de execucao com diagnostico, itens do catalogo e reserva de pecas num servico proprio, para trabalhar a OS do chao de oficina e comunicar a finalizacao sem depender do atendimento. | `f4-07-execucao-service.md` |
 | US-F4-08: Billing Service — Orcamento, Aprovacao e Rejeicao | Como Cliente, quero receber o orcamento da minha OS e aprova-lo ou rejeita-lo num servico dedicado, para que a decisao dispare o pagamento ou o cancelamento com seguranca. | `f4-08-billing-orcamento.md` |

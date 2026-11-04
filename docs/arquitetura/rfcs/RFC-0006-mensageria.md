@@ -1,9 +1,17 @@
 # RFC-0006: Mensageria assíncrona
 
-**Status:** Aceita
+**Status:** Substituída pela [RFC-0008](RFC-0008-comunicacao-http-entre-servicos.md) (03/11/2026)
 **Data:** 2026-09-30
 **Autores:** Time SOAT
 **Stories relacionadas:** [US-F4-02](../../user-stories/f4-02-mensageria.md), [US-F4-01](../../user-stories/f4-01-kit-compartilhado.md), [US-F4-16](../../user-stories/f4-16-observabilidade-distribuida.md)
+
+> **Nota (03/11/2026):** em 03/11 o time decidiu trocar a mensageria SNS/SQS por
+> **comunicação HTTP direta entre os serviços** (chamadas síncronas com retry +
+> callbacks HTTP para o OS Service). O racional, as opções e os princípios estão na
+> [RFC-0008](RFC-0008-comunicacao-http-entre-servicos.md); o contrato efetivo é
+> [`docs/contratos/http-interno.md`](../../contratos/http-interno.md). A US-F4-02
+> foi cancelada e o stage `messaging/` do infra-k8s será removido na US-F4-18.
+> O conteúdo abaixo é mantido como histórico da decisão original.
 
 ## Contexto
 

@@ -542,29 +542,37 @@ com as dependências apontando para o domínio (Clean Architecture).
 
 ---
 
-## Mensageria (Fase 4 — US-F4-06)
+## Comunicação entre serviços (Fase 4 — RFC-0008, US-F4-18)
 
-O OS Service conversa com a Execução e o Billing **só por eventos** (RFC-0006, ADR-0009), usando o
-módulo `messaging` do kit `@guilhermeqmaia/oficina-kit`:
+Desde **03/11/2026** o OS Service conversa com a Execução e o Billing por **HTTP direto**
+([RFC-0008](docs/arquitetura/rfcs/RFC-0008-comunicacao-http-entre-servicos.md); contrato em
+[`docs/contratos/http-interno.md`](docs/contratos/http-interno.md)). A mensageria SNS/SQS com
+outbox (RFC-0006, ADR-0009, implementada na US-F4-06) foi descartada; o código de outbox,
+poller e handlers SQS é removido na [US-F4-18](docs/user-stories/f4-18-comunicacao-http-entre-servicos.md).
 
-- **Publica** `os.aberta`, `os.cancelada`, `os.finalizada`, `os.entregue` no tópico SNS FIFO
-  `oficina-os.fifo`. O evento é gravado na tabela `outbox` **na mesma transação** da OS
-  (`PrismaOrdemDeServicoRepository`) e entregue pelo `OutboxPoller` — nunca se perde um evento
-  nem se publica sem persistir.
-- **Consome** a fila `os-eventos.fifo` (eventos `execucao.*` e `billing.*`, filtrados por `type`
-  na assinatura). Um handler por `type` em `src/ordem-de-servico/infrastructure/messaging/`
-  chama o caso de uso de transição correspondente; a deduplicação usa `processed_messages`.
-  Reentrega é no-op; evento incompatível com o status atual falha e vai para a DLQ após 5 tentativas.
-- Contratos: [`docs/contratos/asyncapi.yaml`](docs/contratos/asyncapi.yaml).
+- **Chama** a Execução (`POST /execucao/ordens`, `POST /execucao/ordens/{n}/iniciar`,
+  `DELETE /execucao/ordens/{n}`) e o Billing (`POST /orcamentos`, `POST /orcamentos/{n}/cobrar`,
+  `DELETE /orcamentos/{n}`) pelo DNS interno do cluster, com o cliente HTTP do kit
+  `@guilhermeqmaia/oficina-kit/http`: timeout 5 s, **3 tentativas com backoff** (200 ms, 800 ms,
+  3 s) só para `5xx`/timeout/rede, JWT de serviço (`role: SERVICO`, mesmo `JWT_SECRET` da Lambda),
+  `x-correlation-id` = número da OS e `traceparent`. A resposta síncrona é o evento da saga
+  (`201` ≙ `execucao.enfileirada`, `409 { motivo }` ≙ `execucao.recusada`, ...).
+- **Recebe callbacks** em `POST /ordens-servico/{numero}/eventos` (role `SERVICO`) com o envelope
+  `{ id, type, version, occurredAt, producer, data }` para o que depende de pessoa ou do Mercado
+  Pago (`execucao.diagnostico-concluido`, `execucao.finalizada`, `billing.orcamento-aprovado`,
+  `billing.orcamento-rejeitado`, `billing.pagamento-aprovado`, `billing.pagamento-recusado`).
+  Deduplicação por `id` em `processed_messages` (`200 { aplicado: false, duplicado: true }`);
+  `409` em conflito de versão (o participante relê e repete).
+- **Idempotência:** comandos por `numeroOS`; callbacks por `id` do envelope. Retry esgotado →
+  a saga fica no passo → alerta de saga parada → `POST /admin/sagas/:numero/reprocessar`.
+- Vocabulário dos `type`s e schemas de `data`: [`docs/contratos/asyncapi.yaml`](docs/contratos/asyncapi.yaml).
+- Chamadas entre serviços **não passam** pelo API Gateway; usuários entram pelo gateway
+  (prefixos `/ordens-servico|/clientes|/veiculos|/usuario|/notificacoes|/auth/me|/admin` → OS;
+  `/orcamentos|/pagamentos|/webhooks` → Billing; `/execucao|/catalogo|/estoque` → Execução).
 
-Sem `SNS_TOPIC_ARN` a aplicação sobe sem broker (o outbox apenas acumula). Localmente:
-
-```bash
-docker compose --profile messaging up -d localstack   # SNS/SQS com a topologia da RFC-0006 (scripts/messaging-local.sh)
-# no .env: AWS_ENDPOINT=http://localhost:4566, SNS_TOPIC_ARN=arn:aws:sns:us-east-1:000000000000:oficina-os.fifo,
-#          SQS_QUEUE_URL=http://localhost:4566/000000000000/os-eventos.fifo
-awslocal sqs receive-message --queue-url http://localhost:4566/000000000000/notificacao-eventos.fifo  # ver os.aberta
-```
+Localmente: `EXECUCAO_SERVICE_URL=http://localhost:3002`, `BILLING_SERVICE_URL=http://localhost:3001`
+no `.env`; sem LocalStack. Enquanto a US-F4-18 não é mergeada, o código atual ainda usa o
+profile `messaging` do compose (SNS/SQS via LocalStack) — ver o histórico deste README no git.
 
 ---
 
@@ -579,30 +587,32 @@ precisa ser explícito e consultável).
 - **Estado persistido** em `saga_os` (passo, status, histórico, compensações, prazos) e exposto em
   `GET /ordens-servico/numero/:numero/saga`.
 - **Passos:** `ENFILEIRAR_EXECUCAO → AGUARDAR_DIAGNOSTICO → GERAR_ORCAMENTO → AGUARDAR_APROVACAO →
-  INICIAR_EXECUCAO → AGUARDAR_FINALIZACAO → COBRAR → AGUARDAR_PAGAMENTO → CONCLUIDA`. Cada passo envia um
-  **comando** pelo outbox (`execucao.enfileirar`, `billing.gerar-orcamento`, `execucao.iniciar`,
-  `billing.cobrar`) e só avança com o **evento** esperado; duplicados e fora de ordem são ignorados e
-  registrados. A **cobrança acontece depois da execução** (decisão do time, 03/11 — ADR-0012):
+  INICIAR_EXECUCAO → AGUARDAR_FINALIZACAO → COBRAR → AGUARDAR_PAGAMENTO → CONCLUIDA`. Cada passo faz uma
+  **chamada HTTP** ao participante (`POST /execucao/ordens` ≙ `execucao.enfileirar`, `POST /orcamentos` ≙
+  `billing.gerar-orcamento`, `POST /execucao/ordens/{n}/iniciar` ≙ `execucao.iniciar`,
+  `POST /orcamentos/{n}/cobrar` ≙ `billing.cobrar`) e só avança com o **evento** esperado — a resposta
+  síncrona ou um callback; duplicados e fora de ordem são ignorados e registrados. A **cobrança acontece depois da execução** (decisão do time, 03/11 — ADR-0012):
   `execucao.finalizada` leva a OS a `AGUARDANDO_PAGAMENTO` e dispara `billing.cobrar`; o link de
   pagamento chega em `billing.cobranca-criada`; `billing.pagamento-aprovado` leva a `FINALIZADA`.
-- **Compensação** (recuperação para trás): `billing.cancelar-orcamento` e/ou
-  `execucao.liberar-reservas`, enfileirados em ordem inversa e executados em paralelo pelos
-  participantes (filas distintas); OS `CANCELADA` com o motivo; a saga fica `COMPENSANDO` até
+- **Compensação** (recuperação para trás): `DELETE /orcamentos/{n}` (≙ `billing.cancelar-orcamento`) e/ou
+  `DELETE /execucao/ordens/{n}` (≙ `execucao.liberar-reservas`), chamados em ordem inversa; a resposta
+  `200` confirma; OS `CANCELADA` com o motivo; a saga fica `COMPENSANDO` até
   todas as confirmações chegarem. Toda compensação é idempotente nos participantes e nunca envolve
   estorno (nada é pago antes de executar). O **timeout de aprovação** (`SAGA_TIMEOUT_APROVACAO_*`)
   dispara a mesma compensação. Cancelar só é possível até a execução começar.
 - **Pagamento recusado / em atraso** (após a execução) **não** compensa: a OS fica retida em
   `AGUARDANDO_PAGAMENTO`, a saga registra `pagamento-pendente` e `oficina_os_sagas_paradas` alerta;
   `POST /admin/sagas/:numero/reprocessar` reenvia `billing.cobrar` (nova cobrança).
-  Falha de plataforma nunca compensa: retry pelo SQS e DLQ.
+  Falha de plataforma nunca compensa: retry com backoff no cliente HTTP; esgotado, saga parada + `reprocessar`.
 - Notificação fica **coreografada** (só assina fatos) — os dois estilos convivem onde cada um cabe.
-- **Consistência:** cada evento roda numa única transação (OS + saga + outbox no mesmo Postgres);
-  conflito de versão é refeito em processo e, se persistir, devolve 409 (HTTP) ou reentrega (SQS).
+- **Consistência:** cada evento roda numa única transação (OS + saga no mesmo Postgres); a chamada HTTP
+  ao participante sai depois do commit; conflito de versão é refeito em processo e, se persistir,
+  devolve 409 (o participante que chamou o callback repete).
 - Métricas: `oficina_os_saga_passos_total`, `oficina_os_saga_passo_duracao_seconds`, `oficina_os_sagas`,
   `oficina_os_sagas_paradas` (alerta de saga travada, `SAGA_ALERTA_PARADA_MIN`).
-- **Operação (US-F4-11):** mensagem que falha 5 vezes vai para a DLQ e dispara alarme; o runbook
-  [`docs/runbooks/saga-dlq-reprocessar.md`](docs/runbooks/saga-dlq-reprocessar.md) cobre triagem e redrive.
-  `POST /admin/sagas/:numero/reprocessar` (ADMIN) reenvia o comando pendente de uma saga travada.
+- **Operação (US-F4-11):** chamada que falha 3 vezes deixa a saga parada e dispara o alerta; o runbook
+  [`docs/runbooks/saga-reprocessar.md`](docs/runbooks/saga-reprocessar.md) cobre triagem e reenvio.
+  `POST /admin/sagas/:numero/reprocessar` (ADMIN) repete a chamada pendente de uma saga travada.
 - **Demo de falha:** com `SAGA_SIMULAR_FALHA_HABILITADO=true`, o header `x-simular-falha=<passo>` no
   `POST /ordens-servico` faz a saga tratar o sucesso daquele passo como falha e compensar.
 
