@@ -5,18 +5,21 @@ A criação em si é feita **sob demanda** (peça "criar as histórias da Fase 4
 Notion") — este manifesto é a fonte de verdade para essa etapa.
 
 > **04/11/2026 — board consolidado por fluxos.** Por decisão do time, os cards
-> abertos foram substituídos por **5 cards de fluxo**, sem atribuição fixa: cada
+> abertos foram substituídos por **4 cards de fluxo**, sem atribuição fixa: cada
 > pessoa pega o próximo fluxo livre conforme a disponibilidade. As stories abaixo
 > continuam sendo a **especificação** (critérios, contratos, o que cada banco salva)
 > e estão copiadas dentro do card do fluxo correspondente.
 >
 > | Card no Notion | Absorve | SP |
 > |---|---|---|
-> | FLUXO 1 — Execução: Execução Service ponta a ponta | US-F4-07 + lado Execução da US-F4-18 | 13 |
-> | FLUXO 2 — Cobrança: Billing Service ponta a ponta | US-F4-08, US-F4-09 + lado Billing da US-F4-18 | 16 |
-> | FLUXO 3 — OS ponta a ponta: integração, notificações e rastreamento | US-F4-12, US-F4-16 + fechamento da US-F4-18 | 8 |
-> | FLUXO 4 — Qualidade: BDD (Gherkin + Cucumber), cobertura 80% e contratos | US-F4-13, US-F4-14, US-F4-15 | 16 |
-> | FLUXO 5 — Entrega: diagramas, READMEs, QA plans, vídeo e PDF | US-F4-DOC-04, DOC-05, DOC-06, US-F4-17 | 14 |
+> | FLUXO 1 — Execução: Execução Service ponta a ponta | US-F4-07 + lado Execução da US-F4-18 + qualidade do repo (US-F4-13/14/15) | 18 |
+> | FLUXO 2 — Cobrança: Billing Service ponta a ponta | US-F4-08, US-F4-09 + lado Billing da US-F4-18 + qualidade do repo (US-F4-13/14/15) | 21 |
+> | FLUXO 3 — OS ponta a ponta: integração, notificações e rastreamento | US-F4-12, US-F4-16 + fechamento da US-F4-18 + BDD ponta a ponta e esqueleto do Cucumber (US-F4-13/14/15) | 14 |
+> | FLUXO 4 — Entrega: diagramas, READMEs, QA plans, vídeo e PDF | US-F4-DOC-04, DOC-05, DOC-06, US-F4-17 | 14 |
+>
+> A tarefa de qualidade separada foi diluída nos fluxos 1 a 3 (decisão de 04/11): cada
+> fluxo entrega os próprios `.feature` no Cucumber, cobertura ≥ 80% com Sonar e testes
+> de contrato; o BDD ponta a ponta fica no fluxo 3. Assim há uma tarefa inteira por pessoa.
 >
 > Cards já concluídos (DOC-01..03, 01, 03..06, 10, 11) ficaram como `DONE`;
 > US-F4-02 (cancelada) foi arquivada.
