@@ -6,3 +6,6 @@
  * Trocar os dois juntos quando os paineis forem migrados.
  */
 export const SERVICE_NAME = process.env.DD_SERVICE ?? 'oficina-mecanica-app';
+
+/** Nome deste servico nas chamadas entre servicos: `sub` do JWT de servico (RFC-0008). */
+export const PRODUCER_NAME = 'os-service';

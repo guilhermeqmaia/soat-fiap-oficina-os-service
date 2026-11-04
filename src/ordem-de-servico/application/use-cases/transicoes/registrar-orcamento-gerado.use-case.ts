@@ -8,7 +8,7 @@ import { registrarTransicao } from './registrar-transicao.base';
 
 export interface RegistrarOrcamentoGeradoInput {
   numero: string;
-  /** Unit of work do orquestrador (OS + saga + outbox na mesma transacao). */
+  /** Unit of work do orquestrador (OS + saga na mesma transacao). */
   tx?: unknown;
   /** Total do orcamento calculado pelo Billing (string decimal ou numero). */
   total: string | number;

@@ -11,10 +11,9 @@ const prisma = {
   sagaOS: { findUnique: jest.fn(), findMany: jest.fn(), groupBy: jest.fn(), count: jest.fn(), deleteMany: jest.fn() },
   $transaction: jest.fn(async (fn: (t: typeof tx) => unknown) => fn(tx)),
 } as any;
-const outbox = { gravar: jest.fn() } as any;
 
 describe('PrismaSagaRepository (unit)', () => {
-  const repo = new PrismaSagaRepository(prisma, outbox);
+  const repo = new PrismaSagaRepository(prisma);
   beforeEach(() => jest.clearAllMocks());
 
   it('findByNumero mapeia a linha para a entidade (null quando ausente)', async () => {
@@ -24,16 +23,12 @@ describe('PrismaSagaRepository (unit)', () => {
     expect(await repo.findByNumero('OS-2')).toBeNull();
   });
 
-  it('save de saga nova: create + comandos no outbox com o mesmo tx', async () => {
+  it('save de saga nova: create; os comandos pendentes NAO sao persistidos (saem por HTTP depois do commit)', async () => {
     tx.sagaOS.create.mockResolvedValue({ id: 'saga-1' }); tx.sagaOS.findUniqueOrThrow.mockResolvedValue(row());
     const saga = SagaOS.iniciar({ numero: 'OS-1', clienteId: 'c', veiculoId: 'v', descricaoProblema: 'd' });
     await repo.save(saga);
     expect(tx.sagaOS.create.mock.calls[0][0].data).toMatchObject({ numero: 'OS-1', passo: 'ENFILEIRAR_EXECUCAO', status: 'EM_ANDAMENTO' });
-    expect(outbox.gravar).toHaveBeenCalledTimes(1);
-    const [envelope, usado] = outbox.gravar.mock.calls[0];
-    expect(envelope).toMatchObject({ type: 'execucao.enfileirar', producer: 'os-service', correlationId: 'OS-1' });
-    expect(usado).toBe(tx);
-    expect(saga.comandosPendentes).toHaveLength(0);
+    expect(saga.comandosPendentes).toHaveLength(1);
   });
 
   it('save de saga existente usa lock otimista e falha em conflito', async () => {
@@ -49,7 +44,6 @@ describe('PrismaSagaRepository (unit)', () => {
     tx.sagaOS.create.mockResolvedValue({ id: 'saga-9' }); tx.sagaOS.findUniqueOrThrow.mockResolvedValue(row({ id: 'saga-9' }));
     await repo.save(SagaOS.iniciar({ numero: 'OS-9', clienteId: 'c', veiculoId: 'v', descricaoProblema: 'd' }), tx);
     expect(prisma.$transaction).not.toHaveBeenCalled();
-    expect(outbox.gravar.mock.calls[0][1]).toBe(tx);
     tx.sagaOS.create.mockRejectedValueOnce(Object.assign(new Error('unique'), { code: 'P2002' }));
     await expect(repo.save(SagaOS.iniciar({ numero: 'OS-9', clienteId: 'c', veiculoId: 'v', descricaoProblema: 'd' }), tx)).rejects.toThrow(ConcurrentModificationError);
   });

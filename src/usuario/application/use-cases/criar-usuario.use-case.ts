@@ -31,7 +31,8 @@ export class CriarUsuarioUseCase
   ) {}
 
   async execute(input: CriarUsuarioInput): Promise<UsuarioOutput> {
-    if (!Object.values(Role).includes(input.role as Role)) {
+    // SERVICO e a role dos JWTs entre servicos (RFC-0008): nao existe usuario com ela.
+    if (!Object.values(Role).includes(input.role as Role) || input.role === Role.SERVICO) {
       throw new InvalidRoleError(input.role);
     }
 

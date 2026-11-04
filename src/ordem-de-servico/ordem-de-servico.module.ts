@@ -45,6 +45,14 @@ import { PrismaSagaRepository } from './saga/infrastructure/prisma-saga.reposito
 import { SAGA_REPOSITORY } from './saga/domain/saga.repository';
 import { PrismaUnitOfWork } from './infrastructure/prisma-unit-of-work';
 import { UNIT_OF_WORK } from './application/ports/unit-of-work';
+import { ReceberCallbackUseCase } from './saga/application/receber-callback.use-case';
+import { PARTICIPANTES_SAGA_GATEWAY } from './saga/application/ports/participantes-saga.gateway';
+import { CALLBACKS_PROCESSADOS } from './saga/application/ports/callbacks-processados';
+import { HttpParticipantesSaga, URLS_PARTICIPANTES } from './saga/infrastructure/http-participantes-saga';
+import { PrismaCallbacksProcessadosRepository } from './saga/infrastructure/prisma-callbacks-processados.repository';
+import { PurgaCallbacksService } from './saga/infrastructure/purga-callbacks.service';
+import { CallbackSagaController } from './saga/infrastructure/callback-saga.controller';
+import { urlsDosParticipantes } from '../config/servicos.config';
 
 const USE_CASES = [
   CriarOrdemDeServicoUseCase,
@@ -70,16 +78,23 @@ export const TRANSICOES_USE_CASES = [
 
 @Module({
   imports: [PrismaModule, ClienteModule, VeiculoModule, UsuarioModule],
-  controllers: [OrdemDeServicoController, ClienteOrdemDeServicoController, SagaAdminController],
+  controllers: [OrdemDeServicoController, ClienteOrdemDeServicoController, SagaAdminController, CallbackSagaController],
   providers: [
     ...USE_CASES,
     ...TRANSICOES_USE_CASES,
-    // Saga orquestrada (RFC-0005 / US-F4-10)
+    // Saga orquestrada (RFC-0005 / US-F4-10) — participantes por HTTP (RFC-0008 / US-F4-18)
     OrquestradorSagaService,
     SagaTimeoutsService,
     ConsultarSagaUseCase,
+    ReceberCallbackUseCase,
     PrismaSagaRepository,
     { provide: SAGA_REPOSITORY, useExisting: PrismaSagaRepository },
+    { provide: URLS_PARTICIPANTES, useFactory: () => urlsDosParticipantes() },
+    HttpParticipantesSaga,
+    { provide: PARTICIPANTES_SAGA_GATEWAY, useExisting: HttpParticipantesSaga },
+    PrismaCallbacksProcessadosRepository,
+    { provide: CALLBACKS_PROCESSADOS, useExisting: PrismaCallbacksProcessadosRepository },
+    PurgaCallbacksService,
     PrismaUnitOfWork,
     { provide: UNIT_OF_WORK, useExisting: PrismaUnitOfWork },
     AuditLogService,

@@ -1,7 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { OUTBOX_REPOSITORY } from '@guilhermeqmaia/oficina-kit/messaging';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { PrismaOutbox } from '../../../messaging/prisma-messaging.adapters';
 import { ConcurrentModificationError } from '../../domain/errors/concurrent-modification.error';
 import { startTestDatabase, stopTestDatabase } from '../../../test/database.container';
 import { PassoSaga, SagaOS, StatusSaga } from '../domain/saga-os.entity';
@@ -16,13 +14,12 @@ describe('PrismaSagaRepository (integration)', () => {
   beforeAll(async () => {
     process.env.DATABASE_URL = await startTestDatabase();
     const module: TestingModule = await Test.createTestingModule({
-      providers: [PrismaService, PrismaSagaRepository, PrismaOutbox, { provide: OUTBOX_REPOSITORY, useExisting: PrismaOutbox }],
+      providers: [PrismaService, PrismaSagaRepository],
     }).compile();
     prisma = module.get(PrismaService);
     repo = module.get(PrismaSagaRepository);
     await prisma.onModuleInit();
     await prisma.sagaOS.deleteMany();
-    await prisma.outbox.deleteMany();
   });
   afterAll(async () => {
     await prisma.$disconnect();
@@ -32,11 +29,10 @@ describe('PrismaSagaRepository (integration)', () => {
   const ev = (type: string, numero: string, data: Record<string, unknown> = {}) => ({ type, id: `env-${type}`, data: { numeroOS: numero, ...data } });
 const ITENS = [{ tipo: 'SERVICO', referenciaId: 's', nome: 'n', quantidade: 1, precoUnitario: '1.00' }];
 
-  it('save grava a saga e os comandos no outbox na mesma transacao; reload preserva historico/compensacoes', async () => {
+  it('save grava a saga; reload preserva historico/compensacoes', async () => {
     const saga = SagaOS.iniciar({ numero: 'OS-S1', clienteId: 'c', veiculoId: 'v', descricaoProblema: 'd' });
     const salva = await repo.save(saga);
     expect(salva.id).toBeDefined(); expect(salva.version).toBe(0);
-    expect((await prisma.outbox.findMany({ where: { correlationId: 'OS-S1' } })).map((o) => o.type)).toEqual(['execucao.enfileirar']);
 
     salva.aplicar(ev('execucao.enfileirada', 'OS-S1'));
     salva.aplicar(ev('execucao.diagnostico-concluido', 'OS-S1', { itens: ITENS }));
@@ -45,10 +41,9 @@ const ITENS = [{ tipo: 'SERVICO', referenciaId: 's', nome: 'n', quantidade: 1, p
     const lida = (await repo.findByNumero('OS-S1'))!;
     expect(lida.passo).toBe(PassoSaga.GERAR_ORCAMENTO);
     expect(lida.historico.map((h) => h.resultado)).toEqual(['avancou', 'avancou', 'avancou']);
-    expect((await prisma.outbox.findMany({ where: { correlationId: 'OS-S1' }, orderBy: { criadaEm: 'asc' } })).map((o) => o.type)).toEqual(['execucao.enfileirar', 'billing.gerar-orcamento']);
   });
 
-  it('lock otimista: segunda gravacao sobre a mesma versao falha e nao grava comandos', async () => {
+  it('lock otimista: segunda gravacao sobre a mesma versao falha', async () => {
     await repo.save(SagaOS.iniciar({ numero: 'OS-S2', clienteId: 'c', veiculoId: 'v', descricaoProblema: 'd' }));
     const a = (await repo.findByNumero('OS-S2'))!;
     const b = (await repo.findByNumero('OS-S2'))!;
@@ -84,6 +79,5 @@ const ITENS = [{ tipo: 'SERVICO', referenciaId: 's', nome: 'n', quantidade: 1, p
       }),
     ).rejects.toThrow('rollback');
     expect(await repo.findByNumero('OS-S4')).toBeNull();
-    expect(await prisma.outbox.count({ where: { correlationId: 'OS-S4' } })).toBe(0);
   });
 });

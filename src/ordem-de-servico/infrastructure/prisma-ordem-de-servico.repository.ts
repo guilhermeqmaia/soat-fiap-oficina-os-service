@@ -1,9 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
-import {
-  criarEnvelope,
-  OUTBOX_REPOSITORY,
-  OutboxRepository,
-} from "@guilhermeqmaia/oficina-kit/messaging";
+import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import {
   OrdemDeServicoRepository,
@@ -41,12 +36,7 @@ const STATUS_PRIORITY: Record<string, number> = {
 
 @Injectable()
 export class PrismaOrdemDeServicoRepository implements OrdemDeServicoRepository {
-  constructor(
-    private prisma: PrismaService,
-    /** Outbox (ADR-0009) — obrigatorio: nenhuma mudanca de OS sem o evento correspondente. */
-    @Inject(OUTBOX_REPOSITORY)
-    private readonly outbox: OutboxRepository<unknown>,
-  ) {}
+  constructor(private prisma: PrismaService) {}
 
   async create(os: OrdemDeServico, txExterno?: unknown): Promise<OrdemDeServico> {
     const data = await this.naTransacao(txExterno, async (tx) => {
@@ -64,7 +54,6 @@ export class PrismaOrdemDeServicoRepository implements OrdemDeServicoRepository 
         },
         include: INCLUDE_ITENS,
       });
-      await this.gravarEventosIntegracao(os, tx);
       return criada;
     });
     return this.toDomain(data);
@@ -155,36 +144,12 @@ export class PrismaOrdemDeServicoRepository implements OrdemDeServicoRepository 
           },
         });
       }
-      await this.gravarEventosIntegracao(os, tx);
       return tx.ordemDeServico.findUnique({
         where: { id: os.id },
         include: INCLUDE_ITENS,
       });
     });
     return this.toDomain(data);
-  }
-
-  /**
-   * Eventos `os.*` vao para o outbox NA MESMA transacao da OS (ADR-0009): ou a
-   * OS muda e o evento sera entregue, ou nada acontece. `correlationId` = numero
-   * da OS (MessageGroupId do FIFO, RFC-0006).
-   */
-  private async gravarEventosIntegracao(
-    os: OrdemDeServico,
-    tx: unknown,
-  ): Promise<void> {
-    for (const evento of os.consumirEventosIntegracao()) {
-      await this.outbox.gravar(
-        criarEnvelope({
-          type: evento.type,
-          data: evento.data,
-          producer: "os-service",
-          correlationId: os.numero,
-          causationId: evento.causationId,
-        }),
-        tx,
-      );
-    }
   }
 
   async delete(id: string): Promise<void> {

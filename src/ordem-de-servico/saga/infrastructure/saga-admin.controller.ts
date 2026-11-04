@@ -17,10 +17,11 @@ export class SagaAdminController {
   @Roles(Role.ADMIN)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Reprocessar saga travada (reenvia o comando do passo atual ou as compensacoes pendentes via outbox)',
+    summary: 'Reprocessar saga travada (reenvia por HTTP o comando do passo atual ou as compensacoes pendentes)',
     description:
-      'Uso apos triagem da DLQ (runbook docs/runbooks/saga-dlq-reprocessar.md). Nao altera a OS: so reenfileira o que o ' +
-      'participante nao respondeu. Passos que aguardam cliente/participante devolvem `reenviados: []`.',
+      'Uso quando uma chamada a Execucao/Billing esgotou as tentativas (alerta de saga parada; runbook ' +
+      'docs/runbooks/saga-dlq-reprocessar.md). Reenvia o comando — idempotente por numeroOS — e aplica a resposta ' +
+      'na mesma requisicao. Passos que aguardam cliente/participante devolvem `reenviados: []`.',
   })
   @ApiOkResponse({ description: 'Saga apos o reprocessamento e lista de comandos reenviados' })
   @ApiNotFoundResponse({ description: 'Saga nao encontrada' })

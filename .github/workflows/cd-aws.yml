@@ -182,14 +182,6 @@ jobs:
             sed -i "s|__GATEWAY_URL__|http://localhost:3000|g" k8s-aws/patch-configmap.yaml
           fi
 
-      # Contrato do stage messaging/ (RFC-0006): vars propagadas do SSM pelo
-      # scripts/messaging-vars.sh do infra-k8s. Sem elas a app sobe sem broker.
-      - name: Mensageria (SNS/SQS) no overlay
-        if: steps.guard.outputs.configured == 'true' && steps.guard.outputs.eks == 'true'
-        run: |
-          sed -i "s|__SNS_TOPIC_ARN__|${{ vars.SNS_TOPIC_ARN }}|g; s|__SQS_QUEUE_URL__|${{ vars.SQS_QUEUE_URL }}|g; s|__AWS_REGION__|$AWS_REGION|g" k8s-aws/patch-configmap.yaml
-          [ -n "${{ vars.SNS_TOPIC_ARN }}" ] || echo "::warning::var SNS_TOPIC_ARN ausente — o OS Service sobe sem broker (outbox acumula, consumer desligado)."
-
       - name: Deploy (kustomize) + migrations
         if: steps.guard.outputs.configured == 'true' && steps.guard.outputs.eks == 'true'
         run: |

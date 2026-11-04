@@ -8,15 +8,13 @@ import { registrarTransicao } from './registrar-transicao.base';
 
 export interface RegistrarPagamentoAprovadoInput {
   numero: string;
-  /** Unit of work do orquestrador (OS + saga + outbox na mesma transacao). */
+  /** Unit of work do orquestrador (OS + saga na mesma transacao). */
   tx?: unknown;
-  /** id do envelope `billing.pagamento-aprovado` (ADR-0009) — vai em `os.finalizada`. */
-  causationId?: string;
 }
 
 /**
- * `billing.pagamento-aprovado` -> FINALIZADA + `os.finalizada` + notificacao
- * "veiculo pronto". A cobranca acontece depois do servico executado (ADR-0012),
+ * `billing.pagamento-aprovado` -> FINALIZADA + notificacao "veiculo pronto"
+ * (OsFinalizadaEvent, in-process). A cobranca acontece depois do servico executado (ADR-0012),
  * por isso e o pagamento — e nao o fim da execucao — que finaliza a OS.
  */
 @Injectable()
@@ -28,7 +26,7 @@ export class RegistrarPagamentoAprovadoUseCase implements UseCase<RegistrarPagam
 
   async execute(input: RegistrarPagamentoAprovadoInput): Promise<OrdemDeServico> {
     const { ordem, aplicada } = await registrarTransicao(this.gateway, this.events, input.numero, StatusOS.FINALIZADA, (os) =>
-      os.finalizar(input.causationId),
+      os.finalizar(),
       input.tx,
     );
     if (aplicada && ordem.id) {

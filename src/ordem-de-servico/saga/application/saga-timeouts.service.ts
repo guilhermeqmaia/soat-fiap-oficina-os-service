@@ -10,11 +10,12 @@ import { sagasParadas, sagasPorStatus } from '../../../observabilidade/metrics.r
  * atraso — a OS fica retida em AGUARDANDO_PAGAMENTO. Tambem
  * atualiza as gauges de sagas por status e de sagas paradas (EM_ANDAMENTO no
  * mesmo passo ha mais de SAGA_ALERTA_PARADA_MIN minutos — insumo do alerta
- * "saga travada" ate a US-F4-11 trazer o reprocessamento).
+ * "saga travada"; `POST /admin/sagas/:numero/reprocessar` retoma).
  *
  * Replicas: cada pod varre; o lock otimista da saga garante que so uma
- * aplica o timeout (a outra registra um aviso). Desligado com
- * MESSAGING_AUTOSTART=false.
+ * aplica o timeout (a outra registra um aviso). As compensacoes decididas pelo
+ * timeout saem por HTTP depois do commit (orquestrador). Desligado com
+ * AGENDADORES_AUTOSTART=false (testes).
  */
 @Injectable()
 export class SagaTimeoutsService implements OnApplicationBootstrap, OnApplicationShutdown {
@@ -28,7 +29,7 @@ export class SagaTimeoutsService implements OnApplicationBootstrap, OnApplicatio
   ) {}
 
   onApplicationBootstrap(): void {
-    if (process.env.MESSAGING_AUTOSTART === 'false') return;
+    if (process.env.AGENDADORES_AUTOSTART === 'false') return;
     const intervalo = Number(process.env.SAGA_TIMEOUTS_INTERVALO_MS ?? 60_000);
     this.timer = setInterval(() => void this.varrer().catch((e) => this.logger.warn({ msg: 'varredura falhou', erro: (e as Error).message })), intervalo);
     this.timer.unref();

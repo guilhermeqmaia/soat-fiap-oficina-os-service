@@ -8,10 +8,10 @@ import { CorrelationIdMiddleware, LoggerModule } from '@guilhermeqmaia/oficina-k
 import { MetricsModule } from '@guilhermeqmaia/oficina-kit/metrics';
 import { HealthModule } from '@guilhermeqmaia/oficina-kit/health';
 import { InProcessMessagingModule } from '@guilhermeqmaia/oficina-kit/messaging';
-import { OutboxModule } from './messaging/outbox.module';
-import { messagingModule } from './messaging/messaging.config';
+import { HttpInternoModule } from '@guilhermeqmaia/oficina-kit/http';
 import { validateEnv } from './config/env.validation';
-import { SERVICE_NAME } from './config/service-name';
+import { PRODUCER_NAME, SERVICE_NAME } from './config/service-name';
+import { httpInternoConfig } from './config/servicos.config';
 import { THROTTLER_LIMIT, THROTTLER_TTL_MS, shouldSkipThrottling } from './config/throttler.config';
 import { PrismaHealthIndicator } from './health/prisma-health.indicator';
 import { SharedModule } from './shared/shared.module';
@@ -46,12 +46,19 @@ import { ObservabilidadeModule } from './observabilidade/observabilidade.module'
     }),
     MetricsModule.forRoot({ serviceName: SERVICE_NAME }),
     HealthModule.forRoot({ imports: [PrismaModule], indicators: [PrismaHealthIndicator] }),
+    // Eventos de dominio in-process (notificacao, audit log, metricas).
     InProcessMessagingModule,
-    // Fase 4 (US-F4-06): outbox sempre; SNS/SQS so com SNS_TOPIC_ARN (RFC-0006).
-    // `messagingModule()` le process.env no momento da decoracao: depende de o
-    // ConfigModule.forRoot acima ja ter carregado o .env (sincrono) — nao mover.
-    OutboxModule,
-    ...messagingModule(),
+    // Fase 4 (US-F4-18 / RFC-0008): chamadas HTTP diretas a Execucao e ao Billing
+    // com JWT de servico, correlacao e retry. Enderecos em config/servicos.config.ts.
+    HttpInternoModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        servico: PRODUCER_NAME,
+        jwtSecret: config.getOrThrow<string>('JWT_SECRET'),
+        issuer: config.get<string>('JWT_ISSUER'),
+        ...httpInternoConfig(),
+      }),
+    }),
     // Rate limiting global (anti brute-force/DoS). Desabilitado sob jest
     // (JEST_WORKER_ID), sob THROTTLER_DISABLED=true (testes de carga) e nas
     // rotas de infra (/health, /metrics) consumidas pelo cluster.

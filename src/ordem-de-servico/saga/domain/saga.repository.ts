@@ -1,9 +1,10 @@
 import { SagaOS } from './saga-os.entity';
 
 /**
- * Porta de persistencia da saga. `save` grava a saga E os comandos pendentes
- * (outbox) na mesma transacao (ADR-0009), com lock otimista por `version`.
- * `tx` = unit of work do chamador (orquestrador): OS + saga + outbox juntos.
+ * Porta de persistencia da saga, com lock otimista por `version`. `tx` = unit
+ * of work do chamador (orquestrador): OS + saga na mesma transacao. Os comandos
+ * pendentes NAO sao persistidos: o orquestrador os executa por HTTP depois do
+ * commit (RFC-0008).
  */
 export interface SagaRepository {
   findByNumero(numero: string, tx?: unknown): Promise<SagaOS | null>;

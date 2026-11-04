@@ -120,21 +120,19 @@ describe('transicoes dirigidas por eventos (idempotentes — ADR-0009)', () => {
     expect(g.updates).toBe(1);
   });
 
-  it('billing.pagamento-aprovado -> FINALIZADA + OsFinalizadaEvent (uma vez) + os.finalizada com causationId', async () => {
+  it('billing.pagamento-aprovado -> FINALIZADA + OsFinalizadaEvent (uma vez)', async () => {
     const os = nova(StatusOS.AGUARDANDO_PAGAMENTO); const g = fakeGateway(os);
     const uc = new RegistrarPagamentoAprovadoUseCase(g, events);
-    const r = await uc.execute({ numero: os.numero, causationId: 'env-pg' }); await uc.execute({ numero: os.numero });
+    const r = await uc.execute({ numero: os.numero }); await uc.execute({ numero: os.numero });
     expect(r.status).toBe(StatusOS.FINALIZADA);
-    expect(r.eventosIntegracao[0]).toMatchObject({ type: 'os.finalizada', causationId: 'env-pg' });
     expect(events.publicados.filter((e) => e instanceof OsFinalizadaEvent)).toHaveLength(1);
   });
 
-  it('compensacao: cancelamento com motivo da saga e causationId no evento os.cancelada', async () => {
+  it('compensacao: cancelamento com motivo da saga', async () => {
     const os = nova(StatusOS.AGUARDANDO_APROVACAO); const g = fakeGateway(os);
-    const r = await new RegistrarCancelamentoUseCase(g, events).execute({ numero: os.numero, motivo: MotivoCancelamento.ORCAMENTO_REJEITADO, causationId: 'env-1' });
+    const r = await new RegistrarCancelamentoUseCase(g, events).execute({ numero: os.numero, motivo: MotivoCancelamento.ORCAMENTO_REJEITADO });
     expect(r.status).toBe(StatusOS.CANCELADA);
     expect(r.motivoCancelamento).toBe(MotivoCancelamento.ORCAMENTO_REJEITADO);
-    expect(r.eventosIntegracao[0]).toMatchObject({ type: 'os.cancelada', causationId: 'env-1' });
     // reentrega e no-op mesmo com motivo diferente
     expect((await new RegistrarCancelamentoUseCase(g, events).execute({ numero: os.numero, motivo: MotivoCancelamento.OPERADOR })).motivoCancelamento).toBe(MotivoCancelamento.ORCAMENTO_REJEITADO);
   });

@@ -4,7 +4,6 @@ import { MotivoCancelamento } from './value-objects/motivo-cancelamento';
 import { InvalidDescriptionError } from './errors/invalid-description.error';
 import { InvalidStatusTransitionError } from './errors/invalid-status-transition.error';
 import { ServicoAlreadyAddedError } from './errors/servico-already-added.error';
-import { EventoIntegracao, ResumoAberturaOS, mascararDocumento } from './events/evento-integracao';
 
 export interface CreateOrdemDeServicoProps {
   clienteId: string;
@@ -47,9 +46,9 @@ const CANCELAVEIS: ReadonlySet<StatusOS> = new Set([
 
 /**
  * Agregado raiz do Atendimento (OS Service, Fase 4). Dona do ciclo de vida da
- * OS; as transicoes sao disparadas pelos eventos dos demais servicos via o
- * orquestrador da saga (RFC-0005) — por isso os metodos sao nomeados pelo FATO
- * que registram, nao pela acao do usuario. Itens de servico/peca sao SNAPSHOT
+ * OS; as transicoes sao disparadas pelas respostas/callbacks HTTP dos demais
+ * servicos via o orquestrador da saga (RFC-0005/RFC-0008) — por isso os metodos
+ * sao nomeados pelo FATO que registram, nao pela acao do usuario. Itens de servico/peca sao SNAPSHOT
  * do diagnostico do Execucao Service (precos congelados, RFC-0004).
  */
 export class OrdemDeServico {
@@ -67,8 +66,6 @@ export class OrdemDeServico {
   private _updatedAt?: Date;
   /** Lock otimista (0 em OS nova; o repositorio exige a versao lida ao gravar). */
   private _version: number;
-  /** Eventos `os.*` a publicar junto com a proxima persistencia (outbox). */
-  private _eventosIntegracao: EventoIntegracao[] = [];
 
   private constructor(
     props: {
@@ -162,23 +159,6 @@ export class OrdemDeServico {
     }
   }
 
-  /**
-   * Abertura: anuncia `os.aberta` com o resumo de cliente/veiculo que a saga e
-   * a Notificacao precisam — sem o documento completo (cpfMascarado).
-   */
-  registrarAbertura(resumo: ResumoAberturaOS): void {
-    this.exigirStatus(StatusOS.RECEBIDA, 'registrar abertura');
-    this._eventosIntegracao.push({
-      type: 'os.aberta',
-      data: {
-        numeroOS: this._numero,
-        cliente: { id: this._clienteId, nome: resumo.cliente.nome, cpfMascarado: mascararDocumento(resumo.cliente.cpfCnpj) },
-        veiculo: { id: this._veiculoId, placa: resumo.veiculo.placa, modelo: resumo.veiculo.modelo },
-        descricaoProblema: this._descricaoInicial,
-      },
-    });
-  }
-
   /** `execucao.enfileirada`: a OS entrou na fila da oficina e esta em diagnostico. */
   iniciarDiagnostico(): void {
     this.exigirStatus(StatusOS.RECEBIDA, StatusOS.EM_DIAGNOSTICO);
@@ -222,40 +202,25 @@ export class OrdemDeServico {
     this._status = StatusOSVO.create(StatusOS.AGUARDANDO_PAGAMENTO);
   }
 
-  /** `billing.pagamento-aprovado`: pago; veiculo pronto para retirada. `causationId` = id do envelope que originou. */
-  finalizar(causationId?: string): void {
+  /** `billing.pagamento-aprovado`: pago; veiculo pronto para retirada (notificacao in-process via OsFinalizadaEvent). */
+  finalizar(): void {
     this.exigirStatus(StatusOS.AGUARDANDO_PAGAMENTO, StatusOS.FINALIZADA);
     this._status = StatusOSVO.create(StatusOS.FINALIZADA);
-    this._eventosIntegracao.push({ type: 'os.finalizada', data: { numeroOS: this._numero }, causationId });
   }
 
   /** Acao do atendente: veiculo entregue (so depois de pago = FINALIZADA), OS encerrada. */
   entregar(): void {
     this.exigirStatus(StatusOS.FINALIZADA, StatusOS.ENTREGUE);
     this._status = StatusOSVO.create(StatusOS.ENTREGUE);
-    this._eventosIntegracao.push({ type: 'os.entregue', data: { numeroOS: this._numero } });
   }
 
   /** Compensacao da saga ou cancelamento manual — so antes da execucao comecar. */
-  cancelar(motivo: MotivoCancelamento, causationId?: string): void {
+  cancelar(motivo: MotivoCancelamento): void {
     if (!CANCELAVEIS.has(this._status.valor)) {
       throw new InvalidStatusTransitionError(this._status.toString(), StatusOS.CANCELADA);
     }
     this._status = StatusOSVO.create(StatusOS.CANCELADA);
     this._motivoCancelamento = motivo;
-    this._eventosIntegracao.push({ type: 'os.cancelada', data: { numeroOS: this._numero, motivo }, causationId });
-  }
-
-  /** Eventos pendentes de publicacao (leitura; o repositorio os consome ao persistir). */
-  get eventosIntegracao(): readonly EventoIntegracao[] {
-    return this._eventosIntegracao;
-  }
-
-  /** Entrega os eventos pendentes e esvazia a lista — chamado pelo repositorio dentro da transacao. */
-  consumirEventosIntegracao(): EventoIntegracao[] {
-    const eventos = this._eventosIntegracao;
-    this._eventosIntegracao = [];
-    return eventos;
   }
 
   podeSerCancelada(): boolean {

@@ -7,7 +7,7 @@ import { registrarTransicao } from './registrar-transicao.base';
 
 export interface RegistrarEnfileiramentoInput {
   numero: string;
-  /** Unit of work do orquestrador (OS + saga + outbox na mesma transacao). */
+  /** Unit of work do orquestrador (OS + saga na mesma transacao). */
   tx?: unknown;
 }
 

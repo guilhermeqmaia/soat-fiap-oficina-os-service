@@ -26,12 +26,12 @@ export const osTempoNoStatus = new Histogram({
 });
 
 /**
- * Erros de integracao (notificacao/webhook) — criterio explicito da story e
- * insumo do alerta de "falha no processamento de OS" (US-F3-11).
+ * Resultado das integracoes (notificacao/webhook e chamadas HTTP a Execucao e
+ * Billing) — insumo do alerta de "falha no processamento de OS" (US-F3-11).
  */
 export const integracaoResultados = new Counter({
   name: 'oficina_integracoes_total',
-  help: 'Resultado das integracoes externas (notificacao, webhook)',
+  help: 'Resultado das integracoes externas (notificacao, webhook, execucao-service, billing-service)',
   labelNames: ['integracao', 'resultado'] as const,
   registers: [registry],
 });
@@ -91,9 +91,13 @@ export function inicializarSeriesDeNegocio(): void {
   for (const resultado of ['sucesso', 'falha']) {
     integracaoResultados.inc({ integracao: 'webhook-notificacao', resultado }, 0);
   }
+  // Chamadas HTTP aos participantes da saga (RFC-0008)
+  for (const integracao of ['execucao-service', 'billing-service']) {
+    for (const resultado of ['sucesso', 'recusado', 'falha']) integracaoResultados.inc({ integracao, resultado }, 0);
+  }
   for (const status of ['EM_ANDAMENTO', 'COMPENSANDO', 'CONCLUIDA', 'CANCELADA']) sagasPorStatus.set({ status }, 0);
   sagasParadas.set(0);
-  for (const resultado of ['avancou', 'ignorado', 'compensando', 'concluida', 'cancelada']) {
+  for (const resultado of ['avancou', 'ignorado', 'compensando', 'concluida', 'cancelada', 'comando-falhou', 'resposta-falhou']) {
     sagaPassos.inc({ passo: 'ENFILEIRAR_EXECUCAO', resultado }, 0);
   }
 }

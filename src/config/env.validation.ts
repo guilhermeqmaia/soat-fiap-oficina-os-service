@@ -16,6 +16,10 @@ const PLACEHOLDER_SECRETS = new Set([
   'your-secret',
 ]);
 
+/** Enderecos internos dos participantes da saga (RFC-0008): obrigatorios em producao. */
+const SERVICE_URL_VARS = ['EXECUCAO_SERVICE_URL', 'BILLING_SERVICE_URL'] as const;
+const URL_HTTP = /^https?:\/\/.+/;
+
 export function validateEnv(
   config: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -39,6 +43,19 @@ export function validateEnv(
     throw new Error(
       `JWT_SECRET deve ter ao menos ${MIN_SECRET_LENGTH} caracteres em producao. Gere com: \`openssl rand -base64 48\`.`,
     );
+  }
+
+  for (const nome of SERVICE_URL_VARS) {
+    const valor = config[nome];
+    if (valor === undefined || valor === '') {
+      if (config.NODE_ENV === 'production') {
+        throw new Error(`${nome} e obrigatoria em producao (ex.: http://execucao-service:3002).`);
+      }
+      continue;
+    }
+    if (!URL_HTTP.test(String(valor))) {
+      throw new Error(`${nome} deve ser uma URL http(s) (recebido: ${String(valor)}).`);
+    }
   }
 
   return config;

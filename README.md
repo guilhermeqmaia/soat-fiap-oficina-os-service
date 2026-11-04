@@ -175,6 +175,10 @@ cp .env.example .env
 | `NOTIFICATION_WEBHOOK_SECRET` | Segredo usado para gerar o header `X-Signature: sha256=<hmac>` com HMAC-SHA256 do body | — |
 | `NOTIFICATION_WEBHOOK_TIMEOUT_MS` | Timeout do POST outbound | `5000` |
 | `LOG_LEVEL` | Nivel do logger estruturado: `fatal`\|`error`\|`warn`\|`info`\|`debug`\|`trace`\|`silent` | `debug` fora de producao, `info` em producao |
+| `EXECUCAO_SERVICE_URL` | Base interna do Execução Service (chamadas da saga, RFC-0008). **Obrigatória em produção** | `http://localhost:3002` |
+| `BILLING_SERVICE_URL` | Base interna do Billing Service. **Obrigatória em produção** | `http://localhost:3001` |
+| `HTTP_INTERNO_TIMEOUT_MS` / `HTTP_INTERNO_TENTATIVAS` | Timeout por tentativa e tentativas do cliente HTTP interno | `5000` / `3` |
+| `CALLBACKS_RETENCAO_DIAS` | Retenção dos ids de callback em `processed_messages` (purga horária) | `7` |
 
 > **Importante:** `JWT_SECRET` é obrigatória. Antes de subir os containers, copie `.env.example` para `.env` ou defina a variável no seu shell. Exemplo:
 >
@@ -521,7 +525,8 @@ src/
 ├── cliente/                  # Bounded Context: Atendimento (Cliente)
 ├── veiculo/                  # Bounded Context: Atendimento (Veículo)
 ├── ordem-de-servico/         # Bounded Context: Atendimento (OrdemDeServico — aggregate root)
-│   └── application/use-cases/transicoes/  # Transições dirigidas por eventos (Execução/Billing)
+│   ├── application/use-cases/transicoes/  # Transições dirigidas por eventos (Execução/Billing)
+│   └── saga/                 # Orquestrador, participantes por HTTP e callbacks (RFC-0005/RFC-0008)
 ├── notificacao/              # Bounded Context: Notificação (webhook outbound)
 ├── health/                   # Health/readiness checks
 └── test/                     # Helpers compartilhados de teste
@@ -571,8 +576,7 @@ poller e handlers SQS é removido na [US-F4-18](docs/user-stories/f4-18-comunica
   `/orcamentos|/pagamentos|/webhooks` → Billing; `/execucao|/catalogo|/estoque` → Execução).
 
 Localmente: `EXECUCAO_SERVICE_URL=http://localhost:3002`, `BILLING_SERVICE_URL=http://localhost:3001`
-no `.env`; sem LocalStack. Enquanto a US-F4-18 não é mergeada, o código atual ainda usa o
-profile `messaging` do compose (SNS/SQS via LocalStack) — ver o histórico deste README no git.
+no `.env`; sem LocalStack.
 
 ---
 
@@ -587,29 +591,35 @@ precisa ser explícito e consultável).
 - **Estado persistido** em `saga_os` (passo, status, histórico, compensações, prazos) e exposto em
   `GET /ordens-servico/numero/:numero/saga`.
 - **Passos:** `ENFILEIRAR_EXECUCAO → AGUARDAR_DIAGNOSTICO → GERAR_ORCAMENTO → AGUARDAR_APROVACAO →
-  INICIAR_EXECUCAO → AGUARDAR_FINALIZACAO → COBRAR → AGUARDAR_PAGAMENTO → CONCLUIDA`. Cada passo faz uma
-  **chamada HTTP** ao participante (`POST /execucao/ordens` ≙ `execucao.enfileirar`, `POST /orcamentos` ≙
-  `billing.gerar-orcamento`, `POST /execucao/ordens/{n}/iniciar` ≙ `execucao.iniciar`,
-  `POST /orcamentos/{n}/cobrar` ≙ `billing.cobrar`) e só avança com o **evento** esperado — a resposta
-  síncrona ou um callback; duplicados e fora de ordem são ignorados e registrados. A **cobrança acontece depois da execução** (decisão do time, 03/11 — ADR-0012):
-  `execucao.finalizada` leva a OS a `AGUARDANDO_PAGAMENTO` e dispara `billing.cobrar`; o link de
-  pagamento chega em `billing.cobranca-criada`; `billing.pagamento-aprovado` leva a `FINALIZADA`.
-- **Compensação** (recuperação para trás): `DELETE /orcamentos/{n}` (≙ `billing.cancelar-orcamento`) e/ou
-  `DELETE /execucao/ordens/{n}` (≙ `execucao.liberar-reservas`), chamados em ordem inversa; a resposta
-  `200` confirma; OS `CANCELADA` com o motivo; a saga fica `COMPENSANDO` até
-  todas as confirmações chegarem. Toda compensação é idempotente nos participantes e nunca envolve
-  estorno (nada é pago antes de executar). O **timeout de aprovação** (`SAGA_TIMEOUT_APROVACAO_*`)
-  dispara a mesma compensação. Cancelar só é possível até a execução começar.
+  INICIAR_EXECUCAO → AGUARDAR_FINALIZACAO → COBRAR → AGUARDAR_PAGAMENTO → CONCLUIDA`. Cada passo envia um
+  **comando por HTTP** (`POST /execucao/ordens`, `POST /orcamentos`, `POST /execucao/ordens/{n}/iniciar`,
+  `POST /orcamentos/{n}/cobrar`) **depois do commit** da transação que o decidiu, e a resposta síncrona é
+  reinjetada como o **evento** esperado (`execucao.enfileirada`, `billing.orcamento-gerado`, `execucao.iniciada`,
+  `billing.cobranca-criada`) numa nova transação; duplicados e fora de ordem são ignorados e registrados.
+  O que depende de pessoa/Mercado Pago chega por callback: `execucao.diagnostico-concluido`,
+  `billing.orcamento-aprovado|rejeitado`, `execucao.finalizada`, `billing.pagamento-aprovado|recusado`.
+  A **cobrança acontece depois da execução** (decisão do time, 03/11 — ADR-0012): `execucao.finalizada`
+  leva a OS a `AGUARDANDO_PAGAMENTO` e chama `POST /orcamentos/{n}/cobrar`; o link de pagamento vem na
+  resposta (`billing.cobranca-criada`); `billing.pagamento-aprovado` leva a `FINALIZADA`.
+- **Compensação** (recuperação para trás): `DELETE /orcamentos/{n}` (`billing.cancelar-orcamento`) e/ou
+  `DELETE /execucao/ordens/{n}` (`execucao.liberar-reservas`), chamados em ordem inversa; a resposta `200`
+  confirma cada compensação na hora, OS `CANCELADA` com o motivo e a saga fecha em `CANCELADA`. Toda
+  compensação é idempotente nos participantes e nunca envolve estorno (nada é pago antes de executar).
+  O **timeout de aprovação** (`SAGA_TIMEOUT_APROVACAO_*`) dispara a mesma compensação. Cancelar só é
+  possível até a execução começar.
 - **Pagamento recusado / em atraso** (após a execução) **não** compensa: a OS fica retida em
   `AGUARDANDO_PAGAMENTO`, a saga registra `pagamento-pendente` e `oficina_os_sagas_paradas` alerta;
-  `POST /admin/sagas/:numero/reprocessar` reenvia `billing.cobrar` (nova cobrança).
-  Falha de plataforma nunca compensa: retry com backoff no cliente HTTP; esgotado, saga parada + `reprocessar`.
-- Notificação fica **coreografada** (só assina fatos) — os dois estilos convivem onde cada um cabe.
-- **Consistência:** cada evento roda numa única transação (OS + saga no mesmo Postgres); a chamada HTTP
-  ao participante sai depois do commit; conflito de versão é refeito em processo e, se persistir,
-  devolve 409 (o participante que chamou o callback repete).
+  `POST /admin/sagas/:numero/reprocessar` chama de novo `POST /orcamentos/{n}/cobrar` (nova cobrança).
+- **Falha de plataforma nunca compensa:** se uma chamada esgota as 3 tentativas (5xx/timeout/rede), a saga
+  **fica no passo** (métrica `oficina_os_saga_passos_total{resultado="comando-falhou"}`), o alerta de saga
+  parada acusa e `POST /admin/sagas/:numero/reprocessar` (ADMIN) reenvia o comando — idempotente pelo
+  `numeroOS` no participante. Quem envia callbacks também repete 3x; `409` do OS significa "releia e repita".
+- Notificação continua **in-process** (`OsStatusAlteradoEvent`, `OrcamentoProntoEvent`, `OsFinalizadaEvent`).
+- **Consistência:** cada evento roda numa única transação (OS + saga no mesmo Postgres); os comandos
+  HTTP saem só depois do commit; conflito de versão é refeito em processo e, se persistir, devolve 409.
 - Métricas: `oficina_os_saga_passos_total`, `oficina_os_saga_passo_duracao_seconds`, `oficina_os_sagas`,
-  `oficina_os_sagas_paradas` (alerta de saga travada, `SAGA_ALERTA_PARADA_MIN`).
+  `oficina_os_sagas_paradas` (alerta de saga travada, `SAGA_ALERTA_PARADA_MIN`),
+  `oficina_integracoes_total{integracao="execucao-service"|"billing-service"}`.
 - **Operação (US-F4-11):** chamada que falha 3 vezes deixa a saga parada e dispara o alerta; o runbook
   [`docs/runbooks/saga-reprocessar.md`](docs/runbooks/saga-reprocessar.md) cobre triagem e reenvio.
   `POST /admin/sagas/:numero/reprocessar` (ADMIN) repete a chamada pendente de uma saga travada.

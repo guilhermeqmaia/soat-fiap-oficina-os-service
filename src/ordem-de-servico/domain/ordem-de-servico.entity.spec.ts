@@ -6,7 +6,6 @@ import { ItemProdutoOS } from './value-objects/item-produto-os.vo';
 import { InvalidDescriptionError } from './errors/invalid-description.error';
 import { InvalidStatusTransitionError } from './errors/invalid-status-transition.error';
 import { ServicoAlreadyAddedError } from './errors/servico-already-added.error';
-import { mascararDocumento } from './events/evento-integracao';
 
 const nova = () => OrdemDeServico.create({ clienteId: 'cli-1', veiculoId: 'vei-1', descricaoInicial: 'Barulho ao frenar' });
 const itens = () => [
@@ -126,50 +125,6 @@ describe('OrdemDeServico (OS Service, Fase 4)', () => {
         status: StatusOS.CANCELADA, motivoCancelamento: MotivoCancelamento.TIMEOUT_APROVACAO, createdAt: new Date(), updatedAt: new Date(), itensServico: itens(),
       });
       expect(os.id).toBe('id-1'); expect(os.status).toBe(StatusOS.CANCELADA); expect(os.motivoCancelamento).toBe(MotivoCancelamento.TIMEOUT_APROVACAO); expect(os.itensServico).toHaveLength(2);
-    });
-  });
-
-  describe('eventos de integracao (outbox)', () => {
-    it('registrarAbertura anuncia os.aberta com resumo e documento mascarado', () => {
-      const os = nova();
-      os.registrarAbertura({ cliente: { nome: 'Joao', cpfCnpj: '52998224725' }, veiculo: { placa: 'ABC1D23', modelo: 'Corolla' } });
-      expect(os.eventosIntegracao).toEqual([
-        {
-          type: 'os.aberta',
-          data: {
-            numeroOS: os.numero,
-            cliente: { id: 'cli-1', nome: 'Joao', cpfMascarado: '***.***.***-25' },
-            veiculo: { id: 'vei-1', placa: 'ABC1D23', modelo: 'Corolla' },
-            descricaoProblema: 'Barulho ao frenar',
-          },
-        },
-      ]);
-      // so faz sentido na abertura
-      os.iniciarDiagnostico();
-      expect(() => os.registrarAbertura({ cliente: { nome: 'J', cpfCnpj: '52998224725' }, veiculo: { placa: 'A', modelo: 'B' } })).toThrow(InvalidStatusTransitionError);
-    });
-    it('finalizar, entregar e cancelar anunciam os.finalizada / os.entregue / os.cancelada', () => {
-      const os = ate(StatusOS.FINALIZADA);
-      os.entregar();
-      expect(os.eventosIntegracao.map((e) => e.type)).toEqual(['os.finalizada', 'os.entregue']);
-      const cancelada = nova();
-      cancelada.cancelar(MotivoCancelamento.TIMEOUT_APROVACAO);
-      expect(cancelada.eventosIntegracao).toEqual([{ type: 'os.cancelada', data: { numeroOS: cancelada.numero, motivo: MotivoCancelamento.TIMEOUT_APROVACAO } }]);
-    });
-    it('consumirEventosIntegracao entrega e esvazia (o repositorio consome na transacao)', () => {
-      const os = nova();
-      os.cancelar(MotivoCancelamento.OPERADOR);
-      expect(os.consumirEventosIntegracao()).toHaveLength(1);
-      expect(os.consumirEventosIntegracao()).toHaveLength(0);
-      expect(os.eventosIntegracao).toHaveLength(0);
-    });
-    it('transicoes intermediarias (diagnostico, aprovacao, execucao, aguardando pagamento) nao geram evento os.*', () => {
-      const os = ate(StatusOS.AGUARDANDO_PAGAMENTO);
-      expect(os.eventosIntegracao).toHaveLength(0);
-    });
-    it('mascararDocumento cobre CPF e CNPJ, com ou sem pontuacao', () => {
-      expect(mascararDocumento('529.982.247-25')).toBe('***.***.***-25');
-      expect(mascararDocumento('11.222.333/0001-81')).toBe('**.***.***/****-81');
     });
   });
 });

@@ -32,15 +32,11 @@ services:
       # medir a app, nao o rate limiter. Vazio por padrao = throttler ativo.
       THROTTLER_DISABLED: '${THROTTLER_DISABLED:-}'
       PUBLIC_BASE_URL: '${PUBLIC_BASE_URL:-http://localhost:3000}'
-      # Mensageria (Fase 4, US-F4-06). Vazio = sobe sem broker (outbox so acumula).
-      # `docker compose --profile messaging up -d` sobe o LocalStack com a topologia
-      # da RFC-0006 e estes valores apontam para ele.
-      SNS_TOPIC_ARN: '${SNS_TOPIC_ARN:-}'
-      SQS_QUEUE_URL: '${SQS_QUEUE_URL:-}'
-      AWS_REGION: '${AWS_REGION:-us-east-1}'
-      AWS_ENDPOINT: '${AWS_ENDPOINT:-}'
-      AWS_ACCESS_KEY_ID: '${AWS_ACCESS_KEY_ID:-test}'
-      AWS_SECRET_ACCESS_KEY: '${AWS_SECRET_ACCESS_KEY:-test}'
+      # Comunicacao HTTP com a Execucao e o Billing (Fase 4, US-F4-18 / RFC-0008).
+      # Rodando os outros servicos na maquina (fora do compose), o container os
+      # alcanca por host.docker.internal; no cluster, pelo DNS interno (ConfigMap).
+      EXECUCAO_SERVICE_URL: '${EXECUCAO_SERVICE_URL:-http://host.docker.internal:3002}'
+      BILLING_SERVICE_URL: '${BILLING_SERVICE_URL:-http://host.docker.internal:3001}'
       WEB_ORIGINS: '${WEB_ORIGINS:-http://localhost:5173,http://localhost:5174,http://localhost:8080,http://localhost:8081}'
     depends_on:
       postgres:
@@ -52,26 +48,6 @@ services:
       start_period: 60s
       retries: 3
     entrypoint: ['sh', '-c', 'npx prisma migrate deploy && exec node dist/main.js']
-
-  # SNS/SQS locais (RFC-0006): topicos oficina-{os,execucao,billing}.fifo e filas
-  # execucao-comandos, billing-comandos, os-eventos, notificacao-eventos (+DLQs),
-  # criados pelo script do kit no boot. Opcional: --profile messaging.
-  localstack:
-    image: localstack/localstack:3
-    profiles: ['messaging']
-    ports:
-      - '4566:4566'
-    environment:
-      SERVICES: 'sns,sqs'
-      AWS_DEFAULT_REGION: us-east-1
-    volumes:
-      # Copia do scripts/messaging-local.sh do kit (o pacote npm publica so dist/).
-      - ./scripts/messaging-local.sh:/etc/localstack/init/ready.d/10-messaging.sh:ro
-    healthcheck:
-      test: ['CMD', 'awslocal', 'sqs', 'list-queues']
-      interval: 5s
-      timeout: 5s
-      retries: 20
 
   web-admin:
     build:
