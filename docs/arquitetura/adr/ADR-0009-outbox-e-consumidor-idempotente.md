@@ -1,7 +1,18 @@
 # ADR-0009: Transactional Outbox e consumidor idempotente
 
-**Status:** Aceita
+**Status:** Substituída pela [RFC-0008](../rfcs/RFC-0008-comunicacao-http-entre-servicos.md) (03/11/2026)
 **Data:** 2026-09-30
+
+> **Nota (03/11/2026):** com a troca da mensageria por HTTP direto
+> ([RFC-0008](../rfcs/RFC-0008-comunicacao-http-entre-servicos.md)) o outbox
+> transacional, o poller e os consumidores SQS deixam de existir. O que sobrevive
+> desta ADR: o **envelope** (`id`, `type`, `version`, `occurredAt`, `producer`,
+> `data`) como corpo dos callbacks HTTP e a **idempotência** — por `id` do envelope
+> nos callbacks (`processed_messages` no OS Service) e por `numeroOS` nos comandos.
+> A DLQ é substituída por retry/backoff + alerta de saga parada + `reprocessar`
+> (runbook [`saga-reprocessar.md`](../../runbooks/saga-reprocessar.md)). Contrato:
+> [`docs/contratos/http-interno.md`](../../contratos/http-interno.md). O conteúdo
+> abaixo é histórico.
 
 ## Contexto
 

@@ -38,7 +38,7 @@ Valida a matriz passo -> falha -> compensacao do orquestrador, o registro das co
 ### TS-05: Runbook de redrive
 - **Tipo:** Manual
 - **Criterio:** Alarme -> runbook
-- **Passos:** seguir `docs/runbooks/saga-dlq-reprocessar.md`: triagem com `receive-message --visibility-timeout 0`, `start-message-move-task`
+- **Passos:** seguir `docs/runbooks/saga-reprocessar.md`: triagem com `receive-message --visibility-timeout 0`, `start-message-move-task`
 - **Resultado esperado:** mensagem volta para a fila de origem e e consumida; duplicata e ignorada pelo consumidor (`processed_messages`/saga)
 
 ### TS-06: Saga parada sem DLQ

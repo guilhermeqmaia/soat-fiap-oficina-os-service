@@ -18,7 +18,14 @@ The latest version is **Event Storming v3 (30/03)**.
 - **Catalogo** — Servico
 - **Estoque** — Produto (parts and supplies), stock movements
 - **Autenticacao** — Usuario, JWT
-- **Notificacao** — client alert delivery
+- **Notificacao** — client alert delivery (in-process in the OS Service, fed by the HTTP callbacks)
+
+Fase 4 split: **OS Service** (this repo: Atendimento + saga orchestrator + Notificacao, Postgres `oficina_os`),
+**Billing Service** (Orcamento, Pagamento/Mercado Pago, ledger, Postgres `oficina_billing`),
+**Execucao Service** (execution queue, diagnosis, Catalogo + Estoque, DynamoDB `oficina-execucao`).
+Services talk over **direct HTTP** (RFC-0008, 2026-11-03): the orchestrator calls Execucao/Billing
+endpoints with retry; they call back `POST /ordens-servico/{numero}/eventos`. Contract:
+`docs/contratos/http-interno.md`. No SNS/SQS, outbox or DLQ (RFC-0006/ADR-0009 superseded).
 
 ### Actors
 
@@ -38,14 +45,16 @@ RECEBIDA -> EM_DIAGNOSTICO -> AGUARDANDO_APROVACAO -> EM_EXECUCAO -> AGUARDANDO_
 ```
 
 Fase 4 (decision of 2026-11-03): the customer is charged **after** the service is
-executed. `execucao.finalizada` -> AGUARDANDO_PAGAMENTO + command `billing.cobrar`;
-`billing.cobranca-criada` carries the payment link; `billing.pagamento-aprovado` -> FINALIZADA.
-Declined/late payment keeps the OS in AGUARDANDO_PAGAMENTO (no rollback).
+executed. Callback `execucao.finalizada` -> AGUARDANDO_PAGAMENTO + `POST /orcamentos/{n}/cobrar`
+(≙ `billing.cobrar`); the `201` response (≙ `billing.cobranca-criada`) carries the payment link;
+callback `billing.pagamento-aprovado` -> FINALIZADA. Declined/late payment keeps the OS in
+AGUARDANDO_PAGAMENTO (no rollback). Transport between services is HTTP (RFC-0008); the
+`execucao.*`/`billing.*` names are vocabulary (`docs/contratos/http-interno.md`).
 
 **Automatic transitions (Policies):**
 - Mechanic assigns themselves to OS -> status changes to EM_DIAGNOSTICO
 - Mechanic completes budget -> AGUARDANDO_APROVACAO + notifies client
-- Client approves -> `execucao.iniciar`; EM_EXECUCAO when the Execucao Service confirms (`execucao.iniciada`)
+- Client approves (callback `billing.orcamento-aprovado`) -> `POST /execucao/ordens/{n}/iniciar`; EM_EXECUCAO on `200` (≙ `execucao.iniciada`)
 - Execution finished -> AGUARDANDO_PAGAMENTO + `billing.cobrar`; payment approved -> FINALIZADA
 - Client rejects -> CANCELADA + reverses inventory reservations
 - All services completed -> AGUARDANDO_PAGAMENTO (charge); payment approved -> FINALIZADA
@@ -145,10 +154,16 @@ Notion import manifest: `docs/user-stories/f3-notion-import.md`.
 ### Fase 4 — Microservices, Saga & Full Automation (`f4-*`)
 
 Split into 3 microservices (OS Service = this repo evolved, Billing with
-Mercado Pago, Execução with DynamoDB), SNS+SQS messaging, orchestrated saga
-with compensations, BDD, SonarCloud, per-service CI/CD. Plan (market insights,
-12 proposed decisions, 7-repo map, waves): `docs/plano-execucao-fase-4.md`.
-Stories: `docs/user-stories/f4-*.md`. Notion manifest: `docs/user-stories/f4-notion-import.md`.
+Mercado Pago, Execução with DynamoDB), **direct HTTP between services with
+callbacks** (RFC-0008, 2026-11-03 — replaced the SNS+SQS messaging of RFC-0006;
+US-F4-02 cancelled, US-F4-18 added), orchestrated saga with compensations,
+BDD with **Gherkin + Cucumber** (professor's requirement: one `.feature` per flow in
+each service + end-to-end in the hub), SonarCloud, per-service CI/CD. Every
+service story has the sections "APIs que expoe / APIs que consome / O que salva no
+banco". Plan (market insights, 12 decisions revised on 2026-11-03, 7-repo map,
+waves): `docs/plano-execucao-fase-4.md`. Transport contract:
+`docs/contratos/http-interno.md`. Stories: `docs/user-stories/f4-*.md`. Notion
+manifest: `docs/user-stories/f4-notion-import.md`.
 
 **Phase 4 repos (5–7 created 2026-09-30; rename of this repo happens in US-F4-06):** `soat-fiap-oficina-os-service` (4, renamed from this repo),
 `soat-fiap-oficina-billing-service` (5), `soat-fiap-oficina-execucao-service` (6),
