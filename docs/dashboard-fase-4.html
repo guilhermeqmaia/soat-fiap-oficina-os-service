@@ -206,7 +206,7 @@
         <div><b>D1</b> 3 serviços: OS (atendimento + orquestrador), Billing (orçamento, pagamento, ledger), Execução (fila, diagnóstico, catálogo, estoque)</div>
         <div><b>D2</b> Saga orquestrada no OS Service, estado em <code>saga_os</code>, consultável por API</div>
         <div><b>D3</b> Comunicação entre serviços: HTTP direto + callbacks <code>POST /ordens-servico/{n}/eventos</code> (RFC-0008); SNS/SQS descartado em 03/11</div>
-        <div><b>D4</b> DynamoDB single-table na Execução</div>
+        <div><b>D4</b> DynamoDB na Execução: 4 tabelas <code>oficina-*</code> (rev. 09/11, RFC-0007)</div>
         <div><b>D5</b> Kit <code>@guilhermeqmaia/oficina-kit</code> no npm + template de serviço + cliente HTTP interno (<code>/http</code>, <code>Role.SERVICO</code>)</div>
         <div><b>D6</b> Confiabilidade: retry/backoff + idempotência (<code>numeroOS</code>, <code>id</code> do envelope) + <code>reprocessar</code> — sem outbox nem DLQ</div>
         <div><b>D7</b> SonarCloud com quality gate bloqueante</div>

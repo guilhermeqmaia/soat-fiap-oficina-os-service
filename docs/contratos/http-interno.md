@@ -39,14 +39,14 @@ para o OS Service, quando depende de uma pessoa (mecânico, cliente) ou do Merca
 | Comando (vocabulário) | Endpoint na Execução | Corpo | Resposta imediata = evento | Falha de negócio |
 |---|---|---|---|---|
 | `execucao.enfileirar` | `POST /execucao/ordens` | `{ numeroOS, veiculoId, descricaoProblema }` | `201 { numeroOS, posicaoFila }` ≙ `execucao.enfileirada` | `409 { motivo }` ≙ `execucao.recusada` (veículo já em execução) |
-| `execucao.iniciar` | `POST /execucao/ordens/{numeroOS}/iniciar` | — | `200 { numeroOS }` ≙ `execucao.iniciada` (baixa efetiva do estoque) | `409 { motivo }` ≙ `execucao.recusada` (estoque insuficiente) |
+| `execucao.iniciar` | `POST /execucao/ordens/{numeroOS}/iniciar` | — | `200 { numeroOS }` ≙ `execucao.iniciada` (só muda o status: as peças já foram baixadas no diagnóstico; idempotente) | `409 { motivo }` ≙ `execucao.recusada` (execução não está aguardando aprovação) |
 | `execucao.liberar-reservas` | `DELETE /execucao/ordens/{numeroOS}` | `{ motivo }` | `200 { numeroOS }` ≙ `execucao.reservas-liberadas` (tira da fila, aborta diagnóstico, devolve reservas) | — (idempotente; `200` mesmo sem reservas) |
 
 **Callbacks da Execução para o OS** (ações do mecânico na API/UI da Execução):
 
 | Ação do mecânico na Execução | Callback `type` | `data` |
 |---|---|---|
-| `POST /execucao/ordens/{numeroOS}/diagnostico` (serviços + peças, reserva estoque) | `execucao.diagnostico-concluido` | `{ numeroOS, mecanicoId, diagnostico, itens[] }` (`Item`: `tipo`, `referenciaId`, `nome`, `quantidade`, `precoUnitario`, `servicoId` nos PRODUTOs) |
+| `POST /execucao/ordens/{numeroOS}/diagnostico` (serviços + peças; **baixa o estoque** numa transação, `409 { motivo }` ao mecânico se faltar peça) | `execucao.diagnostico-concluido` | `{ numeroOS, mecanicoId, diagnostico, itens[] }` (`Item`: `tipo`, `referenciaId`, `nome`, `quantidade`, `precoUnitario`, `servicoId` nos PRODUTOs) |
 | `POST /execucao/ordens/{numeroOS}/finalizar` | `execucao.finalizada` | `{ numeroOS, finalizadaEm }` |
 
 ## OS Service → Billing Service
@@ -76,7 +76,7 @@ para o OS Service, quando depende de uma pessoa (mecânico, cliente) ou do Merca
 
 1. `POST /ordens-servico` (ATENDENTE) → OS cria a OS e chama `POST /execucao/ordens` → `201` ≙ `execucao.enfileirada` → OS `EM_DIAGNOSTICO`.
 2. Mecânico diagnostica na Execução → callback `execucao.diagnostico-concluido` → OS grava o snapshot e chama `POST /orcamentos` → `201` ≙ `billing.orcamento-gerado` → OS `AGUARDANDO_APROVACAO`; notifica o cliente.
-3. Cliente aprova no Billing → callback `billing.orcamento-aprovado` → OS chama `POST /execucao/ordens/{n}/iniciar` → `200` ≙ `execucao.iniciada` → OS `EM_EXECUCAO`.
+3. Cliente aprova no Billing → callback `billing.orcamento-aprovado` → OS chama `POST /execucao/ordens/{n}/iniciar` → `200` ≙ `execucao.iniciada` → OS `EM_EXECUCAO`. (Revisão de 09/11: a baixa de estoque já aconteceu no fechamento do diagnóstico; o `DELETE` devolve o que foi baixado.)
 4. Mecânico finaliza → callback `execucao.finalizada` → OS `AGUARDANDO_PAGAMENTO` e chama `POST /orcamentos/{n}/cobrar` → `201` ≙ `billing.cobranca-criada` → notifica o cliente com o link.
 5. Cliente paga no Mercado Pago → webhook no Billing → callback `billing.pagamento-aprovado` → OS `FINALIZADA`.
 6. Atendente entrega (`POST /ordens-servico/{id}/entregar`) → `ENTREGUE`.

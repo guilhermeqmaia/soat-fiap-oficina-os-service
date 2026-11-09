@@ -26,7 +26,7 @@ privada. O time questionou a assimetria: por que o NoSQL fica "fora" da VPC?
    existir: o usuário mestre de cada instância é o usuário do serviço.
 2. **VPC Gateway Endpoint para o DynamoDB** no stage `cluster/` do repo
    `infra-k8s`, nas route tables das subnets privadas, com **política do
-   endpoint** restrita à tabela `oficina-execucao` e seus índices. O tráfego da
+   endpoint** restrita às tabelas da Execução (prefixo `oficina-*`, revisão de 09/11 da RFC-0007) e seus índices. O tráfego da
    Execução para o DynamoDB não passa mais pelo NAT nem pela internet.
 
 ## Consequências

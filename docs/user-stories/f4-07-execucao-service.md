@@ -25,10 +25,10 @@ Sem fila, sem outbox, sem LocalStack.
 
 ## Criterios de Aceite
 
-- [ ] Modelo single-table: `EXECUCAO#<os>` (status da fila, mecanico, itens, timeline), `SERVICO#`/`PRODUTO#` (catalogo com preco), `ESTOQUE#<produto>` (saldo, reservas)
+- [ ] Modelo de dados no DynamoDB: **uma tabela por agregado** com prefixo `oficina-` (`execucoes`, `servicos`, `produtos`, `movimentacoes_estoque`), conforme a revisao de 09/11 da RFC-0007 (a single-table original foi substituida na implementacao)
 - [ ] `POST /execucao/ordens` (SERVICO; ≙ `execucao.enfileirar`) -> cria item na fila -> `201 { numeroOS, posicaoFila }` (≙ `execucao.enfileirada`); veiculo ja em execucao -> `409 { motivo }` (≙ `execucao.recusada`); idempotente por `numeroOS`
-- [ ] `POST /execucao/ordens/{numeroOS}/diagnostico` (MECANICO): grava mecanico, diagnostico e itens do catalogo (servicos/produtos) com **reserva de estoque** condicional `saldo - reservado >= qtd` e **precos congelados** -> callback `execucao.diagnostico-concluido` `{ numeroOS, mecanicoId, diagnostico, itens[] }` (`Item.servicoId` nos PRODUTOs). Rotas auxiliares da UI do mecanico (`atribuir`, `itens` incrementais) sao opcionais; o que vale para a saga e o callback
-- [ ] `POST /execucao/ordens/{numeroOS}/iniciar` (SERVICO; ≙ `execucao.iniciar`) -> baixa efetiva do estoque -> `200 { numeroOS }` (≙ `execucao.iniciada`); estoque insuficiente -> `409 { motivo }`; `DELETE /execucao/ordens/{numeroOS}` (SERVICO; ≙ `execucao.liberar-reservas`) -> tira da fila, aborta diagnostico, devolve reservas -> `200 { numeroOS }` (≙ `execucao.reservas-liberadas`; idempotente, `200` mesmo sem reservas)
+- [ ] `POST /execucao/ordens/{numeroOS}/diagnostico` (MECANICO): grava mecanico, diagnostico e itens do catalogo (servicos/produtos) com **baixa de estoque** transacional (`TransactWriteItems`, saldo nunca negativo; `409 { motivo }` ao mecanico se faltar peca) e **precos congelados** -> callback `execucao.diagnostico-concluido` `{ numeroOS, mecanicoId, diagnostico, itens[] }` (`Item.servicoId` nos PRODUTOs). Rotas auxiliares da UI do mecanico (`atribuir`, `itens` incrementais) sao opcionais; o que vale para a saga e o callback
+- [ ] `POST /execucao/ordens/{numeroOS}/iniciar` (SERVICO; ≙ `execucao.iniciar`) -> so muda o status (as pecas ja foram baixadas no diagnostico) -> `200 { numeroOS }` (≙ `execucao.iniciada`, idempotente); execucao fora de AGUARDANDO_APROVACAO -> `409 { motivo }`; `DELETE /execucao/ordens/{numeroOS}` (SERVICO; ≙ `execucao.liberar-reservas`) -> tira da fila, aborta diagnostico, devolve ao estoque o que foi baixado para a OS -> `200 { numeroOS }` (≙ `execucao.reservas-liberadas`; idempotente, `200` mesmo sem reservas)
 - [ ] `POST /execucao/ordens/{numeroOS}/finalizar` (MECANICO) -> callback `execucao.finalizada` `{ numeroOS, finalizadaEm }`; opcionalmente `POST /execucao/ordens/{numeroOS}/servicos/:id/concluir` e o ultimo servico concluido dispara o mesmo callback (policy da Fase 1)
 - [ ] CRUD de catalogo (`/catalogo/servicos`, `/catalogo/produtos`) e estoque (`/estoque/movimentacoes`, alerta de estoque baixo) com roles GESTOR/ESTOQUISTA
 - [ ] Callbacks ao OS Service via cliente HTTP do kit (`@guilhermeqmaia/oficina-kit/http`): JWT `SERVICO`, 3 tentativas com backoff, `x-correlation-id`/`traceparent`; `409` do OS -> reler e repetir; sem outbox/Streams/SNS
@@ -40,7 +40,7 @@ Conforme [`http-interno.md`](../contratos/http-interno.md). Prefixos `/execucao|
 | Metodo | Rota | Role | Corpo | Resposta |
 |---|---|---|---|---|
 | POST | `/execucao/ordens` | SERVICO | `{ numeroOS, veiculoId, descricaoProblema }` | `201 { numeroOS, posicaoFila }` ≙ `execucao.enfileirada` · `409 { motivo }` ≙ `execucao.recusada` (veiculo ja em execucao) |
-| POST | `/execucao/ordens/{numeroOS}/iniciar` | SERVICO | — | `200 { numeroOS }` ≙ `execucao.iniciada` (baixa efetiva do estoque) · `409 { motivo }` ≙ `execucao.recusada` (estoque insuficiente) |
+| POST | `/execucao/ordens/{numeroOS}/iniciar` | SERVICO | — | `200 { numeroOS }` ≙ `execucao.iniciada` (so status; pecas ja baixadas) · `409 { motivo }` ≙ `execucao.recusada` (nao aguarda aprovacao) |
 | DELETE | `/execucao/ordens/{numeroOS}` | SERVICO | `{ motivo }` | `200 { numeroOS }` ≙ `execucao.reservas-liberadas` (idempotente) |
 | POST | `/execucao/ordens/{numeroOS}/diagnostico` | MECANICO | `{ diagnostico, itens[] }` (`Item`: `tipo`, `referenciaId`, `quantidade`; `servicoId` nos PRODUTOs) | `200` execucao com itens/precos congelados e reservas; dispara callback `execucao.diagnostico-concluido` |
 | POST | `/execucao/ordens/{numeroOS}/finalizar` | MECANICO | — | `200`; dispara callback `execucao.finalizada` |
@@ -60,18 +60,16 @@ JWT `SERVICO` (`sub: execucao-service`) emitido localmente com `mintServiceToken
 
 ## O que salva no banco
 
-DynamoDB **`oficina-execucao`** (single-table; tabela e IAM proprios — nenhum outro servico acessa):
+DynamoDB, **quatro tabelas** com prefixo `oficina-` (tabelas e IAM proprios — nenhum outro servico acessa; revisao de 09/11, implementacao do PR #5):
 
-| PK | SK | Item |
-|---|---|---|
-| `EXECUCAO#<numeroOS>` | `META` | status da fila (`ENFILEIRADA`, `EM_DIAGNOSTICO`, `DIAGNOSTICADA`, `EM_EXECUCAO`, `FINALIZADA`, `CANCELADA`), `veiculoId`, `mecanicoId`, `descricaoProblema`, `diagnostico`, `posicaoFila`, timestamps |
-| `EXECUCAO#<numeroOS>` | `ITEM#<n>` | item do diagnostico: `tipo`, `referenciaId`, `nome`, `quantidade`, `precoUnitario` (congelado), `servicoId`, `concluido` |
-| `EXECUCAO#<numeroOS>` | `EVENTO#<timestamp>` | timeline (enfileirada, diagnostico, iniciada, servico concluido, finalizada, reservas liberadas) |
-| `SERVICO#<id>` / `PRODUTO#<id>` | `META` | catalogo com preco vigente, ativo/inativo |
-| `ESTOQUE#<produtoId>` | `META` | `saldo`, `reservado`, `minimo` (conditional writes `saldo - reservado >= qtd`) |
-| `ESTOQUE#<produtoId>` | `MOV#<timestamp>` | movimentacao (entrada, reserva, baixa, liberacao) com `numeroOS` quando houver |
+| Tabela | Chave | Indices | Item |
+|---|---|---|---|
+| `execucoes` | `osId` (= numeroOS) | — | `veiculoId`, `descricaoProblema`, `mecanicoId`, `status` (`NA_FILA`, `ATRIBUIDA`, `EM_DIAGNOSTICO`, `AGUARDANDO_APROVACAO`, `EM_EXECUCAO`, `EXECUTADA`, `CANCELADA`), `diagnostico`, `servicos[]` com as pecas embutidas e precos congelados, `estoqueBaixado`, `finalizadaEm`, `versao` (lock otimista) |
+| `servicos` | `servicoId` | — | catalogo de servicos com preco vigente |
+| `produtos` | `produtoId` | — | catalogo de pecas: `sku`, `nome`, `precoUnitario`, `quantidadeEstoque` (conditional update na baixa) |
+| `movimentacoes_estoque` | `movimentacaoId` | `produtoId-data-index`, `osId-data-index` | `tipo` (`ENTRADA`, `BAIXA`, `DEVOLUCAO`), `quantidade`, `osId`, `servicoId`, `data` (auditoria; a devolucao e o liquido do historico da OS) |
 
-GSI por `veiculoId` (recusa de veiculo ja em execucao) e por status da fila. **Sem itens `MSG#`** (nao ha outbox nem dedup de fila; a idempotencia dos comandos e por `numeroOS` no proprio `META`).
+Baixa, devolucao e entrada usam um unico `TransactWriteItems`. Idempotencia dos comandos por `numeroOS` no proprio item de `execucoes`. Follow-up: GSI em `execucoes` por `status` (fila) e por `veiculoId` para trocar os `Scan` por `Query`.
 
 ## Dependencias
 
