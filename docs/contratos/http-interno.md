@@ -55,7 +55,7 @@ para o OS Service, quando depende de uma pessoa (mecânico, cliente) ou do Merca
 |---|---|---|---|---|
 | `billing.gerar-orcamento` | `POST /orcamentos` | `{ numeroOS, clienteId, itens[] }` | `201 { numeroOS, orcamentoId, total, validoAte }` ≙ `billing.orcamento-gerado` | `409` se já existe orçamento ativo (devolve o existente com `200`) |
 | `billing.cobrar` | `POST /orcamentos/{numeroOS}/cobrar` | — | `201 { numeroOS, orderId, linkPagamento, valor }` ≙ `billing.cobranca-criada` (order no Mercado Pago) | `409 { motivo }` se o orçamento não está aprovado |
-| `billing.cancelar-orcamento` | `DELETE /orcamentos/{numeroOS}` | `{ motivo }` | `200 { numeroOS, orcamentoId, estornado }` ≙ `billing.orcamento-cancelado` | — (idempotente) |
+| `billing.cancelar-orcamento` | `DELETE /orcamentos/{numeroOS}` | `{ motivo }` | `200 { numeroOS, orcamentoId, estornado }` ≙ `billing.orcamento-cancelado` (`orcamentoId: null` se a OS foi cancelada antes de o orçamento existir) | — (idempotente) |
 
 **Callbacks do Billing para o OS:**
 

@@ -7,7 +7,7 @@ dos testes de contrato no CI de cada serviço e a referência para quem consome 
 | Arquivo | Serviço | Repositório | Status |
 |---|---|---|---|
 | `os-service.yaml` | OS Service (`/ordens-servico`, `/clientes`, `/veiculos`, `/usuario`, `/notificacoes`, `/auth/me`, `/admin`, callback `/ordens-servico/{numero}/eventos`) | `soat-fiap-oficina-os-service` | *placeholder — a publicar* |
-| `billing-service.yaml` | Billing (`/orcamentos`, `/pagamentos`, `/webhooks/mercadopago`) | `soat-fiap-oficina-billing-service` | *placeholder — a publicar* |
+| `billing-service.yaml` | Billing (`/orcamentos`, `/pagamentos`, `/webhooks/mercadopago`) | `soat-fiap-oficina-billing-service` | publicado |
 | `execucao-service.yaml` | Execução (`/execucao`, `/catalogo`, `/estoque`) | `soat-fiap-oficina-execucao-service` | *placeholder — a publicar* |
 
 Regras:
