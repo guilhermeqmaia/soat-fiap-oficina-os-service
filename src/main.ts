@@ -4,10 +4,11 @@ iniciarTracing();
 
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { SwaggerModule } from '@nestjs/swagger';
 import { Logger } from 'nestjs-pino';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
+import { criarDocumentoOpenApi } from './config/openapi';
 
 async function bootstrap() {
   // `bufferLogs` segura os logs do bootstrap ate o Logger do nestjs-pino
@@ -40,14 +41,8 @@ async function bootstrap() {
   // Swagger/OpenAPI expoe todo o surface da API e exemplos — desabilitado em
   // producao para evitar information disclosure.
   if (process.env.NODE_ENV !== 'production') {
-    const config = new DocumentBuilder()
-      .setTitle('Oficina Mecânica API')
-      .setDescription('API do sistema integrado de oficina mecânica')
-      .setVersion('1.0')
-      .addBearerAuth()
-      .build();
-
-    const document = SwaggerModule.createDocument(app, config);
+    // Mesmo documento publicado em docs/contratos/openapi/os-service.yaml (US-F4-15).
+    const document = criarDocumentoOpenApi(app);
     SwaggerModule.setup('api', app, document);
   }
 
