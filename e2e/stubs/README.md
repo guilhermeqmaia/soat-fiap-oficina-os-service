@@ -34,7 +34,7 @@ status, body }` com o que o OS respondeu (campo que só existe no stub).
 
 | Rota | Para quê |
 |---|---|
-| `POST /__stub/cenario` `{ pagamento: 'recusado', falhar5xx: 3, rota: 'POST /orcamentos', recusar: { rota, motivo }, atrasoMs }` | muda o comportamento dos próximos pedidos (`falhar5xx` decrementa a cada falha; com 3 o retry do OS esgota) |
+| `POST /__stub/cenario` `{ pagamento: 'recusado' (só o próximo pagamento), falhar5xx: 3, rota: 'POST /orcamentos', recusar: { rota, motivo }, atrasoMs }` | muda o comportamento dos próximos pedidos (`falhar5xx` decrementa a cada falha; com 3 o retry do OS esgota) |
 | `DELETE /__stub/cenario` · `GET /__stub/cenario` | volta ao padrão · consulta |
 | `GET /__stub/chamadas?numeroOS=&rota=` · `DELETE /__stub/chamadas` | chamadas recebidas do OS (com `sub`, `x-correlation-id`, `traceparent`, status) |
 | `GET /__stub/violacoes` | divergências de contrato |

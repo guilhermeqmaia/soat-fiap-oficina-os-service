@@ -182,6 +182,8 @@ servidor.adicionar(
         return respostaDaAcao(o.numeroOS, o, cb);
       }
       const motivo = body?.motivo ?? servidor.cenario.motivoRecusaPagamento;
+      // `cenario.pagamento: 'recusado'` vale para o PROXIMO pagamento: a nova cobranca e aprovada.
+      if (!body?.resultado) servidor.cenario.pagamento = 'aprovado';
       c.status = 'RECUSADA';
       marcar(o, `pagamento recusado ${c.orderId} (${motivo})`);
       const cb = await callbacks.enviar(o.numeroOS, 'billing.pagamento-recusado', { orderId: c.orderId, motivo }, traceparent);
