@@ -154,6 +154,12 @@ model Notificacao {
   id               String            @id @default(uuid())
   clienteId        String            @map("cliente_id")
   ordemDeServicoId String?           @map("ordem_de_servico_id")
+  /// Numero da OS (US-F4-12) — legivel para o cliente e chave de correlacao da saga.
+  numeroOS         String?           @map("numero_os")
+  /// Id do fato que originou a notificacao (id do envelope do callback ou id deterministico).
+  eventoId         String?           @map("evento_id")
+  /// Link de pagamento do Mercado Pago (`billing.cobranca-criada`).
+  linkPagamento    String?           @map("link_pagamento")
   tipo             TipoNotificacao
   canal            CanalNotificacao
   destinatario     String
@@ -166,6 +172,16 @@ model Notificacao {
 
   @@index([clienteId])
   @@index([ordemDeServicoId])
+  @@index([numeroOS])
+  // Idempotencia (US-F4-12): no maximo UMA notificacao por (fato, tipo, canal).
+  // - evento_id e o fato (id do envelope do callback ou id deterministico); nao
+  //   (tipo, OS), porque alguns fatos se repetem legitimamente na mesma OS:
+  //   cada pagamento recusado e cada nova cobranca (outro orderId/link) devem avisar.
+  // - tipo entra porque um mesmo fato gera mais de um tipo (billing.pagamento-aprovado
+  //   -> PAGAMENTO_APROVADO + OS_FINALIZADA).
+  // - canal entra para que o mesmo fato possa sair por e-mail E por webhook.
+  // Linhas antigas (evento_id NULL) nao conflitam: NULLs sao distintos no Postgres.
+  @@unique([eventoId, tipo, canal], map: "notificacao_evento_id_tipo_canal_key")
   @@map("notificacao")
 }
 
@@ -173,10 +189,16 @@ enum TipoNotificacao {
   ORCAMENTO_PRONTO
   OS_FINALIZADA
   STATUS_OS_ALTERADO
+  ORCAMENTO_APROVADO
+  PAGAMENTO_PENDENTE
+  PAGAMENTO_APROVADO
+  PAGAMENTO_RECUSADO
+  OS_CANCELADA
 }
 
 enum CanalNotificacao {
   EMAIL
+  WEBHOOK
 }
 
 enum StatusNotificacao {

@@ -5,6 +5,12 @@ import { TipoNotificacao } from './value-objects/tipo-notificacao.vo';
 export interface CreateNotificacaoProps {
   clienteId: string;
   ordemDeServicoId?: string | null;
+  /** Numero da OS (US-F4-12). */
+  numeroOS?: string | null;
+  /** Id do fato que originou a notificacao — chave de idempotencia com tipo + canal. */
+  eventoId?: string | null;
+  /** Link de pagamento (`billing.cobranca-criada`). */
+  linkPagamento?: string | null;
   tipo: TipoNotificacao;
   canal: CanalNotificacao;
   destinatario: string;
@@ -16,6 +22,9 @@ export interface ReconstituteNotificacaoProps {
   id: string;
   clienteId: string;
   ordemDeServicoId: string | null;
+  numeroOS?: string | null;
+  eventoId?: string | null;
+  linkPagamento?: string | null;
   tipo: TipoNotificacao;
   canal: CanalNotificacao;
   destinatario: string;
@@ -31,6 +40,9 @@ export class Notificacao {
   readonly id?: string;
   private readonly _clienteId: string;
   private readonly _ordemDeServicoId: string | null;
+  private readonly _numeroOS: string | null;
+  private readonly _eventoId: string | null;
+  private readonly _linkPagamento: string | null;
   private readonly _tipo: TipoNotificacao;
   private readonly _canal: CanalNotificacao;
   private readonly _destinatario: string;
@@ -45,6 +57,9 @@ export class Notificacao {
     props: {
       clienteId: string;
       ordemDeServicoId: string | null;
+      numeroOS: string | null;
+      eventoId: string | null;
+      linkPagamento: string | null;
       tipo: TipoNotificacao;
       canal: CanalNotificacao;
       destinatario: string;
@@ -60,6 +75,9 @@ export class Notificacao {
     this.id = id;
     this._clienteId = props.clienteId;
     this._ordemDeServicoId = props.ordemDeServicoId;
+    this._numeroOS = props.numeroOS;
+    this._eventoId = props.eventoId;
+    this._linkPagamento = props.linkPagamento;
     this._tipo = props.tipo;
     this._canal = props.canal;
     this._destinatario = props.destinatario;
@@ -75,6 +93,9 @@ export class Notificacao {
     return new Notificacao({
       clienteId: props.clienteId,
       ordemDeServicoId: props.ordemDeServicoId ?? null,
+      numeroOS: props.numeroOS ?? null,
+      eventoId: props.eventoId ?? null,
+      linkPagamento: props.linkPagamento ?? null,
       tipo: props.tipo,
       canal: props.canal,
       destinatario: props.destinatario,
@@ -91,6 +112,9 @@ export class Notificacao {
       {
         clienteId: props.clienteId,
         ordemDeServicoId: props.ordemDeServicoId,
+        numeroOS: props.numeroOS ?? null,
+        eventoId: props.eventoId ?? null,
+        linkPagamento: props.linkPagamento ?? null,
         tipo: props.tipo,
         canal: props.canal,
         destinatario: props.destinatario,
@@ -122,6 +146,15 @@ export class Notificacao {
   }
   get ordemDeServicoId(): string | null {
     return this._ordemDeServicoId;
+  }
+  get numeroOS(): string | null {
+    return this._numeroOS;
+  }
+  get eventoId(): string | null {
+    return this._eventoId;
+  }
+  get linkPagamento(): string | null {
+    return this._linkPagamento;
   }
   get tipo(): TipoNotificacao {
     return this._tipo;
