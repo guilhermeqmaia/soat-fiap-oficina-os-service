@@ -1,6 +1,8 @@
 # Stubs do Billing e da Execucao (US-F4-14) — UMA imagem, dois containers:
-#   command: ["node", "dist/billing.js"]   (porta 3001)
-#   command: ["node", "dist/execucao.js"]  (porta 3002)
+#   STUB_PAPEL=billing   (porta 3001)
+#   STUB_PAPEL=execucao  (porta 3002)
+# O papel vem por variavel (e nao por `command`) para o compose trocar a imagem pela
+# real (BILLING_IMAGE/EXECUCAO_IMAGE) sem sobrescrever o CMD dela.
 # Contexto de build = raiz do repo (precisa de docs/contratos/schemas).
 #   docker build -f e2e/stubs/Dockerfile -t oficina-participantes-stub .
 
@@ -21,4 +23,5 @@ COPY --chown=node:node --from=builder /app/package.json ./package.json
 # Os mesmos JSON Schemas dos testes de contrato: o stub valida o que recebe e o que responde.
 COPY --chown=node:node docs/contratos/schemas ./schemas
 USER node
-CMD ["node", "dist/billing.js"]
+ENV STUB_PAPEL=billing
+CMD ["sh", "-c", "exec node dist/${STUB_PAPEL}.js"]

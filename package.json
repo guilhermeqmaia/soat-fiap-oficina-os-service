@@ -33,6 +33,10 @@
     "seed": "ts-node prisma/seed.ts",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
+    "e2e:up": "docker compose -f docker-compose.fase4.yml up -d --build --wait",
+    "e2e:down": "docker compose -f docker-compose.fase4.yml down -v --remove-orphans",
+    "e2e:logs": "docker compose -f docker-compose.fase4.yml logs -f",
+    "e2e:token": "node scripts/e2e-token.js",
     "sonar:up": "docker compose -f infra/sonar/docker-compose.sonar.yml up -d",
     "sonar:down": "docker compose -f infra/sonar/docker-compose.sonar.yml down",
     "sonar:local": "docker run --rm --add-host=host.docker.internal:host-gateway -e SONAR_HOST_URL=http://host.docker.internal:9000 -e SONAR_TOKEN=${SONAR_TOKEN} -v $(pwd):/usr/src sonarsource/sonar-scanner-cli:12.1"
