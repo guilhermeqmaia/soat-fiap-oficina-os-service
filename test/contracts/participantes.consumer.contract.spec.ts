@@ -129,6 +129,10 @@ describe('Contrato do consumidor (OS Service -> Execucao/Billing)', () => {
     }
   });
 
+  it('DELETE /orcamentos/{n} antes de o orcamento existir: 200 com orcamentoId null e valido', () => {
+    expect(valida('eventos.schema.json#/$defs/BillingOrcamentoCancelado', { numeroOS: NUMERO_OS, orcamentoId: null, estornado: false })).toBe('');
+  });
+
   it('caminho feliz: enfileirar -> gerar-orcamento -> iniciar -> cobrar (201 com linkPagamento)', async () => {
     const { http, saga, eventos, drenar, callback } = novoCenario();
     await drenar();
@@ -205,6 +209,14 @@ describe('Contrato do consumidor (OS Service -> Execucao/Billing)', () => {
       conferirChamada(http.chamadas[0], CONTRATO['billing.gerar-orcamento'], r.entregue ? r.evento : undefined);
     },
   );
+
+  it('billing.cancelar-orcamento com pagamento ja aprovado (409): nao entregue — fora do alcance da saga', async () => {
+    const { http, participantes } = novoCenario();
+    http.responderCom('billing.cancelar-orcamento', 409);
+    const r = await participantes.executar({ type: 'billing.cancelar-orcamento', data: { numeroOS: NUMERO_OS, motivo: 'OPERADOR' } });
+    conferirChamada(http.chamadas[0], CONTRATO['billing.cancelar-orcamento']);
+    expect(r).toMatchObject({ entregue: false, status: 409 });
+  });
 
   it('billing.cobrar recusado (409, orcamento nao aprovado): nao vira evento — a saga fica no passo', async () => {
     const { http, participantes } = novoCenario();

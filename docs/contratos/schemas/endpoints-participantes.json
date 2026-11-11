@@ -56,7 +56,8 @@
     "path": "/orcamentos/{numeroOS}",
     "corpo": "comandos.schema.json#/$defs/BillingCancelarOrcamento",
     "respostas": {
-      "200": { "schema": "eventos.schema.json#/$defs/BillingOrcamentoCancelado", "evento": "billing.orcamento-cancelado" }
+      "200": { "schema": "eventos.schema.json#/$defs/BillingOrcamentoCancelado", "evento": "billing.orcamento-cancelado" },
+      "409": { "schema": "comum.schema.json#/$defs/Motivo", "evento": null }
     }
   }
 }

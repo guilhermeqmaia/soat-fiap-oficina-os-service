@@ -371,4 +371,4 @@ components:
         `estornado` é mantido por compatibilidade e é sempre `false` no fluxo atual — a cobrança só existe
         após a execução, quando a saga já não compensa.
       payload:
-        allOf: [ { $ref: '#/components/schemas/Envelope' }, { properties: { data: { type: object, required: [numeroOS, orcamentoId, estornado], properties: { numeroOS: {type: string}, orcamentoId: {type: string}, estornado: {type: boolean, description: Sempre false no fluxo atual (mantido por compatibilidade)} } } } } ]
+        allOf: [ { $ref: '#/components/schemas/Envelope' }, { properties: { data: { type: object, required: [numeroOS, orcamentoId, estornado], properties: { numeroOS: {type: string}, orcamentoId: {type: [string, 'null'], description: null quando a OS foi cancelada antes de o orcamento existir (DELETE idempotente)}, estornado: {type: boolean, description: Sempre false no fluxo atual (mantido por compatibilidade)} } } } } ]

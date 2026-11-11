@@ -34,6 +34,8 @@ para o OS Service, quando depende de uma pessoa (mecânico, cliente) ou do Merca
 
 `correlationId` deixa de existir no corpo: é o `{numero}` do path e o cabeçalho `x-correlation-id`.
 
+**Schemas validáveis** (US-F4-15): [`schemas/`](schemas/) traz este envelope, o `data` de cada `type`, os corpos dos comandos e a tabela comando → endpoint/respostas ([`endpoints-participantes.json`](schemas/endpoints-participantes.json)) em JSON Schema; o OpenAPI do OS Service ([`openapi/os-service.yaml`](openapi/os-service.yaml)) é gerado deles. Mudou uma tabela deste documento? Mude o schema junto — os testes de contrato dos serviços leem de lá.
+
 ## OS Service → Execução Service
 
 | Comando (vocabulário) | Endpoint na Execução | Corpo | Resposta imediata = evento | Falha de negócio |
@@ -53,9 +55,9 @@ para o OS Service, quando depende de uma pessoa (mecânico, cliente) ou do Merca
 
 | Comando | Endpoint no Billing | Corpo | Resposta imediata = evento | Falha de negócio |
 |---|---|---|---|---|
-| `billing.gerar-orcamento` | `POST /orcamentos` | `{ numeroOS, clienteId, itens[] }` | `201 { numeroOS, orcamentoId, total, validoAte }` ≙ `billing.orcamento-gerado` | `409` se já existe orçamento ativo (devolve o existente com `200`) |
+| `billing.gerar-orcamento` | `POST /orcamentos` | `{ numeroOS, clienteId, itens[] }` | `201 { numeroOS, orcamentoId, total, validoAte }` ≙ `billing.orcamento-gerado`; orçamento ativo já existente → `200` com o mesmo corpo | — (o OS também aceita `409` com o orçamento existente no corpo e trata como sucesso) |
 | `billing.cobrar` | `POST /orcamentos/{numeroOS}/cobrar` | — | `201 { numeroOS, orderId, linkPagamento, valor }` ≙ `billing.cobranca-criada` (order no Mercado Pago) | `409 { motivo }` se o orçamento não está aprovado |
-| `billing.cancelar-orcamento` | `DELETE /orcamentos/{numeroOS}` | `{ motivo }` | `200 { numeroOS, orcamentoId, estornado }` ≙ `billing.orcamento-cancelado` | — (idempotente) |
+| `billing.cancelar-orcamento` | `DELETE /orcamentos/{numeroOS}` | `{ motivo }` | `200 { numeroOS, orcamentoId, estornado }` ≙ `billing.orcamento-cancelado` (idempotente; `orcamentoId: null` se a OS foi cancelada antes de o orçamento existir) | `409 { motivo }` se o pagamento já foi aprovado — inalcançável pela saga, que só compensa antes de `billing.cobrar` |
 
 **Callbacks do Billing para o OS:**
 
@@ -68,7 +70,7 @@ para o OS Service, quando depende de uma pessoa (mecânico, cliente) ou do Merca
 
 ## OS Service (o que recebe e o que expõe)
 
-- `POST /ordens-servico/{numero}/eventos` — callback (role `SERVICO`). `200 { aplicado, duplicado?, passo, status }`; `404` OS inexistente; `409` conflito de versão (repetir).
+- `POST /ordens-servico/{numero}/eventos` — callback (role `SERVICO`). `200 { aplicado, duplicado?, passo, status }` (`passo`/`status` só faltam se a saga não existir mais); `400` envelope inválido ou `data.numeroOS` ≠ `{numero}`; `401`/`403` sem JWT de `SERVICO`; `404` OS inexistente (não repetir); `409` conflito de versão (releia e repita). Os `4xx` do OS usam o corpo padrão do Nest `{ statusCode, message, error? }` — o `409 { motivo }` dos princípios é a recusa de negócio dos participantes, não o conflito do callback.
 - Eventos `os.aberta`, `os.cancelada`, `os.finalizada`, `os.entregue` deixam de ser publicados: a Notificação é **in-process** no OS Service (US-F4-12), alimentada pelos callbacks (ex.: `billing.cobranca-criada` → e-mail com `linkPagamento`).
 - Nenhum outro serviço precisa ser avisado de `os.cancelada`: o cancelamento chama `DELETE /execucao/ordens/{numeroOS}` e `DELETE /orcamentos/{numeroOS}` diretamente (compensações).
 
