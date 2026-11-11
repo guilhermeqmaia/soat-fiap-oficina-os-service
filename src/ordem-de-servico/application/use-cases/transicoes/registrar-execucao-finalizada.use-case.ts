@@ -9,6 +9,8 @@ export interface RegistrarExecucaoFinalizadaInput {
   numero: string;
   /** Unit of work do orquestrador (OS + saga na mesma transacao). */
   tx?: unknown;
+  /** Coletor do orquestrador: eventos publicados so depois do commit (default: publisher direto). */
+  eventos?: DomainEventPublisher;
 }
 
 /**
@@ -23,7 +25,7 @@ export class RegistrarExecucaoFinalizadaUseCase implements UseCase<RegistrarExec
   ) {}
 
   async execute(input: RegistrarExecucaoFinalizadaInput): Promise<OrdemDeServico> {
-    const { ordem } = await registrarTransicao(this.gateway, this.events, input.numero, StatusOS.AGUARDANDO_PAGAMENTO, (os) =>
+    const { ordem } = await registrarTransicao(this.gateway, input.eventos ?? this.events, input.numero, StatusOS.AGUARDANDO_PAGAMENTO, (os) =>
       os.aguardarPagamento(),
       input.tx,
     );

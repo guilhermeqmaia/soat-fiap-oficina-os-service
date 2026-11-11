@@ -6,8 +6,7 @@ import { OrdemDeServicoNotFoundError } from '../../../domain/errors/ordem-de-ser
 import { InvalidStatusTransitionError } from '../../../domain/errors/invalid-status-transition.error';
 import { OrdemDeServicoGateway } from '../../gateways/ordem-de-servico.gateway';
 import { OsStatusAlteradoEvent } from '../../../domain/events/os-status-alterado.event';
-import { OrcamentoProntoEvent } from '../../../../shared/domain/events/orcamento-pronto.event';
-import { OsFinalizadaEvent } from '../../../../shared/domain/events/os-finalizada.event';
+import { MarcoOrdemDeServicoEvent } from '../../../../shared/domain/events/marco-ordem-de-servico.event';
 import { OsAcaoEvent } from '../../../../shared/domain/events/os-acao.event';
 import {
   RegistrarCancelamentoUseCase,
@@ -94,11 +93,11 @@ describe('transicoes dirigidas por eventos (idempotentes — ADR-0009)', () => {
     expect(r.valorTotal()).toBe(200 + 100 + 15);
   });
 
-  it('billing.orcamento-gerado -> AGUARDANDO_APROVACAO + OrcamentoProntoEvent com o total do Billing', async () => {
+  it('billing.orcamento-gerado -> AGUARDANDO_APROVACAO, sem marco proprio (o orquestrador e a origem unica do orcamento pronto)', async () => {
     const os = nova(StatusOS.EM_DIAGNOSTICO); const g = fakeGateway(os);
-    await new RegistrarOrcamentoGeradoUseCase(g, events).execute({ numero: os.numero, total: '315.00' });
-    const orc = events.publicados.find((e) => e instanceof OrcamentoProntoEvent) as OrcamentoProntoEvent;
-    expect(orc).toMatchObject({ numero: os.numero, clienteId: 'cli-1', valorTotal: 315 });
+    const r = await new RegistrarOrcamentoGeradoUseCase(g, events).execute({ numero: os.numero, total: '315.00' });
+    expect(r.status).toBe(StatusOS.AGUARDANDO_APROVACAO);
+    expect(events.publicados.filter((e) => e instanceof MarcoOrdemDeServicoEvent)).toHaveLength(0);
     // reentrega: nada publicado de novo
     events.limpar();
     await new RegistrarOrcamentoGeradoUseCase(g, events).execute({ numero: os.numero, total: '315.00' });
@@ -110,22 +109,32 @@ describe('transicoes dirigidas por eventos (idempotentes — ADR-0009)', () => {
     expect((await new RegistrarExecucaoIniciadaUseCase(g, events).execute({ numero: os.numero })).status).toBe(StatusOS.EM_EXECUCAO);
   });
 
-  it('execucao.finalizada -> AGUARDANDO_PAGAMENTO, sem OsFinalizadaEvent (a cobranca vem depois da execucao)', async () => {
+  it('execucao.finalizada -> AGUARDANDO_PAGAMENTO, sem marco os.finalizada (a cobranca vem depois da execucao)', async () => {
     const os = nova(StatusOS.EM_EXECUCAO); const g = fakeGateway(os);
     const uc = new RegistrarExecucaoFinalizadaUseCase(g, events);
     expect((await uc.execute({ numero: os.numero })).status).toBe(StatusOS.AGUARDANDO_PAGAMENTO);
     expect(events.publicados.find((e) => e instanceof OsStatusAlteradoEvent)).toMatchObject({ statusAnterior: StatusOS.EM_EXECUCAO, statusAtual: StatusOS.AGUARDANDO_PAGAMENTO });
-    expect(events.publicados.filter((e) => e instanceof OsFinalizadaEvent)).toHaveLength(0);
+    expect(events.publicados.filter((e) => e instanceof MarcoOrdemDeServicoEvent)).toHaveLength(0);
     await uc.execute({ numero: os.numero });
     expect(g.updates).toBe(1);
   });
 
-  it('billing.pagamento-aprovado -> FINALIZADA + OsFinalizadaEvent (uma vez)', async () => {
+  it('billing.pagamento-aprovado -> FINALIZADA + marco os.finalizada (uma vez, id deterministico)', async () => {
     const os = nova(StatusOS.AGUARDANDO_PAGAMENTO); const g = fakeGateway(os);
     const uc = new RegistrarPagamentoAprovadoUseCase(g, events);
     const r = await uc.execute({ numero: os.numero }); await uc.execute({ numero: os.numero });
     expect(r.status).toBe(StatusOS.FINALIZADA);
-    expect(events.publicados.filter((e) => e instanceof OsFinalizadaEvent)).toHaveLength(1);
+    const marcos = events.publicados.filter((e) => e instanceof MarcoOrdemDeServicoEvent);
+    expect(marcos).toHaveLength(1);
+    expect(marcos[0]).toMatchObject({ type: 'os.finalizada', numeroOS: os.numero, ordemDeServicoId: 'os-id', clienteId: 'cli-1', eventoId: `os.finalizada:${os.numero}` });
+  });
+
+  it('coletor do orquestrador (input.eventos) recebe os eventos no lugar do publisher direto', async () => {
+    const os = nova(StatusOS.AGUARDANDO_PAGAMENTO); const g = fakeGateway(os);
+    const coletor = new FakeDomainEventPublisher();
+    await new RegistrarPagamentoAprovadoUseCase(g, events).execute({ numero: os.numero, eventos: coletor });
+    expect(events.publicados).toHaveLength(0);
+    expect(coletor.publicados.map((e) => e.eventName)).toEqual(['os.status-alterado', 'os.acao', 'os.marco']);
   });
 
   it('compensacao: cancelamento com motivo da saga', async () => {
@@ -133,8 +142,13 @@ describe('transicoes dirigidas por eventos (idempotentes — ADR-0009)', () => {
     const r = await new RegistrarCancelamentoUseCase(g, events).execute({ numero: os.numero, motivo: MotivoCancelamento.ORCAMENTO_REJEITADO });
     expect(r.status).toBe(StatusOS.CANCELADA);
     expect(r.motivoCancelamento).toBe(MotivoCancelamento.ORCAMENTO_REJEITADO);
-    // reentrega e no-op mesmo com motivo diferente
+    expect(events.publicados.filter((e) => e instanceof MarcoOrdemDeServicoEvent)).toEqual([
+      expect.objectContaining({ type: 'os.cancelada', eventoId: `os.cancelada:${os.numero}`, dados: { motivo: MotivoCancelamento.ORCAMENTO_REJEITADO } }),
+    ]);
+    events.limpar();
+    // reentrega e no-op mesmo com motivo diferente (e nao gera outro marco)
     expect((await new RegistrarCancelamentoUseCase(g, events).execute({ numero: os.numero, motivo: MotivoCancelamento.OPERADOR })).motivoCancelamento).toBe(MotivoCancelamento.ORCAMENTO_REJEITADO);
+    expect(events.publicados).toHaveLength(0);
   });
 
   it('compensacao depois da execucao (AGUARDANDO_PAGAMENTO) e rejeitada: nao ha rollback do servico executado', async () => {
