@@ -17,10 +17,6 @@ export class EventosDaTransacao implements DomainEventPublisher {
     this.eventos.push(event);
   }
 
-  get pendentes(): readonly DomainEvent[] {
-    return this.eventos;
-  }
-
   /** Publica, na ordem em que foram gerados, os eventos acumulados e esvazia o coletor. */
   descarregarEm(destino: DomainEventPublisher): void {
     const eventos = this.eventos.splice(0, this.eventos.length);
