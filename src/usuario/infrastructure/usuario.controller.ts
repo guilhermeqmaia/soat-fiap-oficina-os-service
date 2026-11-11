@@ -20,6 +20,8 @@ import {
   ApiOperation,
   ApiTags,
   ApiConflictResponse,
+  ApiForbiddenResponse,
+  ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { CreateUsuarioDto } from './dto/create-usuario.dto';
 import { UpdateUsuarioDto } from './dto/update-usuario.dto';
@@ -34,6 +36,8 @@ import { DeletarUsuarioUseCase } from '../application/use-cases/deletar-usuario.
 import { PaginatedResult } from '../application/gateways/usuario.gateway';
 
 @ApiTags('Usuario')
+@ApiUnauthorizedResponse({ description: 'Token JWT ausente ou invalido' })
+@ApiForbiddenResponse({ description: 'Somente ADMIN' })
 @Controller('usuario')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class UsuarioController {

@@ -17,7 +17,7 @@ import {
 } from '@nestjs/swagger';
 import { Role, CurrentUser, Roles, AuthenticatedUser } from '@guilhermeqmaia/oficina-kit/auth';
 import { ListarNotificacoesPorCpfCnpjUseCase } from '../application/use-cases/listar-notificacoes-por-cpf-cnpj.use-case';
-import { NotificacaoResponseDto } from './dto/notificacao-response.dto';
+import { NotificacoesPaginadasDto } from './dto/notificacoes-paginadas.dto';
 import { QueryNotificacaoDto } from './dto/query-notificacao.dto';
 import { NotificacaoPresenter } from './presenters/notificacao.presenter';
 
@@ -42,8 +42,7 @@ export class ClienteNotificacaoController {
   })
   @ApiOkResponse({
     description: 'Notificacoes paginadas',
-    type: NotificacaoResponseDto,
-    isArray: true,
+    type: NotificacoesPaginadasDto,
   })
   @ApiNotFoundResponse({ description: 'Cliente nao encontrado pelo CPF/CNPJ' })
   async findByCpfCnpj(

@@ -9,7 +9,7 @@ import {
 } from '@nestjs/swagger';
 import { Role, Roles } from '@guilhermeqmaia/oficina-kit/auth';
 import { ListarNotificacoesUseCase } from '../application/use-cases/listar-notificacoes.use-case';
-import { NotificacaoResponseDto } from './dto/notificacao-response.dto';
+import { NotificacoesPaginadasDto } from './dto/notificacoes-paginadas.dto';
 import { QueryNotificacaoDto } from './dto/query-notificacao.dto';
 import { NotificacaoPresenter } from './presenters/notificacao.presenter';
 
@@ -26,8 +26,7 @@ export class NotificacaoController {
   @ApiOperation({ summary: 'Listar historico de notificacoes enviadas' })
   @ApiOkResponse({
     description: 'Notificacoes paginadas',
-    type: NotificacaoResponseDto,
-    isArray: true,
+    type: NotificacoesPaginadasDto,
   })
   async findAll(@Query() query: QueryNotificacaoDto) {
     const result = await this.useCase.execute({
