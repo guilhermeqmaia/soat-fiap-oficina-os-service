@@ -63,6 +63,8 @@ services:
       DD_TRACE_ENABLED: 'false'
       HTTP_INTERNO_TIMEOUT_MS: '5000'
       HTTP_INTERNO_TENTATIVAS: '3'
+      # Relogio da saga (timeouts + gauge oficina_os_sagas_paradas) a cada 10 s na demo (padrao 60 s).
+      SAGA_TIMEOUTS_INTERVALO_MS: '10000'
       # E-mails de verdade (SMTP) caem no Mailpit: http://localhost:8025
       NOTIFICATION_PROVIDER: email
       SMTP_HOST: mailpit
