@@ -10,13 +10,14 @@ import {
 import { Role, Roles } from '@guilhermeqmaia/oficina-kit/auth';
 import { ListarNotificacoesUseCase } from '../application/use-cases/listar-notificacoes.use-case';
 import { NotificacoesPaginadasDto } from './dto/notificacoes-paginadas.dto';
+import { ErroHttpDto } from '../../shared/infrastructure/dto/erro-http.dto';
 import { QueryNotificacaoDto } from './dto/query-notificacao.dto';
 import { NotificacaoPresenter } from './presenters/notificacao.presenter';
 
 @ApiTags('Notificacoes')
 @ApiBearerAuth()
-@ApiUnauthorizedResponse({ description: 'Token JWT ausente ou invalido' })
-@ApiForbiddenResponse({ description: 'Role insuficiente' })
+@ApiUnauthorizedResponse({ description: 'Token JWT ausente ou invalido', type: ErroHttpDto })
+@ApiForbiddenResponse({ description: 'Role insuficiente', type: ErroHttpDto })
 @Controller('notificacoes')
 export class NotificacaoController {
   constructor(private readonly useCase: ListarNotificacoesUseCase) {}

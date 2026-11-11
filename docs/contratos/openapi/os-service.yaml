@@ -1034,8 +1034,16 @@ paths:
                 $ref: "#/components/schemas/NotificacoesPaginadasDto"
         "401":
           description: Token JWT ausente ou invalido
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErroHttpDto"
         "403":
           description: Role insuficiente
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErroHttpDto"
       security:
         - bearer: []
       summary: Listar historico de notificacoes enviadas
@@ -1081,12 +1089,30 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/NotificacoesPaginadasDto"
+        "400":
+          description: CPF/CNPJ com formato invalido
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErroHttpDto"
         "401":
           description: Token JWT ausente ou invalido
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErroHttpDto"
         "403":
           description: Role insuficiente ou CPF/CNPJ nao pertence ao usuario
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErroHttpDto"
         "404":
           description: Cliente nao encontrado pelo CPF/CNPJ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErroHttpDto"
       security:
         - bearer: []
       summary: Historico de notificacoes do cliente autenticado

@@ -7,6 +7,7 @@ import {
   Query,
 } from '@nestjs/common';
 import {
+  ApiBadRequestResponse,
   ApiBearerAuth,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
@@ -18,6 +19,7 @@ import {
 import { Role, CurrentUser, Roles, AuthenticatedUser } from '@guilhermeqmaia/oficina-kit/auth';
 import { ListarNotificacoesPorCpfCnpjUseCase } from '../application/use-cases/listar-notificacoes-por-cpf-cnpj.use-case';
 import { NotificacoesPaginadasDto } from './dto/notificacoes-paginadas.dto';
+import { ErroHttpDto } from '../../shared/infrastructure/dto/erro-http.dto';
 import { QueryNotificacaoDto } from './dto/query-notificacao.dto';
 import { NotificacaoPresenter } from './presenters/notificacao.presenter';
 
@@ -25,9 +27,10 @@ const CPF_CNPJ_DIGITS_REGEX = /^\d{11}(\d{3})?$/;
 
 @ApiTags('Notificacoes')
 @ApiBearerAuth()
-@ApiUnauthorizedResponse({ description: 'Token JWT ausente ou invalido' })
+@ApiUnauthorizedResponse({ description: 'Token JWT ausente ou invalido', type: ErroHttpDto })
 @ApiForbiddenResponse({
   description: 'Role insuficiente ou CPF/CNPJ nao pertence ao usuario',
+  type: ErroHttpDto,
 })
 @Controller('clientes')
 export class ClienteNotificacaoController {
@@ -44,7 +47,8 @@ export class ClienteNotificacaoController {
     description: 'Notificacoes paginadas',
     type: NotificacoesPaginadasDto,
   })
-  @ApiNotFoundResponse({ description: 'Cliente nao encontrado pelo CPF/CNPJ' })
+  @ApiNotFoundResponse({ description: 'Cliente nao encontrado pelo CPF/CNPJ', type: ErroHttpDto })
+  @ApiBadRequestResponse({ description: 'CPF/CNPJ com formato invalido', type: ErroHttpDto })
   async findByCpfCnpj(
     @Param('cpfCnpj') cpfCnpj: string,
     @Query() query: QueryNotificacaoDto,
