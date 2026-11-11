@@ -1,0 +1,62 @@
+{
+  "$comment": "Tabela de http-interno.md em formato de maquina: comando da saga -> endpoint do participante, corpo e respostas. Usada pelos testes de contrato do lado consumidor (os-service). corpo = null: requisicao sem corpo. respostas: status -> schema do corpo (+ evento da saga equivalente).",
+  "execucao.enfileirar": {
+    "participante": "execucao-service",
+    "metodo": "POST",
+    "path": "/execucao/ordens",
+    "corpo": "comandos.schema.json#/$defs/ExecucaoEnfileirar",
+    "respostas": {
+      "201": { "schema": "eventos.schema.json#/$defs/ExecucaoEnfileirada", "evento": "execucao.enfileirada" },
+      "409": { "schema": "comum.schema.json#/$defs/Motivo", "evento": "execucao.recusada" }
+    }
+  },
+  "execucao.iniciar": {
+    "participante": "execucao-service",
+    "metodo": "POST",
+    "path": "/execucao/ordens/{numeroOS}/iniciar",
+    "corpo": null,
+    "respostas": {
+      "200": { "schema": "eventos.schema.json#/$defs/ExecucaoIniciada", "evento": "execucao.iniciada" },
+      "409": { "schema": "comum.schema.json#/$defs/Motivo", "evento": "execucao.recusada" }
+    }
+  },
+  "execucao.liberar-reservas": {
+    "participante": "execucao-service",
+    "metodo": "DELETE",
+    "path": "/execucao/ordens/{numeroOS}",
+    "corpo": "comandos.schema.json#/$defs/ExecucaoLiberarReservas",
+    "respostas": {
+      "200": { "schema": "eventos.schema.json#/$defs/ExecucaoReservasLiberadas", "evento": "execucao.reservas-liberadas" }
+    }
+  },
+  "billing.gerar-orcamento": {
+    "participante": "billing-service",
+    "metodo": "POST",
+    "path": "/orcamentos",
+    "corpo": "comandos.schema.json#/$defs/BillingGerarOrcamento",
+    "respostas": {
+      "201": { "schema": "eventos.schema.json#/$defs/BillingOrcamentoGerado", "evento": "billing.orcamento-gerado" },
+      "200": { "schema": "eventos.schema.json#/$defs/BillingOrcamentoGerado", "evento": "billing.orcamento-gerado" },
+      "409": { "schema": "eventos.schema.json#/$defs/BillingOrcamentoGerado", "evento": "billing.orcamento-gerado" }
+    }
+  },
+  "billing.cobrar": {
+    "participante": "billing-service",
+    "metodo": "POST",
+    "path": "/orcamentos/{numeroOS}/cobrar",
+    "corpo": null,
+    "respostas": {
+      "201": { "schema": "eventos.schema.json#/$defs/BillingCobrancaCriada", "evento": "billing.cobranca-criada" },
+      "409": { "schema": "comum.schema.json#/$defs/Motivo", "evento": null }
+    }
+  },
+  "billing.cancelar-orcamento": {
+    "participante": "billing-service",
+    "metodo": "DELETE",
+    "path": "/orcamentos/{numeroOS}",
+    "corpo": "comandos.schema.json#/$defs/BillingCancelarOrcamento",
+    "respostas": {
+      "200": { "schema": "eventos.schema.json#/$defs/BillingOrcamentoCancelado", "evento": "billing.orcamento-cancelado" }
+    }
+  }
+}

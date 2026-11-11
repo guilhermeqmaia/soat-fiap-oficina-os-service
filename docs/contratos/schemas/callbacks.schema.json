@@ -1,0 +1,100 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://contratos.oficina-mecanica.local/schemas/callbacks.schema.json",
+  "title": "EnvelopeCallback",
+  "description": "Corpo de POST /ordens-servico/{numero}/eventos: o Envelope com o data do type. So os eventos que dependem de uma pessoa ou do Mercado Pago chegam por callback; os demais sao a resposta sincrona dos comandos.",
+  "oneOf": [
+    { "$ref": "#/$defs/EnvelopeExecucaoDiagnosticoConcluido" },
+    { "$ref": "#/$defs/EnvelopeExecucaoFinalizada" },
+    { "$ref": "#/$defs/EnvelopeBillingOrcamentoAprovado" },
+    { "$ref": "#/$defs/EnvelopeBillingOrcamentoRejeitado" },
+    { "$ref": "#/$defs/EnvelopeBillingPagamentoAprovado" },
+    { "$ref": "#/$defs/EnvelopeBillingPagamentoRecusado" }
+  ],
+  "$defs": {
+    "EnvelopeExecucaoDiagnosticoConcluido": {
+      "title": "execucao.diagnostico-concluido",
+      "allOf": [
+        { "$ref": "envelope.schema.json" },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "type": "string", "enum": ["execucao.diagnostico-concluido"] },
+            "producer": { "type": "string", "enum": ["execucao-service"] },
+            "data": { "$ref": "eventos.schema.json#/$defs/ExecucaoDiagnosticoConcluido" }
+          }
+        }
+      ]
+    },
+    "EnvelopeExecucaoFinalizada": {
+      "title": "execucao.finalizada",
+      "allOf": [
+        { "$ref": "envelope.schema.json" },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "type": "string", "enum": ["execucao.finalizada"] },
+            "producer": { "type": "string", "enum": ["execucao-service"] },
+            "data": { "$ref": "eventos.schema.json#/$defs/ExecucaoFinalizada" }
+          }
+        }
+      ]
+    },
+    "EnvelopeBillingOrcamentoAprovado": {
+      "title": "billing.orcamento-aprovado",
+      "allOf": [
+        { "$ref": "envelope.schema.json" },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "type": "string", "enum": ["billing.orcamento-aprovado"] },
+            "producer": { "type": "string", "enum": ["billing-service"] },
+            "data": { "$ref": "eventos.schema.json#/$defs/BillingOrcamentoAprovado" }
+          }
+        }
+      ]
+    },
+    "EnvelopeBillingOrcamentoRejeitado": {
+      "title": "billing.orcamento-rejeitado",
+      "allOf": [
+        { "$ref": "envelope.schema.json" },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "type": "string", "enum": ["billing.orcamento-rejeitado"] },
+            "producer": { "type": "string", "enum": ["billing-service"] },
+            "data": { "$ref": "eventos.schema.json#/$defs/BillingOrcamentoRejeitado" }
+          }
+        }
+      ]
+    },
+    "EnvelopeBillingPagamentoAprovado": {
+      "title": "billing.pagamento-aprovado",
+      "allOf": [
+        { "$ref": "envelope.schema.json" },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "type": "string", "enum": ["billing.pagamento-aprovado"] },
+            "producer": { "type": "string", "enum": ["billing-service"] },
+            "data": { "$ref": "eventos.schema.json#/$defs/BillingPagamentoAprovado" }
+          }
+        }
+      ]
+    },
+    "EnvelopeBillingPagamentoRecusado": {
+      "title": "billing.pagamento-recusado",
+      "allOf": [
+        { "$ref": "envelope.schema.json" },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "type": "string", "enum": ["billing.pagamento-recusado"] },
+            "producer": { "type": "string", "enum": ["billing-service"] },
+            "data": { "$ref": "eventos.schema.json#/$defs/BillingPagamentoRecusado" }
+          }
+        }
+      ]
+    }
+  }
+}
