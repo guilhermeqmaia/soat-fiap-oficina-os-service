@@ -30,10 +30,16 @@ Enum TipoNotificacao {
   ORCAMENTO_PRONTO
   OS_FINALIZADA
   STATUS_OS_ALTERADO
+  ORCAMENTO_APROVADO
+  PAGAMENTO_PENDENTE
+  PAGAMENTO_APROVADO
+  PAGAMENTO_RECUSADO
+  OS_CANCELADA
 }
 
 Enum CanalNotificacao {
   EMAIL
+  WEBHOOK
 }
 
 Enum StatusNotificacao {
@@ -140,6 +146,9 @@ Table notificacao {
   id uuid [pk, default: `uuid_generate_v4()`]
   cliente_id uuid [not null, note: 'Referencia logica a cliente.id (sem FK)']
   ordem_de_servico_id uuid [note: 'Referencia logica a ordem_de_servico.id (sem FK)']
+  numero_os varchar [note: 'Numero da OS (US-F4-12)']
+  evento_id varchar [note: 'Id do fato de origem (envelope do callback ou id deterministico)']
+  link_pagamento varchar [note: 'Link do Mercado Pago (PAGAMENTO_PENDENTE)']
   tipo TipoNotificacao [not null]
   canal CanalNotificacao [not null]
   destinatario varchar [not null]
@@ -153,6 +162,8 @@ Table notificacao {
   indexes {
     cliente_id
     ordem_de_servico_id
+    numero_os
+    (evento_id, tipo, canal) [unique, note: 'Uma notificacao por fato/tipo/canal (US-F4-12)']
   }
 }
 

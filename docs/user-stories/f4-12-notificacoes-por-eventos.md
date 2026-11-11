@@ -4,7 +4,7 @@
 
 **Prioridade:** Media
 **Story Points:** 3
-**Status:** To Do
+**Status:** Done (10/11/2026 — branch `feat/f4-12-notificacoes-callbacks`, QA: [`QA_PLAN_US-F4-12`](../qa-plans/QA_PLAN_US-F4-12.md))
 **DDD Domain:** Notificacao
 **DDD Layer:** Application (listener in-process alimentado pelos callbacks) + Infrastructure
 **Repositorio:** OS Service (modulo `notificacao`)
@@ -21,17 +21,17 @@ coreografia dentro de uma arquitetura orquestrada: a notificacao apenas assina f
 
 ## Criterios de Aceite
 
-- [ ] Listener in-process reage a `billing.orcamento-gerado` (resposta de `POST /orcamentos`), `billing.orcamento-aprovado`, `billing.cobranca-criada` (resposta de `POST /orcamentos/{n}/cobrar`), `billing.pagamento-aprovado`, `billing.pagamento-recusado` (callbacks) e as transicoes locais `FINALIZADA`/`CANCELADA` — sem fila
-- [ ] Mensagens com o **link de pagamento** quando houver — o link (`linkPagamento`) vem na resposta `201` de `POST /orcamentos/{n}/cobrar` ≙ `billing.cobranca-criada` (cobranca criada apos a execucao, ADR-0012), nao em `billing.orcamento-aprovado`
-- [ ] Canais mantidos: webhook (HMAC) e e-mail; `GET /clientes/:cpf/notificacoes` inalterado
-- [ ] Idempotente: uma notificacao por `id` do envelope — a dedup do callback em `processed_messages` garante que um callback repetido nao notifica de novo; chamadas sincronas repetidas (retry) tambem nao, porque o evento so e emitido quando a saga avanca
+- [x] Listener in-process reage a `billing.orcamento-gerado` (resposta de `POST /orcamentos`), `billing.orcamento-aprovado`, `billing.cobranca-criada` (resposta de `POST /orcamentos/{n}/cobrar`), `billing.pagamento-aprovado`, `billing.pagamento-recusado` (callbacks) e as transicoes locais `FINALIZADA`/`CANCELADA` — sem fila
+- [x] Mensagens com o **link de pagamento** quando houver — o link (`linkPagamento`) vem na resposta `201` de `POST /orcamentos/{n}/cobrar` ≙ `billing.cobranca-criada` (cobranca criada apos a execucao, ADR-0012), nao em `billing.orcamento-aprovado`
+- [x] Canais mantidos: webhook (HMAC) e e-mail; `GET /clientes/:cpf/notificacoes` inalterado
+- [x] Idempotente: uma notificacao por `id` do envelope — a dedup do callback em `processed_messages` garante que um callback repetido nao notifica de novo; chamadas sincronas repetidas (retry) tambem nao, porque o evento so e emitido quando a saga avanca
 ## APIs que expoe
 
 | Metodo | Rota | Role | Corpo | Resposta |
 |---|---|---|---|---|
 | GET | `/clientes/:cpfCnpj/notificacoes` | CLIENTE (posse via claim) | — | `200` notificacoes do cliente (tipo, mensagem, `linkPagamento?`, canal, status, data) — inalterado |
 | GET | `/notificacoes` | ADMIN, ATENDENTE | — | `200` todas (operacao) |
-| — | webhook outbound para a URL do cliente (`NOTIFICACAO_WEBHOOK_URL`, assinatura HMAC) | — | `{ numeroOS, tipo, mensagem, linkPagamento? }` | espera `2xx`; retry simples |
+| — | webhook outbound para a URL do cliente (`NOTIFICATION_WEBHOOK_URL`, assinatura HMAC com `NOTIFICATION_WEBHOOK_SECRET`) | — | `{ numeroOS, tipo, mensagem, linkPagamento? }` | espera `2xx`; retry simples |
 
 ## APIs que consome
 
@@ -48,19 +48,27 @@ Postgres **`oficina_os`**:
 
 | Tabela | O que esta story grava |
 |---|---|
-| `notificacao` | `numero_os`, `cliente_id`, `tipo` (`ORCAMENTO_PRONTO`, `ORCAMENTO_APROVADO`, `PAGAMENTO_PENDENTE` com `link_pagamento`, `PAGAMENTO_APROVADO`, `PAGAMENTO_RECUSADO`, `OS_FINALIZADA`, `OS_CANCELADA`), `mensagem`, `canal` (e-mail/webhook), `status` (enviada/falhou), `evento_id` (= `id` do envelope que originou; unique por tipo+OS para nao duplicar), `criado_em` |
+| `notificacao` | `numero_os`, `cliente_id`, `tipo` (`ORCAMENTO_PRONTO`, `ORCAMENTO_APROVADO`, `PAGAMENTO_PENDENTE` com `link_pagamento`, `PAGAMENTO_APROVADO`, `PAGAMENTO_RECUSADO`, `OS_FINALIZADA`, `OS_CANCELADA`; `STATUS_OS_ALTERADO` da Fase 2 continua), `mensagem`, `canal` (`EMAIL`/`WEBHOOK`), `status` (`PENDENTE`/`ENVIADA`/`FALHOU`), `evento_id` (= `id` do envelope que originou, ou id deterministico para respostas sincronas e transicoes), `created_at`. Unique `(evento_id, tipo, canal)` — nao `(tipo, OS)`, porque pagamento recusado e nova cobranca se repetem legitimamente na mesma OS (ver `docs/notificacao-email.md`) |
 
-Nenhuma tabela nova; `processed_messages` (dedup dos callbacks) e compartilhada com a saga.
+Nenhuma tabela nova (migration `20261110000000_notificacao_fatos_saga` so acrescenta colunas, valores de enum e o indice); `processed_messages` (dedup dos callbacks) e compartilhada com a saga.
 
 ## Dependencias
 
 - [US-F4-06](f4-06-os-service-strangler.md)
 
-## Atencao (review da US-F4-06/10, 21/10; atualizado em 03/11)
+## Implementacao (10/11/2026)
 
-O OS Service ja notifica **in-process** (`OrdemDeServicoNotificacaoListener`: `OrcamentoProntoEvent`,
-`OsFinalizadaEvent`, `OsStatusAlteradoEvent`). Com a RFC-0008 **nao ha fila para ligar**: a story passa a ser
-(1) emitir os eventos `billing.*` recebidos por HTTP (resposta sincrona ou callback) no `EventEmitter` apos o
-commit, (2) incluir o `linkPagamento` de `billing.cobranca-criada` na mensagem "servico concluido, pague para
-retirar o veiculo" (a mensagem de orcamento aprovado nao tem link) e (3) garantir uma notificacao por fato
-(dedup por `id` do envelope). A fila `notificacao-eventos` e os eventos `os.*` publicados sao removidos na US-F4-18.
+- **Eventos so depois do commit** (achado D7 do diagnostico do FLUXO 3): o orquestrador acumula os eventos
+  de cada tentativa num `EventosDaTransacao` e so os publica apos o commit; tentativa revertida por conflito
+  de versao nao dispara listener (`orquestrador-saga.eventos-pos-commit.spec.ts`).
+- **Marcos**: `MarcoOrdemDeServicoEvent` (`src/shared/domain/events/`) com `numeroOS`, `ordemDeServicoId`,
+  `clienteId`, `type`, `eventoId` e `dados` (`linkPagamento`, `total`, `motivo`, `valor`). Os `billing.*` saem
+  do orquestrador quando a saga aplica o fato; `os.finalizada`/`os.cancelada` saem das transicoes.
+  `OrcamentoProntoEvent` e `OsFinalizadaEvent` foram removidos (origem unica).
+- **Listener** `OrdemDeServicoNotificacaoListener.onMarco` (7 tipos) + generica `STATUS_OS_ALTERADO` so para
+  `EM_DIAGNOSTICO`/`EM_EXECUCAO`/`ENTREGUE`.
+- **Envio idempotente**: reserva `PENDENTE` -> envia -> `ENVIADA`/`FALHOU`; violacao do unique = "ja notificado"
+  (warn), sem reenvio. Canal real gravado (`WEBHOOK` para o webhook).
+- **Webhook**: `{ numeroOS, tipo, mensagem, linkPagamento? }` + campos da Fase 2, HMAC mantido. A variavel
+  continua `NOTIFICATION_WEBHOOK_URL` (esta story citava `NOTIFICACAO_WEBHOOK_URL`; corrigido acima).
+- A fila `notificacao-eventos` e os eventos `os.*` publicados ja tinham sido removidos na US-F4-18.
