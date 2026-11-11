@@ -356,7 +356,7 @@ sequenceDiagram
 |---|---|---|
 | JWT de serviço (`role: SERVICO`, 50 min em cache) | kit `@guilhermeqmaia/oficina-kit/http` | só serviços chamam endpoints internos e o callback |
 | Retry 3x com backoff (200/800/3000 ms) só em 5xx, timeout e erro de rede; timeout 5 s | kit `/http` | `409` de negócio vira evento de falha, nunca é repetido |
-| Idempotência por `numeroOS` (serviços) e por `id` do envelope (OS) | Billing, Execução, `processed_messages` no OS | reentrega não duplica orçamento, reserva ou transição |
+| Idempotência por `numeroOS` (serviços) e por `id` do envelope (OS) | Billing, Execução, `processed_messages` no OS | reentrega não duplica orçamento, baixa/devolução de estoque ou transição |
 | Lock otimista (`version`) + retry em `ConcurrentModificationError` | OS Service | callback e resposta síncrona concorrentes não perdem transição |
 | `x-correlation-id` + `traceparent` propagados | kit `/http` + Datadog APM | uma OS é um trace só atravessando os três serviços |
 

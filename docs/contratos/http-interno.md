@@ -17,7 +17,7 @@ para o OS Service, quando depende de uma pessoa (mecânico, cliente) ou do Merca
 | Autenticação entre serviços | JWT com `role: SERVICO` e `sub` = nome do serviço (`os-service`, `billing-service`, `execucao-service`), assinado com o **mesmo `JWT_SECRET`** da Lambda; emitido localmente por cada serviço (`mintServiceToken` do kit), sem passar pela Lambda. Endpoints internos e callbacks aceitam só `SERVICO`; endpoints de usuário continuam com os roles de hoje. |
 | Correlação | Cabeçalhos `x-correlation-id` (= número da OS) e `traceparent` propagados em toda chamada e callback (kit `logging`). |
 | Exposição | Os três serviços ficam atrás do API Gateway (prefixos `/ordens-servico|/clientes|/veiculos|/usuario|/notificacoes|/auth/me` → OS; `/orcamentos|/pagamentos|/webhooks` → Billing; `/execucao|/catalogo|/estoque` → Execução). Chamadas entre serviços **não passam** pelo gateway: vão direto pelo DNS interno. |
-| Erros de negócio | `409 Conflict` com `{ motivo }` significa "recusado" (ex.: enfileirar recusado, estoque insuficiente) e vira o evento de falha correspondente na saga. `404` = OS/recurso desconhecido no destino (erro de configuração, não repete). |
+| Erros de negócio | `409 Conflict` com `{ motivo }` significa "recusado" (ex.: enfileirar recusado, iniciar fora de hora) e vira o evento de falha correspondente na saga. `404` = OS/recurso desconhecido no destino (erro de configuração, não repete). |
 
 ### Envelope (callbacks e corpo dos eventos)
 
@@ -39,14 +39,14 @@ para o OS Service, quando depende de uma pessoa (mecânico, cliente) ou do Merca
 | Comando (vocabulário) | Endpoint na Execução | Corpo | Resposta imediata = evento | Falha de negócio |
 |---|---|---|---|---|
 | `execucao.enfileirar` | `POST /execucao/ordens` | `{ numeroOS, veiculoId, descricaoProblema }` | `201 { numeroOS, posicaoFila }` ≙ `execucao.enfileirada` | `409 { motivo }` ≙ `execucao.recusada` (veículo já em execução) |
-| `execucao.iniciar` | `POST /execucao/ordens/{numeroOS}/iniciar` | — | `200 { numeroOS }` ≙ `execucao.iniciada` (só muda o status: as peças já foram baixadas no diagnóstico; idempotente) | `409 { motivo }` ≙ `execucao.recusada` (execução não está aguardando aprovação) |
-| `execucao.liberar-reservas` | `DELETE /execucao/ordens/{numeroOS}` | `{ motivo }` | `200 { numeroOS }` ≙ `execucao.reservas-liberadas` (tira da fila, aborta diagnóstico, devolve reservas) | — (idempotente; `200` mesmo sem reservas) |
+| `execucao.iniciar` | `POST /execucao/ordens/{numeroOS}/iniciar` | — | `200 { numeroOS, status }` ≙ `execucao.iniciada` (só muda o status: as peças já foram baixadas no diagnóstico; idempotente) | `409 { motivo }` ≙ `execucao.recusada` (execução não está aguardando aprovação) |
+| `execucao.liberar-reservas` | `DELETE /execucao/ordens/{numeroOS}` | `{ motivo }` | `200 { numeroOS, status, devolucoes[] }` ≙ `execucao.reservas-liberadas` (tira da fila, aborta o diagnóstico e devolve ao estoque as peças baixadas para a OS) | — (idempotente: repetir não devolve de novo; `200` mesmo sem execução ou sem peças baixadas). Deve aceitar também execução já `EM_EXECUCAO`, porque o OS ainda cancela no passo `INICIAR_EXECUCAO` |
 
 **Callbacks da Execução para o OS** (ações do mecânico na API/UI da Execução):
 
 | Ação do mecânico na Execução | Callback `type` | `data` |
 |---|---|---|
-| `POST /execucao/ordens/{numeroOS}/diagnostico` (serviços + peças; **baixa o estoque** numa transação, `409 { motivo }` ao mecânico se faltar peça) | `execucao.diagnostico-concluido` | `{ numeroOS, mecanicoId, diagnostico, itens[] }` (`Item`: `tipo`, `referenciaId`, `nome`, `quantidade`, `precoUnitario`, `servicoId` nos PRODUTOs) |
+| `POST /execucao/ordens/{numeroOS}/diagnostico` com `{ diagnostico }` (5 a 1000 caracteres, mesma regra do OS). Antes, o mecânico se atribui e vincula serviços e peças pelas rotas da Execução. **Baixa o estoque** numa transação; `409 { motivo }` ao mecânico se faltar peça | `execucao.diagnostico-concluido` | `{ numeroOS, mecanicoId, diagnostico, itens[] }` (`Item`: `tipo`, `referenciaId`, `nome`, `quantidade`, `precoUnitario`, `servicoId` nos PRODUTOs) |
 | `POST /execucao/ordens/{numeroOS}/finalizar` | `execucao.finalizada` | `{ numeroOS, finalizadaEm }` |
 
 ## OS Service → Billing Service

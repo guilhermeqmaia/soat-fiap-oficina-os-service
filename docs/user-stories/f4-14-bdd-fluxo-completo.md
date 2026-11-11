@@ -27,7 +27,7 @@ da OS deve ter o seu `.feature`. Dois niveis:
 - [ ] `@cucumber/cucumber` + `ts-node` configurados nos tres servicos e no hub (`npm run test:bdd`); Gherkin em portugues (`# language: pt`), steps em TypeScript reutilizando `mintToken`/`mintServiceToken` do kit
 - [ ] **Um `.feature` por fluxo do diagrama da OS**, com pelo menos os cenarios:
   - `abrir-os.feature` (OS Service): atendente abre OS -> `RECEBIDA` -> Execucao enfileira -> `EM_DIAGNOSTICO`; veiculo ja em execucao -> `CANCELADA` (`EXECUCAO_RECUSADA`)
-  - `diagnostico.feature` (Execucao): mecanico registra diagnostico com servicos e pecas -> reservas de estoque -> callback `execucao.diagnostico-concluido`; estoque insuficiente -> item recusado
+  - `diagnostico.feature` (Execucao): mecanico vincula servicos e pecas e conclui o diagnostico -> baixa de estoque -> callback `execucao.diagnostico-concluido`; estoque insuficiente -> `409 { motivo }` e nada e baixado
   - `orcamento.feature` (Billing): orcamento gerado a partir dos itens com precos congelados; validade; orcamento duplicado devolve o existente
   - `aprovacao.feature` (Billing + OS): cliente aprova -> callback -> `EM_EXECUCAO` (Execucao inicia e baixa o estoque); cliente rejeita -> `CANCELADA` com reservas liberadas
   - `execucao.feature` (Execucao): iniciar baixa o estoque; concluir servicos; finalizar -> callback `execucao.finalizada`

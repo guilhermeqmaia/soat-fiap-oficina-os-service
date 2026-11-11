@@ -20,8 +20,8 @@ outro. Regra aplicada por **credenciais e grants**, nao por convencao.
 - [ ] **Revisao 04/11 (ADR-0014):** **uma instancia RDS por servico** — a instancia atual fica com o OS Service, `service_databases` cria uma instancia propria por servico (SG e segredo proprios); bootstrap SQL por Job removido
 - [x] `DATABASE_URL` de cada servico em segredo proprio no Secrets Manager (`oficina/os/database-url`, `oficina/billing/database-url`)
 - [x] **DynamoDB:** tabela `oficina-execucao` (single-table) — **substituida em 09/11** pelas 4 tabelas `oficina-*` do infra-db #12 (PITR ligado; sem TTL/Streams, que so serviam ao outbox)
-- [ ] **Revisao 04/11 (ADR-0014):** **VPC Gateway Endpoint** para o DynamoDB nas route tables privadas (stage `cluster/` do infra-k8s), politica restrita ao prefixo `oficina-*` (infra-k8s #36; antes a tabela `oficina-execucao` e indices; trafego sem NAT
-- [x] DynamoDB Streams habilitado (base do outbox da Execucao)
+- [ ] **Revisao 04/11 (ADR-0014):** **VPC Gateway Endpoint** para o DynamoDB nas route tables privadas (stage `cluster/` do infra-k8s), politica restrita ao prefixo `oficina-*` (infra-k8s #36; antes a tabela `oficina-execucao` e indices); trafego sem NAT
+- [x] ~~DynamoDB Streams habilitado (base do outbox da Execucao)~~ — removido com o outbox (RFC-0008) e com as 4 tabelas de 09/11
 - [x] Lambda de auth continua lendo apenas o que precisa (cliente por CPF) do banco do OS Service — documentado como excecao consciente ou migrado para API
 - [x] Teste negativo documentado: credencial do Billing tentando ler o banco do OS -> permission denied (com instancias separadas: o host do outro servico nem consta no segredo e o SG so aceita os nodes)
 - [x] Migrations Prisma separadas por servico (template do kit); job de migrations por servico no deploy

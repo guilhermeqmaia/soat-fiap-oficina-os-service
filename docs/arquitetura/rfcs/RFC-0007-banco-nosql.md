@@ -1,6 +1,6 @@
 # RFC-0007: Banco NoSQL para o Execução Service
 
-**Status:** Aceita
+**Status:** Aceita (revisada em 2026-11-09: uma tabela por agregado, ver o fim do documento)
 **Data:** 2026-09-30
 **Autores:** Time SOAT
 **Stories relacionadas:** [US-F4-03](../../user-stories/f4-03-bancos-por-servico.md), [US-F4-07](../../user-stories/f4-07-execucao-service.md)
@@ -79,5 +79,5 @@ permanece; muda só a modelagem:
 
 - O Execução Service **não usa Prisma**; usa o SDK v3 (`@aws-sdk/lib-dynamodb`) com repositórios por agregado.
 - O estoque migra do Postgres (Fase 2) para DynamoDB — seeds recriados; não há dados de produção a migrar.
-- O kit fornece o adaptador de outbox via Streams e o de deduplicação ([ADR-0009](../adr/ADR-0009-outbox-e-consumidor-idempotente.md)).
+- ~~O kit fornece o adaptador de outbox via Streams e o de deduplicação ([ADR-0009](../adr/ADR-0009-outbox-e-consumidor-idempotente.md)).~~ Sem outbox desde a RFC-0008 (HTTP direto); a idempotência fica no item de `execucoes` (`versao`, `estoqueBaixado`).
 - Justificativa "SQL + NoSQL" para o PDF: Postgres onde há dinheiro e relações (OS, Billing); DynamoDB onde há documentos com timeline e escrita por chave (Execução).
