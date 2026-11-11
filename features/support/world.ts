@@ -140,7 +140,9 @@ export class MundoOS extends World {
   }
 
   /** Notificacoes desta OS no historico do cliente (`GET /clientes/:cpf/notificacoes`, token do proprio cliente). */
-  async notificacoesDaOS(): Promise<Array<{ tipo: string; destinatario: string; assunto: string; mensagem: string; ordemDeServicoId: string }>> {
+  async notificacoesDaOS(): Promise<
+    Array<{ tipo: string; canal: string; destinatario: string; assunto: string; mensagem: string; ordemDeServicoId: string; numeroOS?: string | null; eventoId?: string | null; linkPagamento?: string | null }>
+  > {
     const cpf = this.cliente!.cpf;
     const res = await this.http.get(`/clientes/${cpf}/notificacoes?limit=100`, tokenDe('cliente', { cpf }));
     expect(res.status).toBe(200);
