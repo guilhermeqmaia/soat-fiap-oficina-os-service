@@ -198,6 +198,66 @@ describe('OrquestradorSagaService (participantes por HTTP)', () => {
     expect(participantes.foraDaTransacao).toEqual([true, true]);
   });
 
+  describe('retry esgotado no historico (US-F4-18: chamada-falhou com tentativas)', () => {
+    it('grava chamada-falhou com as tentativas numa transacao propria, fora da que decidiu o comando, e devolve a saga atualizada', async () => {
+      participantes.indisponivel('execucao.enfileirar');
+      const parada = await abrir();
+      const ultima = parada.historico[parada.historico.length - 1];
+      expect(ultima).toMatchObject({ passo: PassoSaga.ENFILEIRAR_EXECUCAO, evento: 'execucao.enfileirar', resultado: 'chamada-falhou', tentativas: 3 });
+      expect(ultima.detalhe).toContain('HTTP 503 apos 3 tentativa(s)');
+      expect(parada.aguardandoReprocessamento).toBe(true);
+      expect(parada.status).toBe(StatusSaga.EM_ANDAMENTO);
+      // persistido (GET /ordens-servico/:numero/saga mostra) e nao repetiu o comando
+      expect(repo.store.get('OS-1')!.historico.map((h) => h.resultado)).toEqual(['avancou', 'chamada-falhou']);
+      expect(participantes.tipos()).toEqual(['execucao.enfileirar']);
+
+      participantes.restaurar();
+      const { saga } = await svc.reprocessar('OS-1');
+      expect(saga.aguardandoReprocessamento).toBe(false);
+      expect(saga.historico.map((h) => h.resultado)).toEqual(['avancou', 'chamada-falhou', 'reprocessada', 'avancou']);
+    });
+
+    it('compensacao nao entregue tambem fica no historico (saga COMPENSANDO parada ate reprocessar)', async () => {
+      await abrir();
+      await ev('execucao.diagnostico-concluido', { mecanicoId: 'm', diagnostico: 'Pastilhas', itens: ITENS });
+      participantes.recusar('execucao.liberar-reservas', 'nao sei liberar');
+      const s = await ev('billing.orcamento-rejeitado', { motivo: 'caro' });
+      expect(s.status).toBe(StatusSaga.COMPENSANDO);
+      expect(s.historico[s.historico.length - 1]).toMatchObject({ resultado: 'chamada-falhou', evento: 'execucao.liberar-reservas', tentativas: 1 });
+      expect(s.aguardandoReprocessamento).toBe(true);
+    });
+
+    it('conflito ao gravar chamada-falhou e refeito; se persistir, so loga e a saga anterior segue', async () => {
+      participantes.indisponivel('execucao.enfileirar');
+      const { saga, comandos } = await uow.executar((tx: unknown) => svc.iniciar(ordem(), { descricaoProblema: 'd' }, tx));
+      const original = repo.save.getMockImplementation()!;
+      repo.save.mockImplementationOnce(async () => { throw new ConcurrentModificationError('saga OS-1'); }).mockImplementationOnce(original);
+      const comRetry = await svc.executarComandos(saga, comandos);
+      expect(comRetry.historico[comRetry.historico.length - 1].resultado).toBe('chamada-falhou');
+
+      repo.save.mockImplementation(async () => { throw new ConcurrentModificationError('saga OS-1'); });
+      const semGravar = await svc.executarComandos(comRetry, comandos);
+      expect(semGravar).toBe(comRetry);
+      expect(Logger.prototype.error).toHaveBeenCalledWith(expect.objectContaining({ msg: 'nao foi possivel registrar chamada-falhou no historico da saga', correlation_id: 'OS-1' }));
+      repo.save.mockImplementation(original);
+    });
+
+    it('saga apagada entre a chamada e o registro: nada a gravar, segue com a saga em memoria', async () => {
+      participantes.indisponivel('execucao.enfileirar');
+      const { saga, comandos } = await uow.executar((tx: unknown) => svc.iniciar(ordem(), { descricaoProblema: 'd' }, tx));
+      repo.store.clear();
+      expect(await svc.executarComandos(saga, comandos)).toBe(saga);
+    });
+
+    it('a linha de log da falha leva trace_id/correlation_id/servico/tentativa', async () => {
+      participantes.indisponivel('execucao.enfileirar');
+      await abrir();
+      expect(Logger.prototype.error).toHaveBeenCalledWith(
+        expect.objectContaining({ correlation_id: 'OS-1', servico: 'os-service', comando: 'execucao.enfileirar', tentativa: 3, resultado: 'esgotado' }),
+      );
+    });
+  });
+
   it('resposta do participante que nao pode ser aplicada e registrada (resposta-falhou) sem derrubar a requisicao', async () => {
     const antes = await contador(PassoSaga.ENFILEIRAR_EXECUCAO, 'resposta-falhou');
     ucs.enfileiramento.execute.mockRejectedValue(new Error('banco fora'));
