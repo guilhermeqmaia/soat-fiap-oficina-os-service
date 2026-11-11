@@ -2,7 +2,7 @@ openapi: 3.0.0
 info:
   title: Oficina Mecânica — OS Service
   description: Atendimento (clientes, veiculos, ordens de servico), orquestrador da saga e notificacoes. Endpoints internos e callback com JWT role SERVICO (x-role) — contrato em docs/contratos/http-interno.md.
-  version: 1.0.0
+  version: 1.1.0
   contact: {}
   license:
     name: ISC
@@ -915,7 +915,7 @@ paths:
         - Ordens de Servico
   /admin/sagas/{numero}/reprocessar:
     post:
-      description: "Uso quando uma chamada a Execucao/Billing esgotou as tentativas (alerta de saga parada; runbook docs/runbooks/saga-dlq-reprocessar.md). Reenvia o comando — idempotente por numeroOS — e aplica a resposta na mesma requisicao. Passos que aguardam cliente/participante devolvem `reenviados: []`."
+      description: "Uso quando uma chamada a Execucao/Billing esgotou as tentativas (alerta de saga parada; runbook docs/runbooks/saga-reprocessar.md). Reenvia o comando — idempotente por numeroOS — e aplica a resposta na mesma requisicao. Passos que aguardam cliente/participante devolvem `reenviados: []`."
       operationId: SagaAdminController_reprocessar
       parameters:
         - name: numero
@@ -945,6 +945,18 @@ paths:
         - name: numero
           required: true
           in: path
+          schema:
+            type: string
+        - name: x-tentativa
+          required: false
+          in: header
+          description: Numero da tentativa do participante (opcional, so para log)
+          schema:
+            type: string
+        - name: traceparent
+          in: header
+          description: "W3C Trace Context de quem chamou: o callback continua o trace (US-F4-16)"
+          required: false
           schema:
             type: string
       requestBody:

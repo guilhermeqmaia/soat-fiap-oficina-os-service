@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication, Logger, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { randomUUID } from 'node:crypto';
 import { AppModule } from '../app.module';
@@ -17,6 +17,7 @@ import { PARTICIPANTES_SAGA_GATEWAY } from './saga/application/ports/participant
 import { PrismaSagaRepository } from './saga/infrastructure/prisma-saga.repository';
 import { PurgaCallbacksService } from './saga/infrastructure/purga-callbacks.service';
 import { ConcurrentModificationError } from './domain/errors/concurrent-modification.error';
+import { callbacksTotal } from '../observabilidade/metrics.registry';
 
 jest.setTimeout(120000);
 
@@ -150,7 +151,13 @@ describe('OrdemDeServico (e2e) — OS Service com participantes por HTTP', () =>
       participantes.indisponivel('execucao.enfileirar');
       const os = await createOs();
       expect(os.status).toBe(StatusOS.RECEBIDA);
-      expect(await sagaDe(os.numero)).toMatchObject({ passo: PassoSaga.ENFILEIRAR_EXECUCAO, status: StatusSaga.EM_ANDAMENTO });
+      const s = await sagaDe(os.numero);
+      expect(s).toMatchObject({ passo: PassoSaga.ENFILEIRAR_EXECUCAO, status: StatusSaga.EM_ANDAMENTO });
+      // US-F4-18: o esgotamento aparece no historico (GET .../saga) com as tentativas
+      expect(s.historico[s.historico.length - 1]).toMatchObject({ evento: 'execucao.enfileirar', resultado: 'chamada-falhou', tentativas: 3 });
+      // ... e a saga conta como parada na hora, sem esperar SAGA_ALERTA_PARADA_MIN
+      const repo = moduleRef.get(PrismaSagaRepository);
+      expect(await repo.countParadasDesde(new Date(Date.now() - 24 * 3_600_000))).toBeGreaterThanOrEqual(1);
     });
     it('404 cliente/veiculo inexistente, 409 veiculo de outro cliente, 400 descricao curta', async () => {
       const auth = (r: request.Test) => r.set('Authorization', `Bearer ${tokens.admin}`);
@@ -274,6 +281,45 @@ describe('OrdemDeServico (e2e) — OS Service com participantes por HTTP', () =>
       expect((await statusDe(os.numero)).status).toBe(StatusOS.EM_EXECUCAO);
       // reentrega funciona
       expect((await http().post(`/ordens-servico/${os.numero}/eventos`).set('Authorization', `Bearer ${tokens.execucao}`).send(body)).body.aplicado).toBe(true);
+    });
+
+    it('traceparent recebido continua o trace: a linha do callback sai com o mesmo trace_id e a OS como correlation_id (US-F4-16)', async () => {
+      const os = await createOs();
+      const traceId = '0af7651916cd43dd8448eb211c80319c';
+      const spy = jest.spyOn(Logger.prototype, 'log');
+      try {
+        const res = await http()
+          .post(`/ordens-servico/${os.numero}/eventos`)
+          .set('Authorization', `Bearer ${tokens.execucao}`)
+          .set('traceparent', `00-${traceId}-b7ad6b7169203331-01`)
+          .set('x-correlation-id', os.numero)
+          .set('x-tentativa', '2')
+          .send(criarEnvelopeHttp({ type: 'execucao.diagnostico-concluido', producer: 'execucao-service', data: { numeroOS: os.numero, mecanicoId: mecanicoUserId, diagnostico: 'Pastilhas gastas', itens: ITENS } }));
+        expect(res.status).toBe(200);
+        expect(res.headers['x-correlation-id']).toBe(os.numero);
+        const linhas = spy.mock.calls.map(([l]) => l as Record<string, unknown>).filter((l) => l && typeof l === 'object');
+        expect(linhas).toContainEqual(expect.objectContaining({ msg: 'callback recebido', trace_id: traceId, correlation_id: os.numero, servico: 'os-service', rota: 'POST /ordens-servico/{numero}/eventos', tentativa: 2, resultado: 'aplicado' }));
+        // o orquestrador (saga + chamada a POST /orcamentos feita durante o callback) segue no mesmo trace
+        expect(linhas).toContainEqual(expect.objectContaining({ msg: 'saga avancou', trace_id: traceId, correlation_id: os.numero }));
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('oficina_callbacks_total conta aplicado/duplicado/nao_encontrado pelo endpoint real', async () => {
+      const valor = async (type: string, resultado: string) =>
+        (await callbacksTotal.get()).values.find((v) => v.labels.type === type && v.labels.resultado === resultado)?.value ?? 0;
+      const T = 'billing.orcamento-aprovado';
+      const antes = { a: await valor(T, 'aplicado'), d: await valor(T, 'duplicado'), n: await valor(T, 'nao_encontrado') };
+      const os = await ateAguardandoAprovacao();
+      const body = criarEnvelopeHttp({ type: T, producer: 'billing-service', data: { numeroOS: os.numero, orcamentoId: 'o' } });
+      const post = (numero: string, id = body.id) => http().post(`/ordens-servico/${numero}/eventos`).set('Authorization', `Bearer ${tokens.billing}`).send({ ...body, id, data: { ...body.data, numeroOS: numero } });
+      expect((await post(os.numero)).status).toBe(200);
+      expect((await post(os.numero)).body.duplicado).toBe(true);
+      expect((await post('OS-NAO-EXISTE-METRICA', randomUUID())).status).toBe(404);
+      expect(await valor(T, 'aplicado')).toBe(antes.a + 1);
+      expect(await valor(T, 'duplicado')).toBe(antes.d + 1);
+      expect(await valor(T, 'nao_encontrado')).toBe(antes.n + 1);
     });
 
     it('purga de processed_messages remove ids alem da retencao', async () => {

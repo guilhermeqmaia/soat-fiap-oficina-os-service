@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, HttpCode, HttpStatus, Param, Post } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Headers, HttpCode, HttpStatus, Param, Post } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -6,6 +6,7 @@ import {
   ApiConflictResponse,
   ApiExtension,
   ApiForbiddenResponse,
+  ApiHeader,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
@@ -50,15 +51,27 @@ export class CallbackSagaController {
     description: 'Envelope do callback; `data` segue o schema do `type` (docs/contratos/schemas/callbacks.schema.json)',
     schema: { $ref: getSchemaPath(SCHEMA_ENVELOPE_CALLBACK) },
   })
+  @ApiHeader({ name: 'traceparent', required: false, description: 'W3C Trace Context de quem chamou: o callback continua o trace (US-F4-16)' })
+  @ApiHeader({ name: 'x-tentativa', required: false, description: 'Numero da tentativa do participante (opcional, so para log)' })
   @ApiOkResponse({ description: 'Resultado na saga (aplicado ou duplicado)', type: ResultadoCallbackDto })
   @ApiBadRequestResponse({ description: 'Envelope invalido ou data.numeroOS diferente do :numero', type: ErroHttpDto })
   @ApiNotFoundResponse({ description: 'OS inexistente (erro de configuracao — nao repetir)', type: ErroHttpDto })
   @ApiConflictResponse({ description: 'OS/saga alterada ao mesmo tempo (releia e repita o callback)', type: ErroHttpDto })
-  async receberEvento(@Param('numero') numero: string, @Body() dto: EnvelopeCallbackDto): Promise<ResultadoCallbackDto> {
+  async receberEvento(
+    @Param('numero') numero: string,
+    @Body() dto: EnvelopeCallbackDto,
+    @Headers('x-tentativa') tentativaHeader?: string,
+  ): Promise<ResultadoCallbackDto> {
     const numeroNoCorpo = dto.data.numeroOS;
     if (numeroNoCorpo !== undefined && numeroNoCorpo !== numero) {
       throw new BadRequestException(`data.numeroOS (${String(numeroNoCorpo)}) diverge do numero do path (${numero})`);
     }
-    return this.receberCallback.execute({ numero, envelope: { id: dto.id, type: dto.type, data: dto.data } });
+    // `x-tentativa` e opcional (o cliente HTTP do kit 0.3.0 ainda nao envia) e so vai para o log.
+    const tentativa = Number.parseInt(tentativaHeader ?? '', 10);
+    return this.receberCallback.execute({
+      numero,
+      envelope: { id: dto.id, type: dto.type, data: dto.data, producer: dto.producer },
+      tentativa: Number.isFinite(tentativa) && tentativa > 0 ? tentativa : undefined,
+    });
   }
 }
