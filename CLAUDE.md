@@ -25,7 +25,10 @@ Fase 4 split: **OS Service** (this repo: Atendimento + saga orchestrator + Notif
 **Execucao Service** (execution queue, diagnosis, Catalogo + Estoque, DynamoDB `oficina-execucao`).
 Services talk over **direct HTTP** (RFC-0008, 2026-11-03): the orchestrator calls Execucao/Billing
 endpoints with retry; they call back `POST /ordens-servico/{numero}/eventos`. Contract:
-`docs/contratos/http-interno.md`. No SNS/SQS, outbox or DLQ (RFC-0006/ADR-0009 superseded).
+`docs/contratos/http-interno.md` — **stable v1.0 since 2026-11-11** (only backward-compatible
+changes; breaking = envelope `version` 2 + RFC; update schemas/OpenAPI/contract fixtures in the same PR).
+No SNS/SQS, outbox or DLQ (RFC-0006/ADR-0009 superseded). US-F4-18 is closed on the os-service side.
+Client notifications are **at most once** per (fact, type, channel): a failed send stays `FALHOU`, no automatic resend.
 
 ### Actors
 
@@ -158,7 +161,11 @@ Mercado Pago, Execução with DynamoDB), **direct HTTP between services with
 callbacks** (RFC-0008, 2026-11-03 — replaced the SNS+SQS messaging of RFC-0006;
 US-F4-02 cancelled, US-F4-18 added), orchestrated saga with compensations,
 BDD with **Gherkin + Cucumber** (professor's requirement: one `.feature` per flow in
-each service + end-to-end in the hub), SonarCloud, per-service CI/CD. Every
+each service + end-to-end in the hub), SonarCloud, per-service CI/CD. In this repo's
+`ci-cd.yml`: contracts in step 1, `sonarcloud` (blocking quality gate, needs `SONAR_TOKEN` and
+the `SONAR_ORG`/`SONAR_PROJECT_KEY` placeholders filled in `sonar-project.properties` + README
+badges), `bdd` (`npm run test:bdd`) and `bdd-e2e` (`docker-compose.fase4.yml`) on every PR.
+FLUXO 3 QA plan: `docs/qa-plans/QA_PLAN_FLUXO-3.md`. Every
 service story has the sections "APIs que expoe / APIs que consome / O que salva no
 banco". Plan (market insights, 12 decisions revised on 2026-11-03, 7-repo map,
 waves): `docs/plano-execucao-fase-4.md`. Transport contract:
