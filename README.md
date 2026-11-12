@@ -1,10 +1,102 @@
 # Oficina Mecânica — API
 
 [![CI/CD](https://github.com/guilhermeqmaia/soat-fiap-oficina-os-service/actions/workflows/ci-cd.yml/badge.svg?branch=main)](https://github.com/guilhermeqmaia/soat-fiap-oficina-os-service/actions/workflows/ci-cd.yml) [![CD AWS](https://github.com/guilhermeqmaia/soat-fiap-oficina-os-service/actions/workflows/cd-aws.yml/badge.svg?branch=main)](https://github.com/guilhermeqmaia/soat-fiap-oficina-os-service/actions/workflows/cd-aws.yml) [![Perf nightly](https://github.com/guilhermeqmaia/soat-fiap-oficina-os-service/actions/workflows/perf-nightly.yml/badge.svg?branch=main)](https://github.com/guilhermeqmaia/soat-fiap-oficina-os-service/actions/workflows/perf-nightly.yml)
+<!-- SonarCloud (US-F4-13): troque SONAR_PROJECT_KEY pelo Project Key do SonarCloud (o mesmo de
+     sonar-project.properties, junto com SONAR_ORG). Os badges só renderizam depois da 1ª análise. -->
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=SONAR_PROJECT_KEY&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=SONAR_PROJECT_KEY) [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=SONAR_PROJECT_KEY&metric=coverage)](https://sonarcloud.io/summary/new_code?id=SONAR_PROJECT_KEY)
 
-Back-end MVP para sistema integrado de oficina mecânica, focado em gestão de ordens de serviço, clientes, veículos e peças.
+**OS Service** da oficina mecânica: abertura e acompanhamento de ordens de serviço, clientes e
+veículos, **orquestrador da saga** que coordena a Execução e o Billing por HTTP, e notificação ao
+cliente. Nas fases 1–3 este repositório era o monólito (`soat-fiap-oficina-mecanica-app`).
 
-**Stack:** NestJS · TypeScript · Prisma · PostgreSQL · Docker · Kubernetes · Terraform · JWT
+**Stack:** NestJS · TypeScript · Prisma · PostgreSQL · Docker · Kubernetes (EKS) · Terraform · JWT · Datadog · Cucumber · SonarCloud
+
+---
+
+## Fase 4 — OS Service (microsserviços, saga e automação)
+
+A Fase 4 divide o sistema em **três microsserviços** — **OS Service** (este repo, Postgres
+`oficina_os`), [Billing](https://github.com/guilhermeqmaia/soat-fiap-oficina-billing-service)
+(orçamento, Mercado Pago, Postgres `oficina_billing`) e
+[Execução](https://github.com/guilhermeqmaia/soat-fiap-oficina-execucao-service) (fila, diagnóstico,
+catálogo e estoque, DynamoDB) — que conversam por **HTTP direto com callbacks**
+([RFC-0008](docs/arquitetura/rfcs/RFC-0008-comunicacao-http-entre-servicos.md)). Plano:
+[`docs/plano-execucao-fase-4.md`](docs/plano-execucao-fase-4.md) · diagramas:
+[`docs/arquitetura/arquitetura-fase4.md`](docs/arquitetura/arquitetura-fase4.md).
+
+### Arquitetura do OS Service
+
+```mermaid
+flowchart LR
+    U["Cliente / Staff"] -->|JWT da Lambda| GW["API Gateway"]
+    GW --> OS
+    subgraph OS["OS Service (este repo)"]
+      direction TB
+      API["API REST<br/>OS · clientes · veículos"] --> ORQ["Orquestrador da saga<br/>(saga_os)"]
+      CB["POST /ordens-servico/{n}/eventos<br/>(callbacks, role SERVICO)"] --> ORQ
+      ORQ -->|depois do commit| NOT["Notificação<br/>(e-mail / webhook)"]
+    end
+    ORQ -->|"HTTP + retry 3x<br/>JWT SERVICO, x-correlation-id"| EX["Execução Service"]
+    ORQ -->|"HTTP + retry 3x"| BI["Billing Service"]
+    EX -.callback.-> CB
+    BI -.callback.-> CB
+    OS --> DB[("Postgres oficina_os")]
+    OS -.logs JSON · /metrics · traces.-> DD["Datadog"]
+```
+
+| Peça | O que faz | Onde |
+|---|---|---|
+| **Orquestrador da saga** | máquina de estados `ENFILEIRAR_EXECUCAO → … → CONCLUIDA` persistida em `saga_os`, compensações (`DELETE` nos participantes), timeout de aprovação, pagamento recusado sem rollback, `POST /admin/sagas/:numero/reprocessar` | [Saga orquestrada](#saga-orquestrada-fase-4--us-f4-10) · `src/ordem-de-servico/saga/` · [RFC-0005](docs/arquitetura/rfcs/RFC-0005-estrategia-de-saga.md) |
+| **Chamadas HTTP** | `POST /execucao/ordens`, `.../iniciar`, `POST /orcamentos`, `.../cobrar` e os `DELETE` de compensação, com o cliente do kit (timeout 5 s, 3 tentativas em 5xx/timeout, JWT `SERVICO`); a resposta síncrona vira o evento da saga | [Comunicação entre serviços](#comunicação-entre-serviços-fase-4--rfc-0008-us-f4-18) · contrato **estável v1.0** [`docs/contratos/http-interno.md`](docs/contratos/http-interno.md) |
+| **Callbacks** | `POST /ordens-servico/{numero}/eventos` para o que depende de pessoa ou do Mercado Pago; dedup por `id` (`processed_messages`), `409` = releia e repita | idem |
+| **Notificações** | um aviso por fato (`ORCAMENTO_PRONTO`, `PAGAMENTO_PENDENTE` com o link, `OS_FINALIZADA`…), disparado depois do commit; **no máximo uma vez** por `(fato, tipo, canal)` — se o envio falha, fica `FALHOU` e não é reenviado automaticamente | [`docs/notificacao-email.md`](docs/notificacao-email.md) |
+| **Observabilidade** | logs JSON com `trace_id`/`correlation_id` (= número da OS)/`rota`/`tentativa`; `oficina_http_interno_total`, `oficina_http_interno_duracao_seconds`, `oficina_callbacks_total`, `oficina_os_sagas_paradas`; APM `dd-trace`; dashboard "Fluxo distribuído" e alertas no infra-k8s | [Observabilidade](#observabilidade-fase-3--us-f3-10) · runbooks em [`docs/runbooks/`](docs/runbooks/) |
+
+### Como rodar
+
+| Cenário | Comando |
+|---|---|
+| Só o OS Service + Postgres (Billing/Execução apontando para `localhost:3001/3002`) | `docker compose up -d` — ou sem Docker: [Rodando localmente](#rodando-localmente-sem-docker) |
+| **Ambiente ponta a ponta da Fase 4** (OS real + Postgres, Billing/Execução como stubs do contrato, Mailpit em `http://localhost:8025`) | `npm run e2e:up` · `npm run e2e:logs` · `npm run e2e:down` ([`docker-compose.fase4.yml`](docker-compose.fase4.yml)) |
+| Mesmo ambiente com as imagens reais | `BILLING_IMAGE=… EXECUCAO_IMAGE=… docker compose -f docker-compose.fase4.yml --profile reais up -d --wait` |
+| Roteiro manual ponta a ponta (curl, com as saídas reais) | [`docs/fluxo-3/teste-manual-ponta-a-ponta.md`](docs/fluxo-3/teste-manual-ponta-a-ponta.md) |
+
+### Testes e qualidade
+
+Pré-requisitos: Node 22 (o Cucumber 13 exige), Docker rodando, `npm ci` e `npx prisma generate`.
+
+| Nível | Comando | O que cobre | No CI (`ci-cd.yml`) |
+|---|---|---|---|
+| Unitário + cobertura | `npm run test:unit:cov` | domínio, casos de uso, orquestrador, adapters; **falha abaixo de 80 %** (linhas, funções, branches, statements) | passo 1 |
+| Integração | `npm run test:integration:cov` | repositórios Prisma e e2e HTTP contra Postgres real (Testcontainers) | passo 1 |
+| Contrato | `npm run contracts:lint` · `npm run openapi:check` · `npm run test:contracts` | OpenAPI válido e em dia com os controllers; provedor (callbacks) e consumidor (chamadas aos participantes) contra `docs/contratos/schemas` | passo 1 |
+| BDD de serviço | `npm run test:bdd` | `features/ordem-de-servico.feature` (Nest em memória + Postgres + stubs HTTP) | job `bdd`, todo PR, relatório HTML como artifact |
+| BDD ponta a ponta | `npm run e2e:up && npm run test:bdd:e2e; npm run e2e:down` | `features/e2e/ciclo-completo-os.feature` por HTTP entre containers | job `bdd-e2e`, todo PR, relatório HTML como artifact |
+| Qualidade | SonarCloud ([`sonar-project.properties`](sonar-project.properties)) | quality gate: cobertura em código novo ≥ 80 %, 0 bugs/vulnerabilidades novas, duplicação < 3 % ([ADR-0011](docs/arquitetura/adr/ADR-0011-qualidade-sonarcloud.md)) | job `sonarcloud`, **bloqueante** |
+
+Guia do Cucumber (e de como Billing/Execução copiam o esqueleto): [`docs/bdd/README.md`](docs/bdd/README.md).
+
+**Evidência de cobertura** (execução local de 11/11/2026; a evidência pública é o badge do SonarCloud no topo):
+
+| Suíte | Testes | Linhas | Statements | Funções | Branches |
+|---|---|---|---|---|---|
+| Unitário (`coverage/unit`) | 532 | **95,16 %** | 95,02 % | 88,94 % | 88,08 % |
+| Integração (`coverage/integration`, repositórios Prisma) | 227 | 97,82 % | 97,06 % | 100 % | 87,60 % |
+| Contrato | 91 | — | — | — | — |
+| BDD serviço / ponta a ponta | 15 / 12 cenários | — | — | — | — |
+
+### Entregáveis da Fase 4 (OS Service)
+
+| Entregável | Onde |
+|---|---|
+| Swagger | `http://localhost:3000/api` (app rodando, `NODE_ENV != production`) · OpenAPI publicado: [`docs/contratos/openapi/`](docs/contratos/openapi/README.md) |
+| Contrato entre serviços (estável v1.0) | [`docs/contratos/http-interno.md`](docs/contratos/http-interno.md) · schemas em [`docs/contratos/schemas/`](docs/contratos/schemas) |
+| Saga e compensações | [RFC-0005](docs/arquitetura/rfcs/RFC-0005-estrategia-de-saga.md) · [`arquitetura-fase4.md`](docs/arquitetura/arquitetura-fase4.md) |
+| BDD (Gherkin + Cucumber) | [`features/`](features) · [`docs/bdd/README.md`](docs/bdd/README.md) |
+| Roteiro manual ponta a ponta | [`docs/fluxo-3/teste-manual-ponta-a-ponta.md`](docs/fluxo-3/teste-manual-ponta-a-ponta.md) |
+| Evidências que dependem do EKS/Datadog | [`docs/fluxo-3/evidencias-pendentes.md`](docs/fluxo-3/evidencias-pendentes.md) |
+| Runbooks dos alertas | [`docs/runbooks/`](docs/runbooks/) (`saga-parada`, `saga-reprocessar`, `retry-esgotado`, `erros-5xx-por-servico`, `latencia-entre-servicos`, `callback-conflito-repetido`) |
+| QA plans | [`QA_PLAN_FLUXO-3.md`](docs/qa-plans/QA_PLAN_FLUXO-3.md) · [US-F4-12](docs/qa-plans/QA_PLAN_US-F4-12.md) · [US-F4-16](docs/qa-plans/QA_PLAN_US-F4-16.md) · [US-F4-18](docs/qa-plans/QA_PLAN_US-F4-18.md) · [índice](docs/qa-plans/README.md) |
 
 ---
 
@@ -478,23 +570,22 @@ _Link publicado após a gravação (depende do apply na AWS)._
 ## Testes
 
 ```bash
-# Todos os testes (unit + integração + e2e)
+# unit + contratos + integração
 npm test
 
-# Com cobertura
-npm run test:cov
+# Unitários com cobertura (gate de 80 %) e integração com cobertura (requer Docker)
+npm run test:unit:cov
+npm run test:integration:cov
 
-# Apenas testes unitários
-npx jest --testPathIgnorePatterns=integration --testPathIgnorePatterns=e2e
+# Contratos (OpenAPI + provedor/consumidor)
+npm run contracts:lint && npm run openapi:check && npm run test:contracts
 
-# Apenas testes de integração (requer Docker)
-npx jest integration
-
-# Apenas testes e2e (requer Docker)
-npx jest e2e
+# BDD (Cucumber): nível de serviço e ponta a ponta
+npm run test:bdd
+npm run e2e:up && npm run test:bdd:e2e; npm run e2e:down
 ```
 
-Os testes de integração e e2e usam [testcontainers](https://node.testcontainers.org/) para subir uma instância PostgreSQL efêmera — não há dependência de banco externo rodando.
+Os testes de integração/e2e e o BDD de serviço usam [testcontainers](https://node.testcontainers.org/) para subir uma instância PostgreSQL efêmera — não há dependência de banco externo rodando. Tabela completa por nível, CI e evidência de cobertura em [Testes e qualidade](#testes-e-qualidade).
 
 ---
 
@@ -505,8 +596,11 @@ Os testes de integração e e2e usam [testcontainers](https://node.testcontainer
 | `npm run start:dev` | Inicia em modo desenvolvimento com hot reload |
 | `npm run build` | Compila o TypeScript |
 | `npm start` | Inicia a versão compilada |
-| `npm test` | Executa todos os testes |
-| `npm run test:cov` | Executa os testes com cobertura |
+| `npm test` | Unit + contratos + integração |
+| `npm run test:unit:cov` / `npm run test:integration:cov` | Testes com cobertura (`coverage/unit`, `coverage/integration`) |
+| `npm run test:contracts` | Testes de contrato (`test/contracts`) |
+| `npm run test:bdd` / `npm run test:bdd:e2e` | Cucumber: nível de serviço / ponta a ponta |
+| `npm run e2e:up` / `npm run e2e:down` | Sobe / derruba o `docker-compose.fase4.yml` |
 | `npm run prisma:generate` | Gera o cliente Prisma |
 | `npm run prisma:migrate` | Cria e aplica migrations (dev) |
 | `npm run prisma:deploy` | Aplica migrations (produção) |
@@ -670,7 +764,8 @@ uptime) ficam em
 ## CI/CD na AWS (Fase 3 — US-F3-08)
 
 O [`ci-cd.yml`](.github/workflows/ci-cd.yml) da Fase 2 segue como **CI**
-(testes com gate de 80% + build + prova de deploy em kind efêmero). O
+(testes com gate de 80% + contratos + SonarCloud com quality gate + BDD de serviço e ponta a
+ponta + build + prova de deploy em kind efêmero — ver [Testes e qualidade](#testes-e-qualidade)). O
 [`cd-aws.yml`](.github/workflows/cd-aws.yml) faz o **deploy automático na
 nuvem**: push em `homolog` → homologação, push em `main` → produção.
 
@@ -717,5 +812,8 @@ Conta própria + OIDC: [ADR-0007](docs/arquitetura/adr/ADR-0007-conta-aws-propri
 - **Banco de dados (justificativa PostgreSQL/RDS, ER, relacionamentos, índices):** [`docs/arquitetura/banco-de-dados.md`](docs/arquitetura/banco-de-dados.md)
 - **ER Diagram:** `docs/schema.dbml` (importe em [dbdiagram.io](https://dbdiagram.io))
 - **User Stories:** [`docs/user-stories/`](docs/user-stories/README.md)
-- **QA Plans:** [`docs/qa-plans/`](docs/qa-plans/README.md)
+- **QA Plans:** [`docs/qa-plans/`](docs/qa-plans/README.md) (fluxo distribuído: [`QA_PLAN_FLUXO-3.md`](docs/qa-plans/QA_PLAN_FLUXO-3.md))
+- **Contratos entre serviços (estável v1.0) e OpenAPI:** [`docs/contratos/`](docs/contratos/README.md) · [`docs/contratos/openapi/`](docs/contratos/openapi/README.md)
+- **BDD (Cucumber):** [`docs/bdd/README.md`](docs/bdd/README.md) · roteiro manual: [`docs/fluxo-3/teste-manual-ponta-a-ponta.md`](docs/fluxo-3/teste-manual-ponta-a-ponta.md)
+- **Runbooks:** [`docs/runbooks/`](docs/runbooks/)
 - **Event Storming:** [Miro board (público)](https://miro.com/app/board/uXjVGwyI88w=/?share_link_id=464407873082)
