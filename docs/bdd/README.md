@@ -14,6 +14,10 @@ Há dois níveis:
 Relatórios: `reports/cucumber/os-service.html` e `.json` (perfil `e2e`: `e2e.html`/`e2e.json`).
 A pasta `reports/` não vai para o git.
 
+**No CI** (`.github/workflows/ci-cd.yml`, todo PR e `main`): job `bdd` (`npm run test:bdd`, artifact
+`cucumber-os-service`) e job `bdd-e2e` (`e2e:up` → `test:bdd:e2e` → `e2e:down`, artifact `cucumber-e2e`
+com o log do compose em caso de falha). Ambos com Node 22.
+
 ## Estrutura
 
 ```
