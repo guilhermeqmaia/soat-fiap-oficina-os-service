@@ -51,7 +51,7 @@ Valida a troca da mensageria SNS/SQS por HTTP direto (RFC-0008): o cliente HTTP 
 - **Tipo:** Automatizado (e2e) + Manual
 - **Criterio:** Retry esgotado nao compensa; `reprocessar` repete a chamada
 - **Passos:** mock da Execucao devolvendo `503` sempre; `POST /ordens-servico`; observar `/metrics`; subir o mock; `POST /admin/sagas/{n}/reprocessar`
-- **Resultado esperado:** OS criada (`RECEBIDA`) e saga em `ENFILEIRAR_EXECUCAO` com historico `chamada-falhou` (3 tentativas); `oficina_os_sagas_paradas` = 1; `oficina_os_http_interno_total{resultado="esgotado"}` incrementa; apos reprocessar: `reenviados: ['execucao.enfileirar']`, OS `EM_DIAGNOSTICO`
+- **Resultado esperado:** OS criada (`RECEBIDA`) e saga em `ENFILEIRAR_EXECUCAO` com historico `chamada-falhou` (3 tentativas); `oficina_os_sagas_paradas` = 1; `oficina_http_interno_total{origem="os-service",destino="execucao-service",rota="POST /execucao/ordens",resultado="esgotado"}` incrementa; apos reprocessar: `reenviados: ['execucao.enfileirar']`, OS `EM_DIAGNOSTICO`
 
 ### TS-07: Caminho feliz ponta a ponta por HTTP
 - **Tipo:** Manual (compose com os tres servicos) ou e2e com mocks

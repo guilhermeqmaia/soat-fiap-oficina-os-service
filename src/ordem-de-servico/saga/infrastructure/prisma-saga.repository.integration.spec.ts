@@ -70,6 +70,19 @@ const ITENS = [{ tipo: 'SERVICO', referenciaId: 's', nome: 'n', quantidade: 1, p
     expect(await repo.countParadasDesde(new Date(Date.now() - 3_600_000))).toBe(0);
   });
 
+  it('countParadasDesde conta na hora a saga cuja ultima entrada e chamada-falhou e a tira ao reprocessar (US-F4-18)', async () => {
+    const antigo = new Date(Date.now() - 3_600_000);
+    const base = await repo.countParadasDesde(antigo);
+    const s = SagaOS.iniciar({ numero: 'OS-S5', clienteId: 'c', veiculoId: 'v', descricaoProblema: 'd' });
+    s.registrarChamadaFalhou('execucao.enfileirar', { erro: 'HTTP 503', status: 503, tentativas: 3 });
+    let salva = await repo.save(s);
+    expect(salva.historico[salva.historico.length - 1]).toMatchObject({ resultado: 'chamada-falhou', tentativas: 3, evento: 'execucao.enfileirar' });
+    expect(await repo.countParadasDesde(antigo)).toBe(base + 1);
+    salva.reprocessar({});
+    salva = await repo.save(salva);
+    expect(await repo.countParadasDesde(antigo)).toBe(base);
+  });
+
   it('save dentro de um $transaction externo faz rollback junto', async () => {
     const saga = SagaOS.iniciar({ numero: 'OS-S4', clienteId: 'c', veiculoId: 'v', descricaoProblema: 'd' });
     await expect(

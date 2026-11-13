@@ -25,8 +25,9 @@ import {
 import { ComandoSaga, EventoSaga, ItemContrato, PassoSaga, Prazos, SagaOS, TransicaoOS } from '../domain/saga-os.entity';
 import { SagaNotFoundError } from '../domain/errors/saga-not-found.error';
 import { SAGA_REPOSITORY, SagaRepository } from '../domain/saga.repository';
-import { PARTICIPANTES_SAGA_GATEWAY, ParticipantesSagaGateway } from './ports/participantes-saga.gateway';
+import { PARTICIPANTES_SAGA_GATEWAY, ParticipantesSagaGateway, ResultadoComando } from './ports/participantes-saga.gateway';
 import { sagaPassoDuracao, sagaPassos } from '../../../observabilidade/metrics.registry';
+import { camposDeRastreio } from '../../../observabilidade/rastreio';
 
 /**
  * Prazos configuraveis por ambiente (demo usa minutos; producao dias/horas).
@@ -90,7 +91,12 @@ export interface ResultadoEvento {
  * (`ParticipantesSagaGateway`): a resposta sincrona de cada chamada vira o
  * evento correspondente e e reinjetada em `processar` — nova transacao, sem
  * reentrancia dentro da anterior. Se a chamada esgotar as tentativas, a saga
- * fica no passo (metrica `comando-falhou`; `reprocessar` reenvia).
+ * fica no passo: o historico ganha `chamada-falhou` com as tentativas (outra
+ * transacao curta), a saga passa a contar em `oficina_os_sagas_paradas` e
+ * `reprocessar` reenvia.
+ *
+ * Logs (US-F4-16): toda linha leva `trace_id`, `correlation_id` (numero da OS)
+ * e `servico` (`camposDeRastreio`); as de chamada levam tambem `rota`/`tentativa`.
  */
 @Injectable()
 export class OrquestradorSagaService {
@@ -160,12 +166,12 @@ export class OrquestradorSagaService {
         sagaPassos.inc({ passo: atual.passo, resultado: 'comando-falhou' });
         this.logger.error({
           msg: 'comando nao entregue ao participante — saga fica no passo (alerta de saga parada / reprocessar)',
+          ...camposDeRastreio(saga.numero, { comando: comando.type, passo: atual.passo, status: resultado.status, tentativa: resultado.tentativas }),
           numeroOS: saga.numero,
-          comando: comando.type,
-          passo: atual.passo,
-          status: resultado.status,
+          resultado: resultado.resultado,
           erro: resultado.erro,
         });
+        atual = (await this.registrarChamadaFalhou(saga.numero, comando, resultado, agora)) ?? atual;
         continue;
       }
       try {
@@ -176,6 +182,7 @@ export class OrquestradorSagaService {
         sagaPassos.inc({ passo: atual.passo, resultado: 'resposta-falhou' });
         this.logger.error({
           msg: 'resposta do participante nao aplicada na saga',
+          ...camposDeRastreio(saga.numero),
           numeroOS: saga.numero,
           comando: comando.type,
           evento: resultado.evento.type,
@@ -184,6 +191,40 @@ export class OrquestradorSagaService {
       }
     }
     return atual;
+  }
+
+  /**
+   * Grava `chamada-falhou` (com as tentativas) no historico da saga, numa
+   * transacao propria — a chamada ja aconteceu fora da transacao que decidiu o
+   * comando. Conflito de versao e refeito como em `aplicarComRetry`; se ainda
+   * assim nao gravar, so loga (a metrica `comando-falhou` e o log ja contaram a
+   * falha, e o alerta de saga parada continua valendo pelo tempo no passo).
+   */
+  private async registrarChamadaFalhou(
+    numero: string,
+    comando: ComandoSaga,
+    falha: Extract<ResultadoComando, { entregue: false }>,
+    agora: Date,
+  ): Promise<SagaOS | null> {
+    for (let tentativa = 1; ; tentativa++) {
+      try {
+        const salva = await this.uow.executar(async (tx) => {
+          const saga = await this.sagas.findByNumero(numero, tx);
+          if (!saga) return null;
+          saga.registrarChamadaFalhou(comando.type, { erro: falha.erro, status: falha.status, tentativas: falha.tentativas }, agora);
+          return this.sagas.save(saga, tx);
+        });
+        return salva;
+      } catch (e) {
+        if (e instanceof ConcurrentModificationError && tentativa < TENTATIVAS_CONFLITO) continue;
+        this.logger.error({
+          msg: 'nao foi possivel registrar chamada-falhou no historico da saga',
+          ...camposDeRastreio(numero, { comando: comando.type }),
+          erro: (e as Error).message,
+        });
+        return null;
+      }
+    }
   }
 
   private async aplicarComRetry(
@@ -199,7 +240,7 @@ export class OrquestradorSagaService {
         return resultado;
       } catch (e) {
         if (e instanceof ConcurrentModificationError && tentativa < TENTATIVAS_CONFLITO) {
-          this.logger.warn({ msg: 'conflito de versao — refazendo', numeroOS: evento.data.numeroOS, type: evento.type, tentativa });
+          this.logger.warn({ msg: 'conflito de versao — refazendo', ...camposDeRastreio(String(evento.data.numeroOS ?? '')), numeroOS: evento.data.numeroOS, type: evento.type, tentativa });
           continue;
         }
         throw e;
@@ -224,7 +265,7 @@ export class OrquestradorSagaService {
     // Demo (US-F4-11): troca o evento de sucesso pelo de falha no passo marcado.
     const efetivo = saga.simularFalha(evento, agora);
     if (efetivo !== evento) {
-      this.logger.warn({ msg: 'falha simulada (demo)', numeroOS: numero, passo: passoAntes, de: evento.type, para: efetivo.type });
+      this.logger.warn({ msg: 'falha simulada (demo)', ...camposDeRastreio(numero), numeroOS: numero, passo: passoAntes, de: evento.type, para: efetivo.type });
       evento = efetivo;
     }
 
@@ -236,7 +277,7 @@ export class OrquestradorSagaService {
       throw new InvalidStatusTransitionError(passoAntes, 'CANCELADA');
     }
     if (!resultado.aplicado) {
-      this.logger.warn({ msg: 'evento ignorado pela saga', numeroOS: numero, type: evento.type, passo: passoAntes, motivo: resultado.motivo });
+      this.logger.warn({ msg: 'evento ignorado pela saga', ...camposDeRastreio(numero), numeroOS: numero, type: evento.type, passo: passoAntes, motivo: resultado.motivo });
       return { saga: await this.sagas.save(saga, tx), comandos: comandosDaAdocao, aplicado: false, motivo: resultado.motivo };
     }
 
@@ -251,6 +292,7 @@ export class OrquestradorSagaService {
     }
     this.logger.log({
       msg: 'saga avancou',
+      ...camposDeRastreio(numero),
       numeroOS: numero,
       type: evento.type,
       de: passoAntes,
@@ -286,7 +328,7 @@ export class OrquestradorSagaService {
       const comandos = saga.consumirComandos();
       sagaPassos.inc({ passo: saga.passo, resultado: 'reprocessada' });
       const salva = await this.sagas.save(saga, tx);
-      this.logger.log({ msg: 'saga reprocessada', numeroOS: numero, passo: salva.passo, status: salva.status, reenviados: comandos.map((c) => c.type) });
+      this.logger.log({ msg: 'saga reprocessada', ...camposDeRastreio(numero), numeroOS: numero, passo: salva.passo, status: salva.status, reenviados: comandos.map((c) => c.type) });
       return { saga: salva, comandos };
     });
     const final = await this.executarComandos(saga, comandos, agora);
@@ -349,7 +391,7 @@ export class OrquestradorSagaService {
   private async adotar(numero: string, agora: Date, tx: unknown): Promise<SagaComComandos> {
     const ordem = await this.ordens.findByNumero(numero, tx);
     if (!ordem) throw new OrdemDeServicoNotFoundError(numero);
-    this.logger.warn({ msg: 'OS sem saga — adotando a partir do status atual', numeroOS: numero, status: ordem.status });
+    this.logger.warn({ msg: 'OS sem saga — adotando a partir do status atual', ...camposDeRastreio(numero), numeroOS: numero, status: ordem.status });
     const saga = SagaOS.adotar(
       {
         numero,
