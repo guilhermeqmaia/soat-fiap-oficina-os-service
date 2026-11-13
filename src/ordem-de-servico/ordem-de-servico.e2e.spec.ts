@@ -616,7 +616,9 @@ describe('OrdemDeServico (e2e) — OS Service com participantes por HTTP', () =>
       const limite = Date.now() + timeoutMs;
       for (;;) {
         const atuais = await notificacoesDa(ordemId);
-        if (tipos.every((t) => atuais.some((n) => n.tipo === t)) || Date.now() > limite) return atuais;
+        // Espera a linha existir E o envio terminar: a notificacao e gravada PENDENTE e so depois vira ENVIADA/FALHOU.
+        const prontas = tipos.every((t) => atuais.some((n) => n.tipo === t && n.status !== 'PENDENTE'));
+        if (prontas || Date.now() > limite) return atuais;
         await new Promise((r) => setTimeout(r, 50));
       }
     };
