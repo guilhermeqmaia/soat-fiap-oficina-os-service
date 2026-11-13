@@ -37,6 +37,18 @@ jobs:
       - name: Run unit tests with coverage
         run: npm run test:unit:cov
 
+      # US-F4-15: contrato HTTP. Bloqueantes: lint do OpenAPI (recommended-strict),
+      # arquivo publicado em dia com os controllers e testes de contrato
+      # (provedor, consumidor e fixtures dos callbacks).
+      - name: Lint OpenAPI (redocly)
+        run: npm run contracts:lint
+
+      - name: Check published OpenAPI is up to date
+        run: npm run openapi:check
+
+      - name: Run contract tests
+        run: npm run test:contracts
+
       - name: Run integration tests (testcontainers/Postgres)
         # testcontainers sobe um Postgres efêmero via Docker (disponível no
         # runner ubuntu-latest). Exercita os repositórios Prisma contra um banco

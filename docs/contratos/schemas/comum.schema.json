@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://contratos.oficina-mecanica.local/schemas/comum.schema.json",
+  "title": "Tipos comuns dos contratos HTTP internos",
+  "description": "Blocos reutilizados pelos envelopes, comandos e respostas (docs/contratos/http-interno.md + asyncapi.yaml).",
+  "$defs": {
+    "NumeroOS": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Numero da OS — chave de idempotencia dos comandos e correlacao (x-correlation-id).",
+      "examples": ["OS-2026-000123"]
+    },
+    "Dinheiro": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d{2}$",
+      "description": "Decimal como string com 2 casas (nunca float).",
+      "examples": ["300.00"]
+    },
+    "Item": {
+      "type": "object",
+      "description": "Item do diagnostico com preco congelado (servico ou produto).",
+      "required": ["tipo", "referenciaId", "nome", "quantidade", "precoUnitario"],
+      "properties": {
+        "tipo": { "type": "string", "enum": ["SERVICO", "PRODUTO"] },
+        "referenciaId": { "type": "string", "minLength": 1 },
+        "nome": { "type": "string", "minLength": 1 },
+        "quantidade": { "type": "integer", "minimum": 1 },
+        "precoUnitario": { "$ref": "#/$defs/Dinheiro" },
+        "servicoId": {
+          "type": "string",
+          "description": "Somente PRODUTO: referenciaId do SERVICO do mesmo diagnostico ao qual a peca pertence."
+        }
+      }
+    },
+    "Motivo": {
+      "type": "object",
+      "description": "Corpo de recusa de negocio (409) e das compensacoes (DELETE).",
+      "required": ["motivo"],
+      "properties": { "motivo": { "type": "string", "minLength": 1 } }
+    }
+  }
+}

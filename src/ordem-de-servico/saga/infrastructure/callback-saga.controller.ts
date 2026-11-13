@@ -2,17 +2,23 @@ import { BadRequestException, Body, Controller, HttpCode, HttpStatus, Param, Pos
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
+  ApiBody,
   ApiConflictResponse,
+  ApiExtension,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
   ApiUnauthorizedResponse,
+  getSchemaPath,
 } from '@nestjs/swagger';
 import { Role, Roles } from '@guilhermeqmaia/oficina-kit/auth';
 import { ReceberCallbackUseCase } from '../application/receber-callback.use-case';
 import { EnvelopeCallbackDto } from './dto/envelope-callback.dto';
+import { ResultadoCallbackDto } from './dto/resultado-callback.dto';
+import { ErroHttpDto } from '../../../shared/infrastructure/dto/erro-http.dto';
+import { SCHEMA_ENVELOPE_CALLBACK } from '../../../config/openapi';
 
 /**
  * Callbacks dos participantes da saga (Execucao/Billing -> OS), RFC-0008:
@@ -21,8 +27,8 @@ import { EnvelopeCallbackDto } from './dto/envelope-callback.dto';
  */
 @ApiTags('Ordens de Servico')
 @ApiBearerAuth()
-@ApiUnauthorizedResponse({ description: 'Token JWT ausente ou invalido' })
-@ApiForbiddenResponse({ description: 'Somente outro servico (JWT com role SERVICO)' })
+@ApiUnauthorizedResponse({ description: 'Token JWT ausente ou invalido', type: ErroHttpDto })
+@ApiForbiddenResponse({ description: 'Somente outro servico (JWT com role SERVICO)', type: ErroHttpDto })
 @Controller('ordens-servico')
 export class CallbackSagaController {
   constructor(private readonly receberCallback: ReceberCallbackUseCase) {}
@@ -39,22 +45,16 @@ export class CallbackSagaController {
       'billing.orcamento-aprovado, billing.orcamento-rejeitado, billing.pagamento-aprovado, billing.pagamento-recusado ' +
       '(os demais eventos chegam como resposta sincrona dos comandos).',
   })
-  @ApiOkResponse({
-    description: 'Resultado na saga',
-    schema: {
-      example: { aplicado: true, passo: 'GERAR_ORCAMENTO', status: 'EM_ANDAMENTO' },
-      properties: {
-        aplicado: { type: 'boolean', description: 'false = ignorado (duplicado/fora de ordem)' },
-        duplicado: { type: 'boolean', description: 'true quando o id ja tinha sido aplicado' },
-        passo: { type: 'string' },
-        status: { type: 'string', enum: ['EM_ANDAMENTO', 'COMPENSANDO', 'CONCLUIDA', 'CANCELADA'] },
-      },
-    },
+  @ApiExtension('x-role', 'SERVICO')
+  @ApiBody({
+    description: 'Envelope do callback; `data` segue o schema do `type` (docs/contratos/schemas/callbacks.schema.json)',
+    schema: { $ref: getSchemaPath(SCHEMA_ENVELOPE_CALLBACK) },
   })
-  @ApiBadRequestResponse({ description: 'Envelope invalido ou data.numeroOS diferente do :numero' })
-  @ApiNotFoundResponse({ description: 'OS inexistente' })
-  @ApiConflictResponse({ description: 'OS/saga alterada ao mesmo tempo (repita o callback)' })
-  async receberEvento(@Param('numero') numero: string, @Body() dto: EnvelopeCallbackDto) {
+  @ApiOkResponse({ description: 'Resultado na saga (aplicado ou duplicado)', type: ResultadoCallbackDto })
+  @ApiBadRequestResponse({ description: 'Envelope invalido ou data.numeroOS diferente do :numero', type: ErroHttpDto })
+  @ApiNotFoundResponse({ description: 'OS inexistente (erro de configuracao — nao repetir)', type: ErroHttpDto })
+  @ApiConflictResponse({ description: 'OS/saga alterada ao mesmo tempo (releia e repita o callback)', type: ErroHttpDto })
+  async receberEvento(@Param('numero') numero: string, @Body() dto: EnvelopeCallbackDto): Promise<ResultadoCallbackDto> {
     const numeroNoCorpo = dto.data.numeroOS;
     if (numeroNoCorpo !== undefined && numeroNoCorpo !== numero) {
       throw new BadRequestException(`data.numeroOS (${String(numeroNoCorpo)}) diverge do numero do path (${numero})`);

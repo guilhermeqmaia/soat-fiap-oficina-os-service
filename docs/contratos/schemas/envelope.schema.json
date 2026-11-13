@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://contratos.oficina-mecanica.local/schemas/envelope.schema.json",
+  "title": "Envelope",
+  "description": "Envelope dos callbacks POST /ordens-servico/{numero}/eventos (http-interno.md). Sem correlationId no corpo: a correlacao e o {numero} do path e o cabecalho x-correlation-id. Campos extras sao tolerados (campo novo opcional = minor).",
+  "type": "object",
+  "required": ["id", "type", "version", "occurredAt", "producer", "data"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "UUID (v7) — chave de idempotencia do callback (processed_messages)."
+    },
+    "type": {
+      "type": "string",
+      "pattern": "^[a-z]+\\.[a-z][a-z0-9-]*$",
+      "description": "<dominio>.<fato> (vocabulario do asyncapi.yaml).",
+      "examples": ["execucao.diagnostico-concluido"]
+    },
+    "version": { "type": "integer", "minimum": 1, "description": "Versao do contrato do evento." },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "producer": { "type": "string", "enum": ["os-service", "billing-service", "execucao-service"] },
+    "data": {
+      "type": "object",
+      "description": "Payload do type (eventos.schema.json). numeroOS, se vier, deve ser igual ao {numero} do path."
+    }
+  }
+}

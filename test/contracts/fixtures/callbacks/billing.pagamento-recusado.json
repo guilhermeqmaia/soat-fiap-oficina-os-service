@@ -1,0 +1,12 @@
+{
+  "id": "0192f3a0-7c6e-7d2a-9b1e-3f4c5d6e7f06",
+  "type": "billing.pagamento-recusado",
+  "version": 1,
+  "occurredAt": "2026-11-04T16:00:00.000Z",
+  "producer": "billing-service",
+  "data": {
+    "numeroOS": "OS-2026-000123",
+    "orderId": "ORD01JC0000000000000000001",
+    "motivo": "cc_rejected_insufficient_amount"
+  }
+}

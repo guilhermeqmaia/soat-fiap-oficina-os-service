@@ -1,0 +1,120 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://contratos.oficina-mecanica.local/schemas/eventos.schema.json",
+  "title": "Payloads (data) dos eventos que o OS Service recebe",
+  "description": "Um $def por type. Os eventos de callback chegam no envelope (callbacks.schema.json); os demais sao o corpo da resposta sincrona dos comandos (endpoints-participantes.json). Espelha asyncapi.yaml.",
+  "$defs": {
+    "ExecucaoEnfileirada": {
+      "description": "execucao.enfileirada — 201 de POST /execucao/ordens.",
+      "type": "object",
+      "required": ["numeroOS", "posicaoFila"],
+      "properties": {
+        "numeroOS": { "$ref": "comum.schema.json#/$defs/NumeroOS" },
+        "posicaoFila": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "ExecucaoIniciada": {
+      "description": "execucao.iniciada — 200 de POST /execucao/ordens/{numeroOS}/iniciar.",
+      "type": "object",
+      "required": ["numeroOS"],
+      "properties": { "numeroOS": { "$ref": "comum.schema.json#/$defs/NumeroOS" } }
+    },
+    "ExecucaoReservasLiberadas": {
+      "description": "execucao.reservas-liberadas — 200 de DELETE /execucao/ordens/{numeroOS}.",
+      "type": "object",
+      "required": ["numeroOS"],
+      "properties": { "numeroOS": { "$ref": "comum.schema.json#/$defs/NumeroOS" } }
+    },
+    "ExecucaoDiagnosticoConcluido": {
+      "description": "execucao.diagnostico-concluido — callback.",
+      "type": "object",
+      "required": ["numeroOS", "mecanicoId", "diagnostico", "itens"],
+      "properties": {
+        "numeroOS": { "$ref": "comum.schema.json#/$defs/NumeroOS" },
+        "mecanicoId": { "type": "string", "minLength": 1 },
+        "diagnostico": { "type": "string", "minLength": 5, "maxLength": 1000 },
+        "itens": { "type": "array", "minItems": 1, "items": { "$ref": "comum.schema.json#/$defs/Item" } }
+      }
+    },
+    "ExecucaoFinalizada": {
+      "description": "execucao.finalizada — callback.",
+      "type": "object",
+      "required": ["numeroOS", "finalizadaEm"],
+      "properties": {
+        "numeroOS": { "$ref": "comum.schema.json#/$defs/NumeroOS" },
+        "finalizadaEm": { "type": "string", "format": "date-time" }
+      }
+    },
+    "BillingOrcamentoGerado": {
+      "description": "billing.orcamento-gerado — 201 (ou 200 com o orcamento ativo ja existente) de POST /orcamentos.",
+      "type": "object",
+      "required": ["numeroOS", "orcamentoId", "total", "validoAte"],
+      "properties": {
+        "numeroOS": { "$ref": "comum.schema.json#/$defs/NumeroOS" },
+        "orcamentoId": { "type": "string", "minLength": 1 },
+        "total": { "$ref": "comum.schema.json#/$defs/Dinheiro" },
+        "validoAte": { "type": "string", "format": "date-time" }
+      }
+    },
+    "BillingCobrancaCriada": {
+      "description": "billing.cobranca-criada — 201 de POST /orcamentos/{numeroOS}/cobrar (order no Mercado Pago).",
+      "type": "object",
+      "required": ["numeroOS", "orderId", "linkPagamento", "valor"],
+      "properties": {
+        "numeroOS": { "$ref": "comum.schema.json#/$defs/NumeroOS" },
+        "orderId": { "type": "string", "minLength": 1 },
+        "linkPagamento": { "type": "string", "format": "uri" },
+        "valor": { "$ref": "comum.schema.json#/$defs/Dinheiro" }
+      }
+    },
+    "BillingOrcamentoCancelado": {
+      "description": "billing.orcamento-cancelado — 200 de DELETE /orcamentos/{numeroOS}. orcamentoId e null quando a OS foi cancelada antes de o orcamento existir (DELETE idempotente).",
+      "type": "object",
+      "required": ["numeroOS", "orcamentoId", "estornado"],
+      "properties": {
+        "numeroOS": { "$ref": "comum.schema.json#/$defs/NumeroOS" },
+        "orcamentoId": { "type": ["string", "null"] },
+        "estornado": { "type": "boolean", "description": "Sempre false no fluxo atual (mantido por compatibilidade)." }
+      }
+    },
+    "BillingOrcamentoAprovado": {
+      "description": "billing.orcamento-aprovado — callback.",
+      "type": "object",
+      "required": ["numeroOS", "orcamentoId"],
+      "properties": {
+        "numeroOS": { "$ref": "comum.schema.json#/$defs/NumeroOS" },
+        "orcamentoId": { "type": "string", "minLength": 1 }
+      }
+    },
+    "BillingOrcamentoRejeitado": {
+      "description": "billing.orcamento-rejeitado — callback.",
+      "type": "object",
+      "required": ["numeroOS", "orcamentoId"],
+      "properties": {
+        "numeroOS": { "$ref": "comum.schema.json#/$defs/NumeroOS" },
+        "orcamentoId": { "type": "string", "minLength": 1 },
+        "motivo": { "type": "string" }
+      }
+    },
+    "BillingPagamentoAprovado": {
+      "description": "billing.pagamento-aprovado — callback.",
+      "type": "object",
+      "required": ["numeroOS", "orderId", "valor"],
+      "properties": {
+        "numeroOS": { "$ref": "comum.schema.json#/$defs/NumeroOS" },
+        "orderId": { "type": "string", "minLength": 1 },
+        "valor": { "$ref": "comum.schema.json#/$defs/Dinheiro" }
+      }
+    },
+    "BillingPagamentoRecusado": {
+      "description": "billing.pagamento-recusado — callback.",
+      "type": "object",
+      "required": ["numeroOS", "orderId", "motivo"],
+      "properties": {
+        "numeroOS": { "$ref": "comum.schema.json#/$defs/NumeroOS" },
+        "orderId": { "type": "string", "minLength": 1 },
+        "motivo": { "type": "string" }
+      }
+    }
+  }
+}
