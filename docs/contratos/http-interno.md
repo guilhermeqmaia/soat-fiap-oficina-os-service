@@ -1,8 +1,9 @@
 # Comunicação HTTP entre os serviços (Fase 4, decisão de 03/11/2026)
 
 > **Status: ESTÁVEL — versão 1.0, congelada em 11/11/2026** (fechamento da US-F4-18 no OS
-> Service, FLUXO 3). Provado em execução real entre containers pelo BDD ponta a ponta
-> (`features/e2e/ciclo-completo-os.feature`, stubs validando tudo contra [`schemas/`](schemas/))
+> Service, FLUXO 3). Provado entre containers pelo BDD ponta a ponta contra stubs do
+> contrato (`features/e2e/ciclo-completo-os.feature`, stubs validando tudo contra [`schemas/`](schemas/);
+> a rodada com as imagens reais do Billing e da Execução fica para depois do merge dos FLUXOS 1 e 2)
 > e pelos testes de contrato (`npm run test:contracts`).
 >
 > **Regra de mudança a partir daqui** — só mudanças **compatíveis** sem nova versão:
