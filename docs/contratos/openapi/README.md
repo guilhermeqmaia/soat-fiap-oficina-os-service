@@ -7,7 +7,7 @@ dos testes de contrato no CI de cada serviço e a referência para quem consome 
 | Arquivo | Serviço | Repositório | Versão | Status |
 |---|---|---|---|---|
 | [`os-service.yaml`](os-service.yaml) | OS Service (`/ordens-servico`, `/clientes`, `/veiculos`, `/usuario`, `/notificacoes`, `/auth/me`, `/admin`, callback `/ordens-servico/{numero}/eventos`) | `soat-fiap-oficina-os-service` | 1.0.0 | publicado (gerado por `npm run openapi:export`) |
-| `billing-service.yaml` | Billing (`/orcamentos`, `/pagamentos`, `/webhooks/mercadopago`) | `soat-fiap-oficina-billing-service` | — | *a publicar* (a branch `feat/fluxo-2-billing` já gera `openapi.yaml` na raiz do repo) |
+| [`billing-service.yaml`](billing-service.yaml) | Billing (`/orcamentos`, `/pagamentos`, `/webhooks/mercadopago`) | `soat-fiap-oficina-billing-service` | 0.1.0 | publicado (cópia do `openapi.yaml` gerado no repo do Billing por `npm run openapi:export`) |
 | `execucao-service.yaml` | Execução (`/execucao`, `/catalogo`, `/estoque`) | `soat-fiap-oficina-execucao-service` | — | *a publicar* |
 
 ## De onde vem cada parte
