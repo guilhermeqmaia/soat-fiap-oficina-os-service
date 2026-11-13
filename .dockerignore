@@ -16,3 +16,7 @@ docker-compose.yml
 .idea
 **/*.spec.ts
 web
+# Stubs do ambiente ponta a ponta (e2e/stubs): dependencias e build ficam fora do contexto
+**/node_modules
+e2e/stubs/dist
+reports

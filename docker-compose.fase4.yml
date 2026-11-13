@@ -1,0 +1,181 @@
+# FLUXO 3 — ambiente ponta a ponta da Fase 4 (US-F4-14 / US-F4-18), SEM LocalStack.
+#
+#   npm run e2e:up        sobe tudo e espera os healthchecks
+#   npm run test:bdd:e2e  Cucumber (features/e2e) contra este compose, por HTTP
+#   npm run e2e:down      derruba e apaga os volumes
+#
+# Comunicacao entre servicos por HTTP direto (RFC-0008, docs/contratos/http-interno.md),
+# pelo DNS interno do compose: os-service:3000, billing-service:3001, execucao-service:3002.
+#
+# Billing e Execucao sao STUBS por padrao (e2e/stubs: seguem o contrato e validam contra
+# docs/contratos/schemas). Imagens reais, quando existirem:
+#   BILLING_IMAGE=ghcr.io/.../billing-service:sha  EXECUCAO_IMAGE=ghcr.io/.../execucao-service:sha \
+#     docker compose -f docker-compose.fase4.yml --profile reais up -d --wait
+# O profile `reais` sobe o Postgres do Billing e o DynamoDB Local que elas precisam.
+# Os cenarios @stub do BDD (que usam /__stub/*) nao se aplicam as imagens reais.
+#
+# Mercado Pago: nao ha mock. O stub do Billing devolve um link falso
+# (LINK_PAGAMENTO_BASE) e o pagamento e simulado em POST /__stub/pagamentos/{n}. Ponto de
+# troca com o Billing real: MERCADO_PAGO_BASE_URL apontando para um mock (ex.: WireMock) e
+# o webhook order.processed disparado contra POST /webhooks/mercadopago.
+
+name: oficina-fase4
+
+x-jwt: &jwt
+  # O MESMO segredo nos tres servicos (e no Cucumber, que emite tokens com o kit).
+  JWT_SECRET: '${JWT_SECRET:-e2e-fase4-jwt-secret-0123456789abcdef-local}'
+
+x-urls: &urls
+  OS_SERVICE_URL: http://os-service:3000
+  BILLING_SERVICE_URL: http://billing-service:3001
+  EXECUCAO_SERVICE_URL: http://execucao-service:3002
+
+services:
+  # ---------------------------------------------------------------- OS Service
+  postgres-os:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: oficina_os
+    volumes:
+      - pg-os:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d oficina_os']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  os-service:
+    build: .
+    image: oficina-os-service:e2e
+    ports:
+      - '${OS_PORT:-3000}:3000'
+    environment:
+      <<: [*jwt, *urls]
+      NODE_ENV: development
+      PORT: '3000'
+      DATABASE_URL: postgresql://postgres:postgres@postgres-os:5432/oficina_os?schema=public
+      LOG_LEVEL: info
+      # O BDD faz dezenas de chamadas por segundo.
+      THROTTLER_DISABLED: 'true'
+      DD_SERVICE: os-service
+      DD_TRACE_ENABLED: 'false'
+      HTTP_INTERNO_TIMEOUT_MS: '5000'
+      HTTP_INTERNO_TENTATIVAS: '3'
+      # Relogio da saga (timeouts + gauge oficina_os_sagas_paradas) a cada 10 s na demo (padrao 60 s).
+      SAGA_TIMEOUTS_INTERVALO_MS: '10000'
+      # E-mails de verdade (SMTP) caem no Mailpit: http://localhost:8025
+      NOTIFICATION_PROVIDER: email
+      SMTP_HOST: mailpit
+      SMTP_PORT: '1025'
+      SMTP_SECURE: 'false'
+      SMTP_USER: oficina
+      SMTP_PASS: oficina
+      EMAIL_FROM: Oficina Mecanica <nao-responda@oficina.local>
+      PUBLIC_BASE_URL: http://localhost:${OS_PORT:-3000}
+    depends_on:
+      postgres-os:
+        condition: service_healthy
+      mailpit:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:3000/health || exit 1']
+      interval: 3s
+      timeout: 3s
+      start_period: 60s
+      retries: 30
+
+  # ---------------------------------------------------------------- participantes
+  # Constroi a imagem dos stubs uma vez (os dois containers abaixo usam a mesma).
+  participantes-stub-build:
+    build:
+      context: .
+      dockerfile: e2e/stubs/Dockerfile
+    image: oficina-participantes-stub:e2e
+    command: ['node', '-e', 'process.exit(0)']
+    restart: 'no'
+
+  billing-service:
+    image: ${BILLING_IMAGE:-oficina-participantes-stub:e2e}
+    ports:
+      - '${BILLING_PORT:-3001}:3001'
+    environment:
+      <<: [*jwt, *urls]
+      PORT: '3001'
+      STUB_PAPEL: billing
+      LOG_LEVEL: info
+      LINK_PAGAMENTO_BASE: https://mp.test/pay
+      # Usadas so pela imagem real (profile `reais`); o stub ignora.
+      DATABASE_URL: postgresql://postgres:postgres@postgres-billing:5432/oficina_billing?schema=public
+      MERCADO_PAGO_BASE_URL: '${MERCADO_PAGO_BASE_URL:-}'
+    depends_on:
+      participantes-stub-build:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:3001/health || exit 1']
+      interval: 3s
+      timeout: 3s
+      start_period: 30s
+      retries: 20
+
+  execucao-service:
+    image: ${EXECUCAO_IMAGE:-oficina-participantes-stub:e2e}
+    ports:
+      - '${EXECUCAO_PORT:-3002}:3002'
+    environment:
+      <<: [*jwt, *urls]
+      PORT: '3002'
+      STUB_PAPEL: execucao
+      LOG_LEVEL: info
+      # Usadas so pela imagem real (profile `reais`); o stub ignora.
+      DYNAMODB_ENDPOINT: http://dynamodb-local:8000
+      DYNAMODB_TABLE: oficina-execucao
+      AWS_REGION: us-east-1
+    depends_on:
+      participantes-stub-build:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:3002/health || exit 1']
+      interval: 3s
+      timeout: 3s
+      start_period: 30s
+      retries: 20
+
+  # ---------------------------------------------------------------- e-mail
+  mailpit:
+    image: axllent/mailpit:v1.27
+    ports:
+      - '${MAILPIT_UI_PORT:-8025}:8025'
+      - '${MAILPIT_SMTP_PORT:-1025}:1025'
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: '1'
+      MP_SMTP_AUTH_ALLOW_INSECURE: '1'
+      MP_MAX_MESSAGES: '5000'
+    healthcheck:
+      test: ['CMD', '/mailpit', 'readyz']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # ---------------------------------------------------------------- so com imagens reais
+  postgres-billing:
+    profiles: ['reais']
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: oficina_billing
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d oficina_billing']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  dynamodb-local:
+    profiles: ['reais']
+    image: amazon/dynamodb-local:2.5.4
+    command: ['-jar', 'DynamoDBLocal.jar', '-inMemory', '-sharedDb']
+
+volumes:
+  pg-os:

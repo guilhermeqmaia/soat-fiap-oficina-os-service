@@ -33,7 +33,10 @@ export class MundoOS extends World {
   veiculo?: { id: string; placa: string };
   os?: OrdemAberta;
   ultimaResposta?: RespostaHttp;
-  ultimoCallback?: { servico: ServicoCallback; envelope: ReturnType<typeof criarEnvelopeHttp> };
+  /** Texto do GET /metrics no inicio do cenario (perfil e2e). */
+  metricasAntes?: string;
+  /** `envelope` so existe quando o callback saiu do proprio teste (perfil default). */
+  ultimoCallback?: { servico: ServicoCallback; envelope?: ReturnType<typeof criarEnvelopeHttp> };
 
   constructor(options: IWorldOptions) {
     super(options);
@@ -89,6 +92,13 @@ export class MundoOS extends World {
 
   /** `POST /ordens-servico/{numero}/eventos` com JWT de SERVICO do participante. */
   async enviarCallback(servico: ServicoCallback, type: string, extras: Record<string, unknown> = {}): Promise<RespostaHttp> {
+    const acionador = contexto().acionadorCallbacks;
+    if (acionador) {
+      // ponta a ponta: a acao acontece no participante, que envia o callback
+      this.ultimoCallback = { servico };
+      this.ultimaResposta = await acionador.enviar(this, servico, type, { ...this.dadosPadraoDoCallback(type), ...extras });
+      return this.ultimaResposta;
+    }
     const { producer } = PRODUCER[servico];
     const envelope = criarEnvelopeHttp({ type, producer, data: { numeroOS: this.ordem.numero, ...this.dadosPadraoDoCallback(type), ...extras } });
     this.ultimoCallback = { servico, envelope };
@@ -98,7 +108,12 @@ export class MundoOS extends World {
   /** Reenvia o ultimo envelope com o MESMO `id` (entrega duplicada). */
   async reenviarUltimoCallback(): Promise<RespostaHttp> {
     if (!this.ultimoCallback) throw new Error('Nenhum callback enviado ainda neste cenario.');
-    return this.postarEnvelope(this.ultimoCallback.servico, this.ultimoCallback.envelope);
+    const acionador = contexto().acionadorCallbacks;
+    if (acionador) {
+      this.ultimaResposta = await acionador.reenviar(this, this.ultimoCallback.servico);
+      return this.ultimaResposta;
+    }
+    return this.postarEnvelope(this.ultimoCallback.servico, this.ultimoCallback.envelope!);
   }
 
   private async postarEnvelope(servico: ServicoCallback, envelope: object): Promise<RespostaHttp> {

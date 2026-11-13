@@ -1,6 +1,6 @@
 # FLUXO 3 — evidências que dependem de ambiente real (US-F4-16)
 
-Atualizado em 10/11/2026, branch `feat/f4-16-observabilidade-os-service` (os-service) e
+Atualizado em 11/11/2026 (seção "provado localmente", US-F4-14); itens de ambiente real de 10/11/2026, branch `feat/f4-16-observabilidade-os-service` (os-service) e
 `feat/f4-16-observabilidade-fluxo-distribuido` (infra-k8s). O que está aqui **não** dá para
 provar com teste automatizado: precisa dos três serviços no ar com o Datadog. Cada item diz o
 pré-requisito, como produzir a evidência e onde guardar o print.
@@ -17,6 +17,33 @@ Destino dos prints: `docs/qa-plans/evidencias/US-F4-16-<item>-<data>.png`, refer
 | `traceparent` recebido no callback continua o trace nos logs (sem APM) | e2e "traceparent recebido continua o trace": linhas `callback recebido` e `saga avancou` saem com `trace_id` = trace id do header e `correlation_id` = OS |
 | Com APM, a chamada de saída leva `traceparent` com o **mesmo** trace id do span ativo | unit `http-participantes-saga.spec.ts` › "continuidade do trace (APM ativo)" — tracer simulado no `tracer-bridge` do kit |
 | Logs com `trace_id`, `correlation_id`, `servico`, `rota`, `tentativa` | unit do gateway, do orquestrador e do callback (asserções nos campos) |
+
+## O que passou a ficar provado localmente (US-F4-14, 11/11/2026)
+
+Ambiente ponta a ponta `docker-compose.fase4.yml` (os-service real + Postgres, Billing e Execução
+como stubs de `e2e/stubs` que seguem o `http-interno.md` e validam tudo contra
+`docs/contratos/schemas`, Mailpit). Provado pelo BDD `features/e2e/ciclo-completo-os.feature`
+(`npm run test:bdd:e2e`, 12 cenários verdes) e pelo roteiro
+[`teste-manual-ponta-a-ponta.md`](teste-manual-ponta-a-ponta.md) (saídas reais coladas):
+
+| Item | Como foi provado (sem Datadog) |
+|---|---|
+| Ciclo completo por HTTP entre containers (DNS interno `os-service:3000`, `billing-service:3001`, `execucao-service:3002`), do `POST /ordens-servico` ao `ENTREGUE` | BDD "Caminho feliz…"; roteiro §3 |
+| Callbacks enviados pelo participante com o `ClienteHttpInterno` do kit (JWT `SERVICO` do produtor, `x-correlation-id`) aceitos pelo OS; JWT `SERVICO` do OS aceito pelos participantes com o mesmo `JWT_SECRET` | BDD (step "recebeu a chamada … com o JWT de serviço do OS Service"); roteiro §3.1 (`sub=os-service`) |
+| Requisições do OS (corpo dos 6 comandos), respostas dos participantes e envelopes dos callbacks conferem com os JSON Schemas, em execução real | `GET /__stub/violacoes` vazio no fim de cada cenário (o `After` do BDD reprova se houver); roteiro §9 |
+| Compensações chegando nos participantes com `{ motivo }` (rejeição e cancelamento em `EM_DIAGNOSTICO`/`AGUARDANDO_APROVACAO`); cancelar em `EM_EXECUCAO`/`AGUARDANDO_PAGAMENTO` recusado | BDD `@compensacao`/`@cancelamento`; roteiro §4, §5, §6 |
+| Pagamento recusado sem rollback; `reprocessar` gera nova cobrança com novo link e novo e-mail | BDD `@pagamento`; roteiro §5 |
+| Retry real (200/800 ms) contra um container: 5xx transitório absorvido; 3 × 5xx → `chamada-falhou` + `oficina_http_interno_total{resultado="esgotado"}` + `oficina_os_sagas_paradas` = 1 → `reprocessar` → segue e o gauge volta a 0 | BDD `@falha-plataforma` (3 cenários); roteiro §7 |
+| Idempotência: callback reenviado com o mesmo `id` → `duplicado`, sem segundo orçamento/notificação/e-mail; `POST /execucao/ordens` repetido devolve a mesma posição | BDD `@idempotencia` (3 cenários); roteiro §8 |
+| E-mails reais via SMTP (Mailpit) em cada marco, com o link de pagamento do Billing no corpo; `GET /notificacoes` com canal `EMAIL` | BDD (steps de Mailpit e "histórico de notificações"); roteiro §3.7 |
+| `oficina_callbacks_total` e `oficina_http_interno_total` aumentando exatamente o esperado por cenário | BDD (step "as métricas do OS Service aumentaram", diferença antes/depois do `/metrics`); roteiro §3.7 |
+| Logs JSON dos três containers com o mesmo `correlation_id` (= número da OS) | roteiro §3.7 (`docker compose logs` filtrado pela OS) |
+
+Continua **pendente** (precisa dos serviços reais e/ou do Datadog): itens 1–4 abaixo, e rodar o
+mesmo BDD com `BILLING_IMAGE`/`EXECUCAO_IMAGE` reais (`BDD_E2E_REAIS=1`, sem os cenários `@stub`)
+quando o Billing mesclar `feat/fluxo-2-billing` e a Execução tiver os endpoints de domínio.
+Localmente, sem APM, o `traceparent` **não** é enviado (o kit só o gera com tracer ativo) — a
+correlação provada é pelo `x-correlation-id`.
 
 O que **não** está provado: que o `dd-trace` real cria o span `http.client` filho do caso de uso, que
 o servidor do participante continua o trace e que o Datadog junta tudo num único trace. Isso é o item 1.

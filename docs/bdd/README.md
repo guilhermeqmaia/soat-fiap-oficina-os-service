@@ -9,7 +9,7 @@ Há dois níveis:
 | Nível | Perfil | Comando | O que sobe | Onde ficam os `.feature` |
 |---|---|---|---|---|
 | Serviço | `default` | `npm run test:bdd` | Nest em memória + Postgres (Testcontainers) + **stubs HTTP** no lugar dos outros serviços | `features/` |
-| Ponta a ponta | `e2e` | `npm run test:bdd:e2e` | nada: aponta para os 3 serviços reais do `docker-compose.fase4.yml` do hub | `e2e/features/` (ainda vazio) |
+| Ponta a ponta | `e2e` | `npm run test:bdd:e2e` | nada: aponta para o `docker-compose.fase4.yml` (`npm run e2e:up`); Billing/Execução = stubs de `e2e/stubs` ou imagens reais | `features/e2e/` |
 
 Relatórios: `reports/cucumber/os-service.html` e `.json` (perfil `e2e`: `e2e.html`/`e2e.json`).
 A pasta `reports/` não vai para o git.
@@ -21,9 +21,11 @@ cucumber.js                         # perfis default e e2e, formatters, ts-node
 features/
 ├── tsconfig.json                   # estende o tsconfig da raiz (rootDir "..", sem tipos do jest)
 ├── ordem-de-servico.feature        # fluxo da OS orquestrado pela saga
+├── e2e/ciclo-completo-os.feature   # perfil e2e: ciclo completo contra o docker-compose.fase4.yml
 ├── step-definitions/
 │   ├── ordem-de-servico.steps.ts   # Dado/Quando/Então do domínio: OS, saga, callback, notificação
-│   └── participantes.steps.ts      # programar e consultar os stubs ("o serviço X responde 503 em ...")
+│   ├── participantes.steps.ts      # programar e consultar os stubs ("o serviço X responde 503 em ...")
+│   └── e2e/ciclo-completo.steps.ts # só e2e: ações das pessoas, estado nos participantes, Mailpit, /metrics
 └── support/
     ├── env.ts                      # variáveis de ambiente de teste (importado antes do AppModule)
     ├── contexto.ts                 # estado da execução: cliente HTTP, stubs, mecanicoId
@@ -35,8 +37,10 @@ features/
     ├── stub-http.ts                # stub HTTP genérico (node:http) com rotas no formato do contrato
     ├── participantes-stub.ts       # rotas da Execução e do Billing que o OS Service consome
     ├── servico/app.hooks.ts        # perfil default: sobe stubs + Postgres + Nest (BeforeAll)
-    └── e2e/e2e.hooks.ts            # perfil e2e: só espera o /health do serviço real
-e2e/features/                       # .feature ponta a ponta (hub) — próxima etapa
+    └── e2e/                        # perfil e2e: 00-env (segredo/URLs do compose), hooks (health,
+                                    # mecânico, violações de contrato), participante-remoto (/__stub/*),
+                                    # ambiente (ações que geram callbacks, Mailpit, parser do /metrics)
+e2e/stubs/                          # stubs do Billing e da Execução usados pelo docker-compose.fase4.yml
 ```
 
 ### Como o nível de serviço funciona
@@ -156,9 +160,18 @@ No `.gitignore`: `reports/`.
 - **OS Service (este repo):** `ordem-de-servico.feature` hoje; a story também lista `abrir-os.feature`
   e `entrega.feature`, que podem ser extraídos dele quando os fluxos crescerem.
 
-### 4. Ponta a ponta (hub, próxima etapa)
+### 4. Ponta a ponta (hub)
 
-`e2e/features/ordem-de-servico-completa.feature` roda com `npm run test:bdd:e2e` contra o
-`docker-compose.fase4.yml` (3 serviços, 2 Postgres, DynamoDB Local, mock do MP, Lambda local).
-Ele reaproveita `features/support/*.ts` e os steps de domínio; os steps de stub não se aplicam
-(lá a Execução e o Billing são reais), e as verificações passam a ser feitas pela API de cada serviço.
+`features/e2e/ciclo-completo-os.feature` roda com `npm run test:bdd:e2e` contra o
+`docker-compose.fase4.yml` (`npm run e2e:up` / `npm run e2e:down`), só por HTTP. Reaproveita
+`features/support/*.ts` e **todos** os steps de domínio e de participante:
+
+- os callbacks saem do participante, disparados pela ação da pessoa no serviço dela
+  (`POST /execucao/ordens/{n}/diagnostico`, `POST /orcamentos/{n}/aprovar`...): o `MundoOS`
+  delega ao `acionadorCallbacks` do contexto (`features/support/e2e/ambiente.ts`);
+- os steps de stub ("o serviço X recebeu N chamadas em ...", "está fora do ar em ...") funcionam
+  contra os containers de `e2e/stubs` via `/__stub/*` (`participante-remoto.ts`);
+- o `After` reprova o cenário se os stubs registraram alguma divergência de contrato.
+
+Com as imagens reais (`BILLING_IMAGE`/`EXECUCAO_IMAGE`), `BDD_E2E_REAIS=1` pula os cenários `@stub`.
+Roteiro manual equivalente, com saídas reais: [`docs/fluxo-3/teste-manual-ponta-a-ponta.md`](../fluxo-3/teste-manual-ponta-a-ponta.md).
