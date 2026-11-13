@@ -60,7 +60,7 @@ flowchart TB
             VPCE["VPC Gateway Endpoint<br/>DynamoDB (política por tabela)"]
         end
 
-        DYNAMO[("DynamoDB<br/>tabela única da Execução<br/>PK/SK + GSI1 + GSI2")]
+        DYNAMO[("DynamoDB · 4 tabelas oficina-*<br/>execucoes · servicos · produtos<br/>movimentacoes_estoque")]
     end
 
     ADMIN & CLI -- "Bearer JWT" --> GW
@@ -94,7 +94,7 @@ Datadog** no cluster recolhe traces, logs e métricas dos três serviços.
 |---|---|---|---|
 | OS Service | `soat-fiap-oficina-os-service` (este, hub de docs) | RDS próprio, Postgres `oficina_mecanica` | clientes, veículos, OS com snapshot dos itens, `saga_os`, `processed_messages`, notificações, usuários |
 | Billing Service | `soat-fiap-oficina-billing-service` | RDS próprio, Postgres `oficina_billing` | orçamentos e itens, aprovação/rejeição, cobranças (order do Mercado Pago), eventos de webhook |
-| Execução Service | `soat-fiap-oficina-execucao-service` | DynamoDB (tabela única, via VPC Endpoint) | fila de execução, diagnóstico, catálogo de serviços/produtos, reservas e movimentos de estoque |
+| Execução Service | `soat-fiap-oficina-execucao-service` | DynamoDB (4 tabelas `oficina-*`, via VPC Endpoint) | fila de execução e diagnóstico (`execucoes`), catálogo (`servicos`, `produtos` com saldo), auditoria de estoque (`movimentacoes_estoque`) |
 
 ---
 
@@ -132,12 +132,12 @@ flowchart TB
             RDSBI[("RDS do Billing<br/>Multi-AZ · oficina_billing")]
         end
 
-        VPCE["VPC Gateway Endpoint · DynamoDB<br/>nas route tables privadas · política só para a tabela oficina-execucao"]
+        VPCE["VPC Gateway Endpoint · DynamoDB<br/>nas route tables privadas · política só para as tabelas oficina-*"]
 
         CP["EKS control plane (gerenciado pela AWS)<br/>endpoint público + privado"]
     end
 
-    DYN[("DynamoDB<br/>tabela oficina-execucao")]
+    DYN[("DynamoDB<br/>tabelas oficina-*")]
     subgraph REG["Serviços regionais (endpoints públicos, via NAT)"]
         ECR["ECR"]
         SM["Secrets Manager · SSM"]
@@ -161,7 +161,7 @@ flowchart TB
 Regras de segurança que importam:
 
 - **RDS**: uma instância por serviço (ADR-0014), cada uma com o próprio security group aceitando 5432 só dos nodes (e da Lambda, no caso do OS), nunca da internet (`publicly_accessible = false`). O segredo de cada serviço só contém o próprio host.
-- **DynamoDB** só é alcançado pelo VPC Gateway Endpoint, cuja política permite apenas a tabela `oficina-execucao` e seus índices; o tráfego nunca sai para a internet.
+- **DynamoDB** só é alcançado pelo VPC Gateway Endpoint, cuja política permite apenas as tabelas da Execução (prefixo `oficina-*`) e seus índices; o tráfego nunca sai para a internet.
 - **NLB** é `internal = true`; o target group aponta para os **nodes** (NodePort), por isso não precisa de AWS Load Balancer Controller.
 - **VPC Link** tem SG próprio com saída apenas para o NLB/nodes.
 - A **Lambda** fica na VPC para chegar ao RDS; sai para o Secrets Manager pelo NAT.
@@ -190,7 +190,7 @@ flowchart LR
     MP["Mercado Pago<br/>Checkout Pro"]
 
     OS["<b>OS Service</b> · orquestrador da saga · Postgres<br/><br/>RECEBIDA → EM_DIAGNOSTICO → AGUARDANDO_APROVACAO<br/>→ EM_EXECUCAO → AGUARDANDO_PAGAMENTO<br/>→ FINALIZADA → ENTREGUE"]
-    EX["<b>Execução Service</b> · DynamoDB<br/><br/>fila · diagnóstico · reserva e baixa<br/>de estoque · catálogo · finalização"]
+    EX["<b>Execução Service</b> · DynamoDB<br/><br/>fila · diagnóstico com baixa<br/>de estoque · catálogo · finalização"]
     BI["<b>Billing Service</b> · Postgres<br/><br/>orçamento · aprovação/rejeição<br/>· cobrança · webhook de pagamento"]
 
     AT -- "⓪ abre a OS · ⑩ entrega" --> OS
@@ -260,8 +260,8 @@ sequenceDiagram
     EX-->>OS: 201 { posicaoFila } ≙ execucao.enfileirada
     OS->>OS: EM_DIAGNOSTICO · AGUARDAR_DIAGNOSTICO
 
-    ME->>GW: POST /execucao/ordens/{n}/diagnostico (itens, reserva estoque)
-    GW->>EX: grava diagnóstico + reservas (DynamoDB)
+    ME->>GW: POST /execucao/ordens/{n}/diagnostico (itens · baixa o estoque)
+    GW->>EX: grava diagnóstico + baixa das peças (TransactWriteItems)
     EX-->>OS: callback execucao.diagnostico-concluido
     OS->>OS: snapshot dos itens · GERAR_ORCAMENTO
     OS->>BI: POST /orcamentos { itens }
@@ -272,7 +272,7 @@ sequenceDiagram
     GW->>BI: marca aprovado
     BI-->>OS: callback billing.orcamento-aprovado
     OS->>EX: POST /execucao/ordens/{n}/iniciar
-    EX-->>OS: 200 ≙ execucao.iniciada (baixa efetiva do estoque)
+    EX-->>OS: 200 ≙ execucao.iniciada (só status · peças já baixadas)
     OS->>OS: EM_EXECUCAO · AGUARDAR_FINALIZACAO
 
     ME->>GW: POST /execucao/ordens/{n}/finalizar
@@ -317,7 +317,7 @@ sequenceDiagram
     OS->>OS: saga COMPENSANDO (OS ainda AGUARDANDO_APROVACAO)
     par compensações
         OS->>EX: DELETE /execucao/ordens/{n} { motivo }
-        EX-->>OS: 200 ≙ execucao.reservas-liberadas (tira da fila, devolve reservas)
+        EX-->>OS: 200 ≙ execucao.reservas-liberadas (tira da fila, devolve as peças baixadas)
     and
         OS->>BI: DELETE /orcamentos/{n} { motivo }
         BI-->>OS: 200 ≙ billing.orcamento-cancelado
@@ -356,7 +356,7 @@ sequenceDiagram
 |---|---|---|
 | JWT de serviço (`role: SERVICO`, 50 min em cache) | kit `@guilhermeqmaia/oficina-kit/http` | só serviços chamam endpoints internos e o callback |
 | Retry 3x com backoff (200/800/3000 ms) só em 5xx, timeout e erro de rede; timeout 5 s | kit `/http` | `409` de negócio vira evento de falha, nunca é repetido |
-| Idempotência por `numeroOS` (serviços) e por `id` do envelope (OS) | Billing, Execução, `processed_messages` no OS | reentrega não duplica orçamento, reserva ou transição |
+| Idempotência por `numeroOS` (serviços) e por `id` do envelope (OS) | Billing, Execução, `processed_messages` no OS | reentrega não duplica orçamento, baixa/devolução de estoque ou transição |
 | Lock otimista (`version`) + retry em `ConcurrentModificationError` | OS Service | callback e resposta síncrona concorrentes não perdem transição |
 | `x-correlation-id` + `traceparent` propagados | kit `/http` + Datadog APM | uma OS é um trace só atravessando os três serviços |
 
@@ -427,7 +427,7 @@ flowchart LR
 | Três serviços e o que ficou em cada um | [RFC-0004](rfcs/) |
 | Saga orquestrada no OS Service | [RFC-0005](rfcs/), [US-F4-10](../user-stories/f4-10-saga-orquestrada.md), [US-F4-11](../user-stories/f4-11-compensacoes-rollback.md) |
 | HTTP direto + callbacks no lugar de SNS/SQS | [RFC-0008](rfcs/RFC-0008-comunicacao-http-entre-servicos.md), [`http-interno.md`](../contratos/http-interno.md) |
-| DynamoDB tabela única na Execução | [RFC-0007](rfcs/) |
+| DynamoDB na Execução (4 tabelas desde 09/11) | [RFC-0007](rfcs/RFC-0007-banco-nosql.md) |
 | Kit compartilhado e cliente HTTP interno | [ADR-0010](adr/) |
 | Mercado Pago via API de Orders, cobrança após a execução | [ADR-0012](adr/ADR-0012-pagamento-mercado-pago.md) |
 | Gateway único com NLB e um listener por serviço | [ADR-0013](adr/) |

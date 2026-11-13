@@ -1,6 +1,6 @@
 # RFC-0007: Banco NoSQL para o Execução Service
 
-**Status:** Aceita
+**Status:** Aceita (revisada em 2026-11-09: uma tabela por agregado, ver o fim do documento)
 **Data:** 2026-09-30
 **Autores:** Time SOAT
 **Stories relacionadas:** [US-F4-03](../../user-stories/f4-03-bancos-por-servico.md), [US-F4-07](../../user-stories/f4-07-execucao-service.md)
@@ -57,9 +57,27 @@ de pagamentos em **DynamoDB** (uma linha por entidade, ~1 KB).
 
 GSIs: `GSI1` (status da fila → OS), `GSI2` (mecânico → OS). PITR ligado; Streams `NEW_AND_OLD_IMAGES`.
 
+## Revisão de 09/11/2026 — uma tabela por agregado
+
+A implementação do Execução Service (PR #5 do repositório `soat-fiap-oficina-execucao-service`,
+infra em `soat-fiap-oficina-infra-db` #12) trocou a single-table por **quatro tabelas** com
+prefixo `oficina-`: `execucoes` (1 item por OS, serviços e peças embutidos, lock otimista por
+`versao`), `servicos`, `produtos` (saldo com update condicional) e `movimentacoes_estoque`
+(auditoria, GSIs `produtoId-data-index` e `osId-data-index`). A decisão pela Opção A (DynamoDB)
+permanece; muda só a modelagem:
+
+- Sem outbox nem dedup de fila (RFC-0008), os itens `MSG#` e os Streams deixaram de ter uso; a
+  única transação que importa (baixa de estoque + auditoria) é um `TransactWriteItems` entre
+  `produtos` e `movimentacoes_estoque`, que funciona igual entre tabelas.
+- Uma tabela por agregado é mais fácil de ler no console e de explicar na entrega; o custo é
+  o mesmo (`PAY_PER_REQUEST`).
+- A política do VPC Gateway Endpoint ([ADR-0014](../adr/ADR-0014-instancia-rds-por-servico-e-endpoint-dynamodb.md))
+  passa a liberar o prefixo `oficina-*` (infra-k8s #36).
+- Pendência: GSIs em `execucoes` por status e por `veiculoId` (hoje `Scan`).
+
 ## Consequências
 
 - O Execução Service **não usa Prisma**; usa o SDK v3 (`@aws-sdk/lib-dynamodb`) com repositórios por agregado.
 - O estoque migra do Postgres (Fase 2) para DynamoDB — seeds recriados; não há dados de produção a migrar.
-- O kit fornece o adaptador de outbox via Streams e o de deduplicação ([ADR-0009](../adr/ADR-0009-outbox-e-consumidor-idempotente.md)).
+- ~~O kit fornece o adaptador de outbox via Streams e o de deduplicação ([ADR-0009](../adr/ADR-0009-outbox-e-consumidor-idempotente.md)).~~ Sem outbox desde a RFC-0008 (HTTP direto); a idempotência fica no item de `execucoes` (`versao`, `estoqueBaixado`).
 - Justificativa "SQL + NoSQL" para o PDF: Postgres onde há dinheiro e relações (OS, Billing); DynamoDB onde há documentos com timeline e escrita por chave (Execução).
