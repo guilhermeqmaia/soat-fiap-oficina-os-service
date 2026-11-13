@@ -1,10 +1,18 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { DOMAIN_EVENT_PUBLISHER, DomainEventPublisher } from '@guilhermeqmaia/oficina-kit/core';
 import { OrdemDeServico } from '../../domain/ordem-de-servico.entity';
 import { OrdemDeServicoNotFoundError } from '../../domain/errors/ordem-de-servico-not-found.error';
 import { InvalidStatusTransitionError } from '../../domain/errors/invalid-status-transition.error';
 import { ConcurrentModificationError } from '../../domain/errors/concurrent-modification.error';
 import { ORDEM_DE_SERVICO_GATEWAY, OrdemDeServicoGateway } from '../../application/gateways/ordem-de-servico.gateway';
 import { UNIT_OF_WORK, UnitOfWork } from '../../application/ports/unit-of-work';
+import { EventosDaTransacao } from '../../application/eventos-da-transacao';
+import {
+  DadosMarcoOS,
+  MarcoOrdemDeServicoEvent,
+  TIPOS_MARCO_BILLING,
+  TipoMarcoOS,
+} from '../../../shared/domain/events/marco-ordem-de-servico.event';
 import {
   RegistrarCancelamentoUseCase,
   RegistrarDiagnosticoUseCase,
@@ -35,6 +43,19 @@ export function prazosDoAmbiente(env: NodeJS.ProcessEnv = process.env): Prazos {
 
 const TENTATIVAS_CONFLITO = 3;
 
+/**
+ * Id do fato para a deduplicacao das notificacoes (US-F4-12): o `id` do envelope
+ * quando o fato veio por callback; para respostas sincronas (sem envelope), um id
+ * deterministico com o recurso criado pelo participante (`orderId` de cada
+ * cobranca, `orcamentoId`) — um retry da mesma resposta gera o mesmo id, uma
+ * cobranca nova (outro `orderId`) gera outro.
+ */
+export function idDoFato(evento: EventoSaga, numero: string): string {
+  if (evento.id) return evento.id;
+  const recurso = evento.data.orderId ?? evento.data.orcamentoId ?? evento.data.pagamentoId;
+  return [evento.type, numero, recurso].filter((p) => p !== undefined && p !== null && p !== '').join(':');
+}
+
 /** Saga gravada + comandos decididos nessa transacao (a executar depois do commit). */
 export interface SagaComComandos {
   saga: SagaOS;
@@ -58,6 +79,13 @@ export interface ResultadoEvento {
  * nada. Conflito de lock otimista e refeito em processo ate 3 vezes; depois o
  * erro sobe (409 no HTTP — quem chamou o callback repete).
  *
+ * Eventos de dominio (notificacao, auditoria, metricas) tambem so saem DEPOIS
+ * do commit: cada tentativa acumula os seus num `EventosDaTransacao`, que e
+ * descartado se a transacao reverter (conflito de versao -> retry) e
+ * descarregado no publisher quando ela commita. Quando a saga aceita um fato
+ * `billing.*` que interessa ao cliente, o orquestrador gera o
+ * `MarcoOrdemDeServicoEvent` correspondente (US-F4-12).
+ *
  * Os comandos decididos pela saga sao executados DEPOIS do commit, por HTTP
  * (`ParticipantesSagaGateway`): a resposta sincrona de cada chamada vira o
  * evento correspondente e e reinjetada em `processar` — nova transacao, sem
@@ -80,6 +108,7 @@ export class OrquestradorSagaService {
     private readonly execucaoFinalizada: RegistrarExecucaoFinalizadaUseCase,
     private readonly pagamentoAprovado: RegistrarPagamentoAprovadoUseCase,
     private readonly cancelamento: RegistrarCancelamentoUseCase,
+    @Inject(DOMAIN_EVENT_PUBLISHER) private readonly events: DomainEventPublisher,
   ) {}
 
   /**
@@ -163,7 +192,11 @@ export class OrquestradorSagaService {
   ): Promise<SagaComComandos & { aplicado: boolean; motivo?: string }> {
     for (let tentativa = 1; ; tentativa++) {
       try {
-        return await this.uow.executar((tx) => this.processarNaTransacao(evento, agora, tx));
+        // Coletor novo por tentativa: o de uma tentativa revertida e descartado sem publicar nada.
+        const eventos = new EventosDaTransacao();
+        const resultado = await this.uow.executar((tx) => this.processarNaTransacao(evento, agora, tx, eventos));
+        eventos.descarregarEm(this.events); // commit bem-sucedido -> listeners
+        return resultado;
       } catch (e) {
         if (e instanceof ConcurrentModificationError && tentativa < TENTATIVAS_CONFLITO) {
           this.logger.warn({ msg: 'conflito de versao — refazendo', numeroOS: evento.data.numeroOS, type: evento.type, tentativa });
@@ -178,6 +211,7 @@ export class OrquestradorSagaService {
     evento: EventoSaga,
     agora: Date,
     tx: unknown,
+    eventos: EventosDaTransacao,
   ): Promise<SagaComComandos & { aplicado: boolean; motivo?: string }> {
     const numero = String(evento.data.numeroOS ?? '');
     let saga = await this.sagas.findByNumero(numero, tx);
@@ -206,7 +240,10 @@ export class OrquestradorSagaService {
       return { saga: await this.sagas.save(saga, tx), comandos: comandosDaAdocao, aplicado: false, motivo: resultado.motivo };
     }
 
-    if (resultado.transicaoOS) await this.transicionar(numero, resultado.transicaoOS, evento, tx);
+    // Fato do Billing aceito pela saga -> marco para a notificacao (antes da transicao: "pagamento
+    // aprovado" vem antes de "OS finalizada"). Duplicado/fora de ordem ja saiu acima, sem marco.
+    await this.registrarMarcoDoBilling(numero, evento, tx, eventos);
+    if (resultado.transicaoOS) await this.transicionar(numero, resultado.transicaoOS, evento, tx, eventos);
     const comandos = [...comandosDaAdocao, ...saga.consumirComandos()];
     const salva = await this.sagas.save(saga, tx);
     if (salva.passo !== passoAntes) {
@@ -256,10 +293,29 @@ export class OrquestradorSagaService {
     return { saga: final, reenviados: comandos.map((c) => c.type) };
   }
 
-  private async transicionar(numero: string, t: TransicaoOS, evento: EventoSaga, tx: unknown): Promise<void> {
+  private async registrarMarcoDoBilling(numero: string, evento: EventoSaga, tx: unknown, eventos: EventosDaTransacao): Promise<void> {
+    if (!TIPOS_MARCO_BILLING.has(evento.type)) return;
+    const ordem = await this.ordens.findByNumero(numero, tx);
+    if (!ordem?.id) return;
+    const d = evento.data;
+    const texto = (v: unknown) => (v === undefined || v === null || v === '' ? undefined : String(v));
+    const dados: DadosMarcoOS = {
+      linkPagamento: texto(d.linkPagamento),
+      total: d.total !== undefined && d.total !== null ? Number(d.total) : undefined,
+      diagnostico: evento.type === 'billing.orcamento-gerado' ? ordem.diagnostico ?? undefined : undefined,
+      motivo: texto(d.motivo),
+      valor: texto(d.valor),
+    };
+    for (const k of Object.keys(dados) as Array<keyof DadosMarcoOS>) if (dados[k] === undefined) delete dados[k];
+    eventos.publish(
+      new MarcoOrdemDeServicoEvent(evento.type as TipoMarcoOS, numero, ordem.id, ordem.clienteId, idDoFato(evento, numero), dados),
+    );
+  }
+
+  private async transicionar(numero: string, t: TransicaoOS, evento: EventoSaga, tx: unknown, eventos: EventosDaTransacao): Promise<void> {
     switch (t.tipo) {
       case 'iniciarDiagnostico':
-        await this.enfileiramento.execute({ numero, tx });
+        await this.enfileiramento.execute({ numero, tx, eventos });
         return;
       case 'registrarDiagnostico':
         await this.diagnostico.execute({
@@ -268,22 +324,23 @@ export class OrquestradorSagaService {
           diagnostico: evento.data.diagnostico,
           itens: evento.data.itens ?? [],
           tx,
+          eventos,
         });
         return;
       case 'aguardarAprovacao':
-        await this.orcamentoGerado.execute({ numero, total: evento.data.total, tx });
+        await this.orcamentoGerado.execute({ numero, total: evento.data.total, tx, eventos });
         return;
       case 'iniciarExecucao':
-        await this.execucaoIniciada.execute({ numero, tx });
+        await this.execucaoIniciada.execute({ numero, tx, eventos });
         return;
       case 'aguardarPagamento':
-        await this.execucaoFinalizada.execute({ numero, tx });
+        await this.execucaoFinalizada.execute({ numero, tx, eventos });
         return;
       case 'finalizar':
-        await this.pagamentoAprovado.execute({ numero, tx });
+        await this.pagamentoAprovado.execute({ numero, tx, eventos });
         return;
       case 'cancelar':
-        await this.cancelamento.execute({ numero, motivo: t.motivo, tx });
+        await this.cancelamento.execute({ numero, motivo: t.motivo, tx, eventos });
         return;
     }
   }

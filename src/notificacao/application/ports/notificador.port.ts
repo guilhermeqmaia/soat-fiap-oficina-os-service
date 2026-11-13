@@ -7,6 +7,10 @@ export interface MensagemNotificacao {
   contexto?: {
     ordemId?: string;
     clienteId?: string;
+    /** US-F4-12: payload do webhook `{ numeroOS, tipo, mensagem, linkPagamento? }`. */
+    numeroOS?: string;
+    linkPagamento?: string;
+    eventoId?: string;
     statusAnterior?: string;
     statusAtual?: string;
     timestamp?: Date | string;

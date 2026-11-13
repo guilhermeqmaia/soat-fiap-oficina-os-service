@@ -603,4 +603,82 @@ describe('OrdemDeServico (e2e) — OS Service com participantes por HTTP', () =>
       expect((await http().get(`/ordens-servico/numero/${os.numero}/saga`).set('Authorization', `Bearer ${tokens.cliente}`)).status).toBe(403);
     });
   });
+
+  describe('notificacoes ao cliente a partir dos fatos da saga (US-F4-12)', () => {
+    interface NotificacaoView { tipo: string; canal: string; numeroOS: string | null; eventoId: string | null; linkPagamento: string | null; mensagem: string; status: string }
+    const notificacoesDa = async (ordemId: string): Promise<NotificacaoView[]> => {
+      const res = await http().get('/notificacoes').query({ ordemDeServicoId: ordemId, limit: 100 }).set('Authorization', `Bearer ${tokens.atendente}`);
+      expect(res.status).toBe(200);
+      return res.body.data;
+    };
+    /** O listener e assincrono ao emit: espera (polling, sem sleep fixo) ate as notificacoes esperadas aparecerem. */
+    const esperarTipos = async (ordemId: string, tipos: string[], timeoutMs = 5000): Promise<NotificacaoView[]> => {
+      const limite = Date.now() + timeoutMs;
+      for (;;) {
+        const atuais = await notificacoesDa(ordemId);
+        // Espera a linha existir E o envio terminar: a notificacao e gravada PENDENTE e so depois vira ENVIADA/FALHOU.
+        const prontas = tipos.every((t) => atuais.some((n) => n.tipo === t && n.status !== 'PENDENTE'));
+        if (prontas || Date.now() > limite) return atuais;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+    };
+    const contar = (ns: NotificacaoView[], tipo: string) => ns.filter((n) => n.tipo === tipo).length;
+
+    it('callback billing.pagamento-aprovado gera PAGAMENTO_APROVADO + OS_FINALIZADA consultaveis em GET /notificacoes (com numeroOS e eventoId)', async () => {
+      const os = await ateAguardandoPagamento();
+      const pago = criarEnvelopeHttp({ type: 'billing.pagamento-aprovado', producer: 'billing-service', data: { numeroOS: os.numero, orderId: 'mp-1', valor: '300.00' } });
+      expect((await http().post(`/ordens-servico/${os.numero}/eventos`).set('Authorization', `Bearer ${tokens.billing}`).send(pago)).body).toMatchObject({ aplicado: true });
+
+      const ns = await esperarTipos(os.id, ['PAGAMENTO_APROVADO', 'OS_FINALIZADA']);
+      expect(ns.find((n) => n.tipo === 'PAGAMENTO_APROVADO')).toMatchObject({ numeroOS: os.numero, eventoId: pago.id, canal: 'EMAIL', status: 'ENVIADA' });
+      expect(ns.find((n) => n.tipo === 'OS_FINALIZADA')).toMatchObject({ numeroOS: os.numero, eventoId: `os.finalizada:${os.numero}` });
+
+      // callback repetido (mesmo id): dedup em processed_messages -> nenhuma notificacao nova
+      const dup = await http().post(`/ordens-servico/${os.numero}/eventos`).set('Authorization', `Bearer ${tokens.billing}`).send(pago);
+      expect(dup.body).toMatchObject({ aplicado: false, duplicado: true });
+      await new Promise((r) => setTimeout(r, 200));
+      const depois = await notificacoesDa(os.id);
+      expect(contar(depois, 'PAGAMENTO_APROVADO')).toBe(1);
+      expect(contar(depois, 'OS_FINALIZADA')).toBe(1);
+    });
+
+    it('fluxo completo: uma notificacao por marco, link de pagamento no PAGAMENTO_PENDENTE e sem a generica nos status com notificacao propria', async () => {
+      const os = await ateAguardandoPagamento();
+      expect((await callback(os.numero, 'billing.pagamento-aprovado', { orderId: 'mp-x' })).status).toBe(200);
+      const ns = await esperarTipos(os.id, ['ORCAMENTO_PRONTO', 'ORCAMENTO_APROVADO', 'PAGAMENTO_PENDENTE', 'PAGAMENTO_APROVADO', 'OS_FINALIZADA']);
+
+      for (const tipo of ['ORCAMENTO_PRONTO', 'ORCAMENTO_APROVADO', 'PAGAMENTO_PENDENTE', 'PAGAMENTO_APROVADO', 'OS_FINALIZADA']) {
+        expect([tipo, contar(ns, tipo)]).toEqual([tipo, 1]);
+      }
+      const pendente = ns.find((n) => n.tipo === 'PAGAMENTO_PENDENTE')!;
+      expect(pendente.linkPagamento).toMatch(/^https:\/\/mp\.test\/pay\/mp-\d+$/);
+      expect(pendente.mensagem).toContain(pendente.linkPagamento);
+      expect(ns.find((n) => n.tipo === 'ORCAMENTO_APROVADO')!.linkPagamento).toBeNull();
+      // generica so para EM_DIAGNOSTICO e EM_EXECUCAO
+      const genericas = ns.filter((n) => n.tipo === 'STATUS_OS_ALTERADO').map((n) => n.eventoId).sort();
+      expect(genericas).toEqual([`os.status:${os.numero}:EM_DIAGNOSTICO`, `os.status:${os.numero}:EM_EXECUCAO`]);
+
+      // o cliente ve o link na propria consulta (campo novo e opcional)
+      const doCliente = await http().get(`/clientes/${CLIENTE_CPF}/notificacoes`).set('Authorization', `Bearer ${tokens.cliente}`);
+      expect(doCliente.status).toBe(200);
+      expect(doCliente.body.data.find((n: NotificacaoView) => n.eventoId === pendente.eventoId)).toMatchObject({ linkPagamento: pendente.linkPagamento, tipo: 'PAGAMENTO_PENDENTE' });
+    });
+
+    it('pagamento recusado gera PAGAMENTO_RECUSADO com o motivo (OS segue AGUARDANDO_PAGAMENTO)', async () => {
+      const os = await ateAguardandoPagamento();
+      expect((await callback(os.numero, 'billing.pagamento-recusado', { orderId: 'mp-r', motivo: 'cartao recusado' })).body).toMatchObject({ aplicado: true });
+      const ns = await esperarTipos(os.id, ['PAGAMENTO_RECUSADO']);
+      expect(ns.find((n) => n.tipo === 'PAGAMENTO_RECUSADO')!.mensagem).toContain('cartao recusado');
+      expect((await statusDe(os.numero)).status).toBe(StatusOS.AGUARDANDO_PAGAMENTO);
+    });
+
+    it('cancelamento pelo atendente gera OS_CANCELADA (e nao a generica de status)', async () => {
+      const os = await createOs();
+      expect((await http().post(`/ordens-servico/${os.id}/cancelar`).set('Authorization', `Bearer ${tokens.atendente}`).send({})).status).toBe(200);
+      const ns = await esperarTipos(os.id, ['OS_CANCELADA']);
+      expect(ns.find((n) => n.tipo === 'OS_CANCELADA')).toMatchObject({ eventoId: `os.cancelada:${os.numero}` });
+      expect(ns.find((n) => n.tipo === 'OS_CANCELADA')!.mensagem).toContain(MotivoCancelamento.OPERADOR);
+      expect(ns.filter((n) => n.tipo === 'STATUS_OS_ALTERADO' && n.eventoId?.endsWith(':CANCELADA'))).toEqual([]);
+    });
+  });
 });

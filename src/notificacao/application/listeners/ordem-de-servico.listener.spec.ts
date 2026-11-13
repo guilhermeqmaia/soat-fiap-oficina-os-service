@@ -5,14 +5,19 @@ import {
 } from '../../../cliente/domain/cliente.repository';
 import { PUBLIC_BASE_URL } from '../ports/public-base-url';
 import { Cliente } from '../../../cliente/domain/cliente.entity';
-import { OrcamentoProntoEvent } from '../../../shared/domain/events/orcamento-pronto.event';
-import { OsFinalizadaEvent } from '../../../shared/domain/events/os-finalizada.event';
+import {
+  DadosMarcoOS,
+  MarcoOrdemDeServicoEvent,
+  TipoMarcoOS,
+} from '../../../shared/domain/events/marco-ordem-de-servico.event';
 import { OsStatusAlteradoEvent } from '../../../ordem-de-servico/domain/events/os-status-alterado.event';
 import { StatusOS } from '../../../ordem-de-servico/domain/value-objects/status-os.vo';
-import { CanalNotificacao } from '../../domain/value-objects/canal-notificacao.vo';
 import { TipoNotificacao } from '../../domain/value-objects/tipo-notificacao.vo';
 import { EnviarNotificacaoUseCase } from '../use-cases/enviar-notificacao.use-case';
-import { OrdemDeServicoNotificacaoListener } from './ordem-de-servico.listener';
+import {
+  OrdemDeServicoNotificacaoListener,
+  STATUS_COM_NOTIFICACAO_DEDICADA,
+} from './ordem-de-servico.listener';
 
 describe('OrdemDeServicoNotificacaoListener', () => {
   let listener: OrdemDeServicoNotificacaoListener;
@@ -35,10 +40,13 @@ describe('OrdemDeServicoNotificacaoListener', () => {
     email: null,
   });
 
+  const marco = (type: TipoMarcoOS, dados: DadosMarcoOS = {}, eventoId = `env-${type}`) =>
+    new MarcoOrdemDeServicoEvent(type, 'OS-2026-001', 'os-id-1', 'cliente-1', eventoId, dados);
+
   beforeEach(async () => {
     jest.clearAllMocks();
 
-    enviarNotificacao = { execute: jest.fn().mockResolvedValue(undefined) };
+    enviarNotificacao = { execute: jest.fn().mockResolvedValue([]) };
     clienteRepository = { findById: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -53,98 +61,142 @@ describe('OrdemDeServicoNotificacaoListener', () => {
     listener = module.get(OrdemDeServicoNotificacaoListener);
   });
 
-  describe('onOrcamentoPronto', () => {
-    const event = new OrcamentoProntoEvent(
-      'os-id-1',
-      'OS-2026-001',
-      'cliente-1',
-      'Trocar pastilhas de freio',
-      450.5,
-    );
+  const ultimoEnvio = () => enviarNotificacao.execute.mock.calls[0][0];
 
-    it('envia notificacao com instrucao de aprovar/rejeitar quando cliente tem email', async () => {
+  describe('onMarco (US-F4-12)', () => {
+    it.each<[TipoMarcoOS, TipoNotificacao]>([
+      ['billing.orcamento-gerado', TipoNotificacao.ORCAMENTO_PRONTO],
+      ['billing.orcamento-aprovado', TipoNotificacao.ORCAMENTO_APROVADO],
+      ['billing.cobranca-criada', TipoNotificacao.PAGAMENTO_PENDENTE],
+      ['billing.pagamento-aprovado', TipoNotificacao.PAGAMENTO_APROVADO],
+      ['billing.pagamento-recusado', TipoNotificacao.PAGAMENTO_RECUSADO],
+      ['os.finalizada', TipoNotificacao.OS_FINALIZADA],
+      ['os.cancelada', TipoNotificacao.OS_CANCELADA],
+    ])('%s -> %s com numeroOS, eventoId e sem canal fixo (canal real do provider)', async (type, tipo) => {
       clienteRepository.findById.mockResolvedValueOnce(clienteComEmail);
 
-      await listener.onOrcamentoPronto(event);
+      await listener.onMarco(marco(type));
 
       expect(enviarNotificacao.execute).toHaveBeenCalledTimes(1);
-      const arg = enviarNotificacao.execute.mock.calls[0][0];
-      expect(arg.tipo).toBe(TipoNotificacao.ORCAMENTO_PRONTO);
-      expect(arg.canal).toBe(CanalNotificacao.EMAIL);
-      expect(arg.destinatario).toBe('joao@email.com');
-      expect(arg.ordemDeServicoId).toBe('os-id-1');
+      const arg = ultimoEnvio();
+      expect(arg).toMatchObject({
+        clienteId: 'cliente-1',
+        ordemDeServicoId: 'os-id-1',
+        numeroOS: 'OS-2026-001',
+        eventoId: `env-${type}`,
+        tipo,
+        destinatario: 'joao@email.com',
+      });
+      expect(arg.canal).toBeUndefined();
+      expect(arg.mensagem).toContain('Ola Joao da Silva');
       expect(arg.mensagem).toContain('OS-2026-001');
-      expect(arg.mensagem).toContain('aprovar ou rejeitar o orcamento');
+      expect(arg.assunto).toContain('OS-2026-001');
     });
 
-    it('nao inclui links para rotas de aprovacao (removidas na Fase 4; pagamento vem do Billing)', async () => {
+    it('ORCAMENTO_PRONTO traz diagnostico, total em BRL e instrucao de aprovar/rejeitar', async () => {
       clienteRepository.findById.mockResolvedValueOnce(clienteComEmail);
 
-      await listener.onOrcamentoPronto(event);
+      await listener.onMarco(marco('billing.orcamento-gerado', { total: 450.5, diagnostico: 'Trocar pastilhas de freio' }));
 
-      const arg = enviarNotificacao.execute.mock.calls[0][0];
-      expect(arg.mensagem).not.toContain('/webhooks/');
-      expect(arg.mensagem).not.toContain('token=');
+      const arg = ultimoEnvio();
+      expect(arg.assunto).toBe('Orcamento da OS OS-2026-001 pronto para aprovacao');
+      expect(arg.mensagem).toContain('Diagnostico: Trocar pastilhas de freio');
+      expect(arg.mensagem).toMatch(/R\$\s?450,50/);
+      expect(arg.mensagem).toContain('aprovar ou rejeitar');
+      expect(arg.linkPagamento).toBeUndefined();
     });
 
-    it('nao envia notificacao quando cliente nao tem email', async () => {
+    it('ORCAMENTO_APROVADO nao tem link de pagamento (a cobranca vem depois da execucao)', async () => {
+      clienteRepository.findById.mockResolvedValueOnce(clienteComEmail);
+
+      await listener.onMarco(marco('billing.orcamento-aprovado'));
+
+      expect(ultimoEnvio().linkPagamento).toBeUndefined();
+      expect(ultimoEnvio().mensagem).toContain('link de pagamento');
+    });
+
+    it('PAGAMENTO_PENDENTE carrega o link de pagamento na mensagem e no campo linkPagamento', async () => {
+      clienteRepository.findById.mockResolvedValueOnce(clienteComEmail);
+
+      await listener.onMarco(
+        marco('billing.cobranca-criada', { linkPagamento: 'https://mp.test/pay/mp-1', valor: '300.00' }, 'billing.cobranca-criada:OS-2026-001:mp-1'),
+      );
+
+      const arg = ultimoEnvio();
+      expect(arg.linkPagamento).toBe('https://mp.test/pay/mp-1');
+      expect(arg.eventoId).toBe('billing.cobranca-criada:OS-2026-001:mp-1');
+      expect(arg.assunto).toBe('OS OS-2026-001 concluida - pague para retirar o veiculo');
+      expect(arg.mensagem).toContain('realize o pagamento: https://mp.test/pay/mp-1');
+      expect(arg.mensagem).toMatch(/R\$\s?300,00/);
+    });
+
+    it('PAGAMENTO_PENDENTE sem link aponta para o portal', async () => {
+      clienteRepository.findById.mockResolvedValueOnce(clienteComEmail);
+
+      await listener.onMarco(marco('billing.cobranca-criada'));
+
+      expect(ultimoEnvio().mensagem).toContain('pelo portal do cliente');
+    });
+
+    it('PAGAMENTO_APROVADO informa o valor quando presente', async () => {
+      clienteRepository.findById.mockResolvedValueOnce(clienteComEmail);
+
+      await listener.onMarco(marco('billing.pagamento-aprovado', { valor: '300.00' }));
+
+      expect(ultimoEnvio().mensagem).toMatch(/Confirmamos o pagamento .*R\$\s?300,00/);
+    });
+
+    it('PAGAMENTO_RECUSADO informa o motivo e, com link, o link para tentar de novo', async () => {
+      clienteRepository.findById.mockResolvedValueOnce(clienteComEmail);
+      await listener.onMarco(marco('billing.pagamento-recusado', { motivo: 'cc_rejected_insufficient_amount' }));
+      expect(ultimoEnvio().mensagem).toContain('recusado (motivo: cc_rejected_insufficient_amount)');
+      expect(ultimoEnvio().mensagem).toContain('link de pagamento recebido');
+
+      enviarNotificacao.execute.mockClear();
+      clienteRepository.findById.mockResolvedValueOnce(clienteComEmail);
+      await listener.onMarco(marco('billing.pagamento-recusado', { linkPagamento: 'https://mp.test/pay/mp-2' }));
+      expect(ultimoEnvio().mensagem).toContain('Tente novamente pelo link: https://mp.test/pay/mp-2');
+      expect(ultimoEnvio().linkPagamento).toBe('https://mp.test/pay/mp-2');
+    });
+
+    it('OS_FINALIZADA traz o link de acompanhamento', async () => {
+      clienteRepository.findById.mockResolvedValueOnce(clienteComEmail);
+
+      await listener.onMarco(marco('os.finalizada', {}, 'os.finalizada:OS-2026-001'));
+
+      expect(ultimoEnvio().mensagem).toContain('GET http://localhost:3000/ordens-servico/numero/OS-2026-001/status');
+      expect(ultimoEnvio().assunto).toBe('OS OS-2026-001 finalizada - veiculo pronto para retirada');
+    });
+
+    it('OS_CANCELADA informa o motivo', async () => {
+      clienteRepository.findById.mockResolvedValueOnce(clienteComEmail);
+
+      await listener.onMarco(marco('os.cancelada', { motivo: 'ORCAMENTO_REJEITADO' }, 'os.cancelada:OS-2026-001'));
+
+      expect(ultimoEnvio().mensagem).toContain('foi cancelada (motivo: ORCAMENTO_REJEITADO)');
+    });
+
+    it('cliente sem e-mail: repassa destinatario null (o canal EMAIL e pulado; o WEBHOOK ainda notifica)', async () => {
       clienteRepository.findById.mockResolvedValueOnce(clienteSemEmail);
 
-      await listener.onOrcamentoPronto(event);
+      await listener.onMarco(marco('billing.pagamento-aprovado'));
 
-      expect(enviarNotificacao.execute).not.toHaveBeenCalled();
+      expect(ultimoEnvio().destinatario).toBeNull();
     });
 
-    it('nao envia notificacao quando cliente nao existe', async () => {
+    it('cliente inexistente: nao envia', async () => {
       clienteRepository.findById.mockResolvedValueOnce(null);
 
-      await listener.onOrcamentoPronto(event);
+      await listener.onMarco(marco('os.finalizada'));
 
       expect(enviarNotificacao.execute).not.toHaveBeenCalled();
     });
 
-    it('engole erros para nao bloquear fluxo principal', async () => {
-      clienteRepository.findById.mockRejectedValueOnce(new Error('db down'));
-
-      await expect(listener.onOrcamentoPronto(event)).resolves.toBeUndefined();
-    });
-  });
-
-  describe('onOsFinalizada', () => {
-    const event = new OsFinalizadaEvent(
-      'os-id-2',
-      'OS-2026-002',
-      'cliente-1',
-    );
-
-    it('envia notificacao informando que veiculo esta pronto para retirada', async () => {
+    it('engole erros para nao bloquear o fluxo principal', async () => {
       clienteRepository.findById.mockResolvedValueOnce(clienteComEmail);
+      enviarNotificacao.execute.mockRejectedValueOnce(new Error('db down'));
 
-      await listener.onOsFinalizada(event);
-
-      expect(enviarNotificacao.execute).toHaveBeenCalledTimes(1);
-      const arg = enviarNotificacao.execute.mock.calls[0][0];
-      expect(arg.tipo).toBe(TipoNotificacao.OS_FINALIZADA);
-      expect(arg.canal).toBe(CanalNotificacao.EMAIL);
-      expect(arg.mensagem).toContain('pronto para retirada');
-      expect(arg.mensagem).toContain('OS-2026-002');
-      expect(arg.mensagem).toContain(
-        'http://localhost:3000/ordens-servico/numero/OS-2026-002/status',
-      );
-    });
-
-    it('nao envia notificacao quando cliente nao tem email', async () => {
-      clienteRepository.findById.mockResolvedValueOnce(clienteSemEmail);
-
-      await listener.onOsFinalizada(event);
-
-      expect(enviarNotificacao.execute).not.toHaveBeenCalled();
-    });
-
-    it('engole erros para nao bloquear fluxo principal', async () => {
-      clienteRepository.findById.mockRejectedValueOnce(new Error('db down'));
-
-      await expect(listener.onOsFinalizada(event)).resolves.toBeUndefined();
+      await expect(listener.onMarco(marco('os.finalizada'))).resolves.toBeUndefined();
     });
   });
 
@@ -158,7 +210,7 @@ describe('OrdemDeServicoNotificacaoListener', () => {
       new Date('2026-06-25T10:00:00.000Z'),
     );
 
-    it('envia notificacao com status anterior, status atual e timestamp', async () => {
+    it('envia notificacao com status anterior, status atual, timestamp e id (OS, status)', async () => {
       clienteRepository.findById.mockResolvedValueOnce(clienteComEmail);
 
       await listener.onOsStatusAlterado(event);
@@ -168,8 +220,9 @@ describe('OrdemDeServicoNotificacaoListener', () => {
         expect.objectContaining({
           clienteId: 'cliente-1',
           ordemDeServicoId: 'os-id-3',
+          numeroOS: 'OS-2026-003',
+          eventoId: 'os.status:OS-2026-003:EM_EXECUCAO',
           tipo: TipoNotificacao.STATUS_OS_ALTERADO,
-          canal: CanalNotificacao.EMAIL,
           destinatario: 'joao@email.com',
           statusAnterior: StatusOS.AGUARDANDO_APROVACAO,
           statusAtual: StatusOS.EM_EXECUCAO,
@@ -178,7 +231,13 @@ describe('OrdemDeServicoNotificacaoListener', () => {
       );
     });
 
-    it.each([StatusOS.AGUARDANDO_APROVACAO, StatusOS.FINALIZADA])(
+    it('todos os status com notificacao propria estao na lista de supressao', () => {
+      expect([...STATUS_COM_NOTIFICACAO_DEDICADA].sort()).toEqual(
+        [StatusOS.AGUARDANDO_APROVACAO, StatusOS.AGUARDANDO_PAGAMENTO, StatusOS.CANCELADA, StatusOS.FINALIZADA].sort(),
+      );
+    });
+
+    it.each([StatusOS.AGUARDANDO_APROVACAO, StatusOS.AGUARDANDO_PAGAMENTO, StatusOS.FINALIZADA, StatusOS.CANCELADA])(
       'nao envia notificacao generica quando o status %s ja possui notificacao dedicada',
       async (statusAtual) => {
         const eventoDedicado = new OsStatusAlteradoEvent(

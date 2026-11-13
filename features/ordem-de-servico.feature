@@ -30,20 +30,22 @@ Funcionalidade: Ciclo de vida da Ordem de Serviço orquestrado pela saga
     Então o serviço "Execução" recebeu 1 chamada em "POST /execucao/ordens/{n}/iniciar"
     E a OS fica com status "EM_EXECUCAO"
     E a saga fica no passo "AGUARDAR_FINALIZACAO" com status "EM_ANDAMENTO"
+    E o cliente recebe a notificação "ORCAMENTO_APROVADO"
 
     Quando o serviço "Execução" envia o callback "execucao.finalizada" para a OS
     Então o serviço "Billing" recebeu 1 chamada em "POST /orcamentos/{n}/cobrar"
     E a OS fica com status "AGUARDANDO_PAGAMENTO"
     E a saga fica no passo "AGUARDAR_PAGAMENTO" com status "EM_ANDAMENTO"
-    # Próxima etapa (US-F4-12): notificação "PAGAMENTO_PENDENTE" com o linkPagamento
-    # devolvido no 201 de POST /orcamentos/{n}/cobrar.
+    # US-F4-12: o linkPagamento vem no 201 de POST /orcamentos/{n}/cobrar (≙ billing.cobranca-criada)
+    E o cliente recebe a notificação "PAGAMENTO_PENDENTE" com o link de pagamento
+    E o cliente não recebe a notificação "STATUS_OS_ALTERADO" para o status "AGUARDANDO_PAGAMENTO"
 
     Quando o serviço "Billing" envia o callback "billing.pagamento-aprovado" para a OS
     Então a OS fica com status "FINALIZADA"
     E a saga fica no passo "CONCLUIDA" com status "CONCLUIDA"
     E a saga não tem compensações
+    E o cliente recebe a notificação "PAGAMENTO_APROVADO"
     E o cliente recebe a notificação "OS_FINALIZADA"
-    # Próxima etapa (US-F4-12): notificação "PAGAMENTO_APROVADO".
 
     Quando o atendente entrega o veículo
     Então a resposta tem status HTTP 200
@@ -60,7 +62,7 @@ Funcionalidade: Ciclo de vida da Ordem de Serviço orquestrado pela saga
     E a saga fica no passo "AGUARDAR_APROVACAO" com status "CANCELADA"
     E as compensações confirmadas da saga são "execucao.liberar-reservas"
     E o histórico da saga termina com "execucao.reservas-liberadas" e resultado "cancelada"
-    # Próxima etapa (US-F4-12): notificação "OS_CANCELADA".
+    E o cliente recebe a notificação "OS_CANCELADA" mencionando "ORCAMENTO_REJEITADO"
 
   @pagamento
   Cenário: Pagamento recusado mantém a OS aguardando pagamento, sem rollback
@@ -73,7 +75,7 @@ Funcionalidade: Ciclo de vida da Ordem de Serviço orquestrado pela saga
     E o histórico da saga termina com "billing.pagamento-recusado" e resultado "pagamento-pendente"
     E o serviço "Execução" não recebeu chamadas em "DELETE /execucao/ordens/{n}"
     E o cliente não recebe a notificação "OS_FINALIZADA"
-    # Próxima etapa (US-F4-12): notificação "PAGAMENTO_RECUSADO".
+    E o cliente recebe a notificação "PAGAMENTO_RECUSADO" mencionando "cartao recusado"
 
     Quando o atendente cancela a OS
     Então a resposta tem status HTTP 400
@@ -81,8 +83,11 @@ Funcionalidade: Ciclo de vida da Ordem de Serviço orquestrado pela saga
 
     Quando o administrador reprocessa a saga
     Então o serviço "Billing" recebeu 2 chamadas em "POST /orcamentos/{n}/cobrar"
+    # nova cobranca (outro orderId) = novo link = nova notificacao
+    E o cliente recebe 2 notificações "PAGAMENTO_PENDENTE"
     Quando o serviço "Billing" envia o callback "billing.pagamento-aprovado" para a OS
     Então a OS fica com status "FINALIZADA"
+    E o cliente recebe a notificação "PAGAMENTO_APROVADO"
 
   @cancelamento
   Esquema do Cenário: Atendente cancela a OS antes da aprovação (<status>)
@@ -92,7 +97,8 @@ Funcionalidade: Ciclo de vida da Ordem de Serviço orquestrado pela saga
     E a OS é cancelada com o motivo "OPERADOR"
     E a saga fica no passo "<passo>" com status "CANCELADA"
     E as compensações confirmadas da saga são "<compensacoes>"
-    # Próxima etapa (US-F4-12): notificação "OS_CANCELADA".
+    E o cliente recebe a notificação "OS_CANCELADA" mencionando "OPERADOR"
+    E o cliente não recebe a notificação "STATUS_OS_ALTERADO" para o status "CANCELADA"
 
     Exemplos:
       | status               | passo                | compensacoes                                         |
@@ -165,3 +171,12 @@ Funcionalidade: Ciclo de vida da Ordem de Serviço orquestrado pela saga
     E o serviço "Execução" reenvia o mesmo callback
     Então o callback é reconhecido como duplicado e não é reaplicado
     E o cliente recebe 1 notificação "ORCAMENTO_PRONTO"
+
+  @idempotencia @notificacao
+  Cenário: Pagamento aprovado duplicado (mesmo id) não notifica o cliente de novo
+    Dado que existe uma OS no status "AGUARDANDO_PAGAMENTO"
+    Quando o serviço "Billing" envia o callback "billing.pagamento-aprovado" para a OS
+    E o serviço "Billing" reenvia o mesmo callback
+    Então o callback é reconhecido como duplicado e não é reaplicado
+    E o cliente recebe 1 notificação "PAGAMENTO_APROVADO"
+    E o cliente recebe 1 notificação "OS_FINALIZADA"

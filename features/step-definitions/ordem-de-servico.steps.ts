@@ -116,9 +116,9 @@ Then('o callback é reconhecido como duplicado e não é reaplicado', function (
 });
 
 // ---------------- Então: notificacao ----------------
-// Hoje o OS Service so gera ORCAMENTO_PRONTO e OS_FINALIZADA (alem do generico
-// STATUS_OS_ALTERADO). Os tipos da US-F4-12 (ORCAMENTO_APROVADO, PAGAMENTO_*,
-// OS_CANCELADA) passam a valer aqui sem mudar o step quando forem implementados.
+// US-F4-12: um tipo por marco da OS — ORCAMENTO_PRONTO, ORCAMENTO_APROVADO,
+// PAGAMENTO_PENDENTE (com link), PAGAMENTO_APROVADO, PAGAMENTO_RECUSADO,
+// OS_FINALIZADA, OS_CANCELADA — alem do generico STATUS_OS_ALTERADO.
 
 Then('o cliente recebe a notificação {string}', async function (this: MundoOS, tipo: string) {
   await aguardarAte(`notificacao ${tipo} da OS ${this.ordem.numero}`, () => this.notificacoesDaOS(), (ns) => {
@@ -127,6 +127,24 @@ Then('o cliente recebe a notificação {string}', async function (this: MundoOS,
   const n = (await this.notificacoesDaOS()).find((x) => x.tipo === tipo)!;
   expect(n.destinatario).toBe(this.cliente!.email);
   expect(n.assunto).toContain(this.ordem.numero);
+  expect(n.numeroOS).toBe(this.ordem.numero);
+  expect(n.eventoId).toBeTruthy();
+});
+
+Then('o cliente recebe a notificação {string} com o link de pagamento', async function (this: MundoOS, tipo: string) {
+  const ns = await aguardarAte(`notificacao ${tipo} com link da OS ${this.ordem.numero}`, () => this.notificacoesDaOS(), (lista) => {
+    expect(lista.filter((n) => n.tipo === tipo && n.linkPagamento).length).toBeGreaterThan(0);
+  });
+  // o link e o devolvido no 201 de POST /orcamentos/{n}/cobrar (stub do Billing)
+  const n = ns.filter((x) => x.tipo === tipo && x.linkPagamento)[0];
+  expect(n.linkPagamento).toMatch(/^https:\/\/mp\.test\/pay\/mp-\d+$/);
+  expect(n.mensagem).toContain(n.linkPagamento!);
+});
+
+Then('o cliente recebe a notificação {string} mencionando {string}', async function (this: MundoOS, tipo: string, trecho: string) {
+  await aguardarAte(`notificacao ${tipo} com "${trecho}" da OS ${this.ordem.numero}`, () => this.notificacoesDaOS(), (ns) => {
+    expect(ns.filter((n) => n.tipo === tipo).map((n) => n.mensagem).join(' | ')).toContain(trecho);
+  });
 });
 
 Then('o cliente recebe {int} notificação/notificações {string}', async function (this: MundoOS, quantidade: number, tipo: string) {
@@ -139,4 +157,10 @@ Then('o cliente recebe {int} notificação/notificações {string}', async funct
 
 Then('o cliente não recebe a notificação {string}', async function (this: MundoOS, tipo: string) {
   expect((await this.notificacoesDaOS()).map((n) => n.tipo)).not.toContain(tipo);
+});
+
+Then('o cliente não recebe a notificação {string} para o status {string}', async function (this: MundoOS, tipo: string, status: string) {
+  // a generica so e suprimida nos status com notificacao propria (US-F4-12)
+  const ns = await this.notificacoesDaOS();
+  expect(ns.filter((n) => n.tipo === tipo && n.eventoId?.endsWith(`:${status}`))).toEqual([]);
 });

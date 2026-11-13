@@ -12,9 +12,20 @@ import {
 export interface EnviarNotificacaoInput {
   clienteId: string;
   ordemDeServicoId?: string;
+  /** Numero da OS (US-F4-12). */
+  numeroOS?: string;
+  /** Id do fato de origem: com `tipo` + canal, garante uma notificacao por fato. */
+  eventoId?: string;
+  linkPagamento?: string;
   tipo: TipoNotificacao;
-  canal: CanalNotificacao;
-  destinatario: string;
+  /**
+   * Canal especifico. Omitido = todos os notificadores registrados (o provider
+   * ativo, `NOTIFICATION_PROVIDER`) — a notificacao e gravada com o canal REAL
+   * de cada um (WEBHOOK para o webhook, EMAIL para e-mail).
+   */
+  canal?: CanalNotificacao;
+  /** E-mail do cliente. Sem e-mail, o canal EMAIL e pulado; o WEBHOOK identifica o cliente pelo payload. */
+  destinatario: string | null;
   assunto: string;
   mensagem: string;
   statusAnterior?: string;
@@ -22,9 +33,20 @@ export interface EnviarNotificacaoInput {
   timestamp?: Date | string;
 }
 
+/**
+ * Envia uma notificacao por canal, de forma idempotente (US-F4-12):
+ *
+ * 1. reserva a linha (`PENDENTE`) — se o indice unico (eventoId, tipo, canal)
+ *    acusar que o fato ja foi notificado, registra "ja notificado" (warn) e
+ *    NAO reenvia;
+ * 2. envia pelo notificador do canal;
+ * 3. grava o resultado (`ENVIADA` / `FALHOU`).
+ *
+ * Devolve as notificacoes efetivamente processadas (as ja notificadas ficam de fora).
+ */
 @Injectable()
 export class EnviarNotificacaoUseCase
-  implements UseCase<EnviarNotificacaoInput, Notificacao>
+  implements UseCase<EnviarNotificacaoInput, Notificacao[]>
 {
   private readonly logger = new Logger(EnviarNotificacaoUseCase.name);
   private readonly notificadoresPorCanal: Map<CanalNotificacao, Notificador>;
@@ -46,48 +68,88 @@ export class EnviarNotificacaoUseCase
     }
   }
 
-  async execute(input: EnviarNotificacaoInput): Promise<Notificacao> {
-    const notificacao = Notificacao.create({
-      clienteId: input.clienteId,
-      ordemDeServicoId: input.ordemDeServicoId,
-      tipo: input.tipo,
-      canal: input.canal,
-      destinatario: input.destinatario,
-      assunto: input.assunto,
-      mensagem: input.mensagem,
-    });
+  async execute(input: EnviarNotificacaoInput): Promise<Notificacao[]> {
+    const canais = input.canal
+      ? [input.canal]
+      : [...this.notificadoresPorCanal.keys()];
+    const resultado: Notificacao[] = [];
+    for (const canal of canais) {
+      const n = await this.enviarPorCanal(input, canal);
+      if (n) resultado.push(n);
+    }
+    return resultado;
+  }
 
-    const notificador = this.notificadoresPorCanal.get(input.canal);
-    if (!notificador) {
-      notificacao.marcarComoFalha(
-        `Nenhum notificador registrado para o canal ${input.canal}`,
+  private async enviarPorCanal(
+    input: EnviarNotificacaoInput,
+    canal: CanalNotificacao,
+  ): Promise<Notificacao | null> {
+    const destinatario =
+      canal === CanalNotificacao.EMAIL
+        ? input.destinatario
+        : (input.destinatario ?? input.clienteId);
+    if (!destinatario) {
+      this.logger.warn(
+        `Cliente ${input.clienteId} sem email; notificacao tipo=${input.tipo} da OS ${input.numeroOS ?? input.ordemDeServicoId ?? '-'} nao sera enviada por ${canal}`,
       );
-      return this.gateway.create(notificacao);
+      return null;
+    }
+
+    const reservada = await this.gateway.reservar(
+      Notificacao.create({
+        clienteId: input.clienteId,
+        ordemDeServicoId: input.ordemDeServicoId,
+        numeroOS: input.numeroOS,
+        eventoId: input.eventoId,
+        linkPagamento: input.linkPagamento,
+        tipo: input.tipo,
+        canal,
+        destinatario,
+        assunto: input.assunto,
+        mensagem: input.mensagem,
+      }),
+    );
+    if (!reservada) {
+      this.logger.warn(
+        `Ja notificado: tipo=${input.tipo} canal=${canal} eventoId=${input.eventoId} OS=${input.numeroOS ?? '-'}; nao reenvia`,
+      );
+      return null;
+    }
+
+    const notificador = this.notificadoresPorCanal.get(canal);
+    if (!notificador) {
+      reservada.marcarComoFalha(
+        `Nenhum notificador registrado para o canal ${canal}`,
+      );
+      return this.gateway.atualizarResultado(reservada);
     }
 
     try {
       await notificador.enviar({
-        destinatario: input.destinatario,
+        destinatario,
         assunto: input.assunto,
         corpo: input.mensagem,
         contexto: {
           ordemId: input.ordemDeServicoId,
           clienteId: input.clienteId,
+          numeroOS: input.numeroOS,
+          linkPagamento: input.linkPagamento,
+          eventoId: input.eventoId,
           statusAnterior: input.statusAnterior,
           statusAtual: input.statusAtual,
           timestamp: input.timestamp,
           tipoNotificacao: input.tipo,
         },
       });
-      notificacao.marcarComoEnviada();
+      reservada.marcarComoEnviada();
     } catch (err) {
       const motivo = err instanceof Error ? err.message : String(err);
       this.logger.warn(
-        `Falha ao enviar notificacao tipo=${input.tipo} canal=${input.canal}: ${motivo}`,
+        `Falha ao enviar notificacao tipo=${input.tipo} canal=${canal}: ${motivo}`,
       );
-      notificacao.marcarComoFalha(motivo);
+      reservada.marcarComoFalha(motivo);
     }
 
-    return this.gateway.create(notificacao);
+    return this.gateway.atualizarResultado(reservada);
   }
 }
