@@ -14,6 +14,8 @@
     "test:integration": "jest --config jest.integration.config.ts",
     "test:integration:cov": "jest --config jest.integration.config.ts --coverage",
     "test:all:cov": "npm run test:unit:cov && npm run test:integration:cov",
+    "test:bdd": "cucumber-js",
+    "test:bdd:e2e": "cucumber-js --profile e2e",
     "perf:smoke": "mkdir -p perf-results && k6 run perf/smoke.js",
     "perf:load": "mkdir -p perf-results && k6 run perf/load.js",
     "perf:stress": "mkdir -p perf-results && k6 run perf/stress.js",
@@ -64,6 +66,7 @@
     "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {
+    "@cucumber/cucumber": "^13.3.0",
     "@nestjs/testing": "^11.1.18",
     "@testcontainers/postgresql": "^11.14.0",
     "@types/bcrypt": "^6.0.0",
@@ -75,6 +78,7 @@
     "@types/passport-jwt": "^4.0.1",
     "@types/pg": "^8.20.0",
     "@types/supertest": "^7.2.0",
+    "expect": "^30.5.2",
     "jest": "^30.3.0",
     "jsonwebtoken": "^9.0.3",
     "prisma": "^7.6.0",

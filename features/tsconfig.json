@@ -1,0 +1,10 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "..",
+    "incremental": false,
+    "types": ["node"]
+  },
+  "include": ["**/*.ts", "../src/**/*.ts"],
+  "exclude": ["../src/**/*.spec.ts", "../src/generated"]
+}
