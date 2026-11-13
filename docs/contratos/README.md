@@ -7,6 +7,7 @@ Dois arquivos, dois papéis (decisão de 03/11/2026 — [RFC-0008](../arquitetur
 | [`http-interno.md`](http-interno.md) | **Transporte — contrato efetivo.** Cada comando do orquestrador é um endpoint HTTP no participante; cada evento é a resposta síncrona desse endpoint ou um callback `POST /ordens-servico/{numero}/eventos` no OS Service. Define princípios (retry/backoff, idempotência, JWT `SERVICO`, correlação), endpoints, códigos de resposta, envelope e o fluxo. **Leia inteiro antes de implementar.** |
 | [`asyncapi.yaml`](asyncapi.yaml) | **Vocabulário e payloads.** Nomes dos `type`s (`execucao.*`, `billing.*`), schemas JSON de `data` e envelope. Os canais/filas descritos nele são históricos (SNS/SQS, RFC-0006 substituída); os schemas continuam sendo a fonte dos `data` dos callbacks e das respostas. |
 | [`openapi/`](openapi/README.md) | **OpenAPI de cada serviço** (OS, Billing, Execução), exportado do Swagger e versionado aqui — fonte dos testes de contrato ([US-F4-15](../user-stories/f4-15-testes-de-contrato.md)). |
+| [`schemas/`](schemas/) | **JSON Schemas validáveis** do envelope, do `data` de cada `type`, dos corpos dos comandos e da tabela comando → endpoint/respostas (`endpoints-participantes.json`). Espelham `http-interno.md` + `asyncapi.yaml`; o OpenAPI do OS Service e os testes de contrato leem daqui ([US-F4-15](../user-stories/f4-15-testes-de-contrato.md)). |
 | [`exemplos/`](exemplos/README.md) | Payloads reais (webhook do Mercado Pago). |
 
 ## Mapeamento evento → endpoint/callback (vigente)

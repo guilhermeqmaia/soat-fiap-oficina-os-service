@@ -70,7 +70,13 @@ export type ResultadoPasso =
   | 'reprocessada'
   | 'falha-simulada'
   /** Pagamento recusado apos a execucao: a saga continua esperando (sem compensacao). */
-  | 'pagamento-pendente';
+  | 'pagamento-pendente'
+  /**
+   * Comando nao entregue ao participante (tentativas esgotadas ou 4xx sem
+   * evento): a saga fica no passo, conta em `oficina_os_sagas_paradas` e
+   * `POST /admin/sagas/:numero/reprocessar` reenvia (US-F4-18).
+   */
+  | 'chamada-falhou';
 
 export interface PassoHistorico {
   em: string;
@@ -78,6 +84,15 @@ export interface PassoHistorico {
   evento: string;
   resultado: ResultadoPasso;
   detalhe?: string;
+  /** So em `chamada-falhou`: tentativas feitas pelo cliente HTTP antes de desistir. */
+  tentativas?: number;
+}
+
+/** Falha de entrega de um comando, como o gateway dos participantes devolve. */
+export interface FalhaDeChamada {
+  erro: string;
+  status?: number;
+  tentativas?: number;
 }
 
 export interface Compensacao {
@@ -495,6 +510,23 @@ export class SagaOS {
     return reenviados;
   }
 
+  /**
+   * Registra que um comando decidido pela saga NAO chegou ao participante
+   * (tentativas esgotadas / 4xx sem evento). Nao muda passo nem status: a saga
+   * fica parada onde estava ate o reprocessamento; o historico guarda o comando,
+   * as tentativas e o motivo (US-F4-18).
+   */
+  registrarChamadaFalhou(comando: TipoComando, falha: FalhaDeChamada, agora: Date = new Date()): void {
+    const status = falha.status !== undefined ? `HTTP ${falha.status}` : 'sem resposta';
+    const tentativas = falha.tentativas ?? 1;
+    this.registrar(agora, comando, 'chamada-falhou', `${status} apos ${tentativas} tentativa(s): ${falha.erro}`, tentativas);
+  }
+
+  /** `true` quando a ultima entrada do historico e uma chamada nao entregue (saga parada ate reprocessar). */
+  get aguardandoReprocessamento(): boolean {
+    return !this.encerrada && this._historico[this._historico.length - 1]?.resultado === 'chamada-falhou';
+  }
+
   // ─── helpers ────────────────────────────────────────────────────────────────
 
   private esperado(
@@ -527,8 +559,10 @@ export class SagaOS {
     this._comandosPendentes.push(comando);
   }
 
-  private registrar(agora: Date, evento: string, resultado: ResultadoPasso, detalhe?: string): void {
-    this._historico.push({ em: agora.toISOString(), passo: this._passo, evento, resultado, detalhe });
+  private registrar(agora: Date, evento: string, resultado: ResultadoPasso, detalhe?: string, tentativas?: number): void {
+    const entrada: PassoHistorico = { em: agora.toISOString(), passo: this._passo, evento, resultado, detalhe };
+    if (tentativas !== undefined) entrada.tentativas = tentativas;
+    this._historico.push(entrada);
     // Teto do JSON: mantem as entradas mais recentes (duplicados/fora de ordem podem se repetir).
     if (this._historico.length > HISTORICO_MAX) this._historico.splice(0, this._historico.length - HISTORICO_MAX);
   }

@@ -1,4 +1,6 @@
 import { Logger } from '@nestjs/common';
+import { FakeDomainEventPublisher } from '@guilhermeqmaia/oficina-kit/testing';
+import { EventosDaTransacao } from '../../application/eventos-da-transacao';
 import { OrdemDeServico } from '../../domain/ordem-de-servico.entity';
 import { StatusOS } from '../../domain/value-objects/status-os.vo';
 import { MotivoCancelamento } from '../../domain/value-objects/motivo-cancelamento';
@@ -7,7 +9,8 @@ import { InvalidStatusTransitionError } from '../../domain/errors/invalid-status
 import { PassoSaga, SagaOS, StatusSaga } from '../domain/saga-os.entity';
 import { ItemServicoOS } from '../../domain/value-objects/item-servico-os.vo';
 import { ItemProdutoOS } from '../../domain/value-objects/item-produto-os.vo';
-import { OrquestradorSagaService, prazosDoAmbiente } from './orquestrador-saga.service';
+import { OrquestradorSagaService, idDoFato, prazosDoAmbiente } from './orquestrador-saga.service';
+import { MarcoOrdemDeServicoEvent } from '../../../shared/domain/events/marco-ordem-de-servico.event';
 import { ConcurrentModificationError } from '../../domain/errors/concurrent-modification.error';
 import { SagaTimeoutsService } from './saga-timeouts.service';
 import { FakeParticipantesSaga } from '../../../test/fake-participantes-saga';
@@ -53,13 +56,14 @@ class Participantes extends FakeParticipantesSaga {
   }
 }
 const ITENS = [{ tipo: 'SERVICO', referenciaId: 's', nome: 'n', quantidade: 1, precoUnitario: '1.00' }];
+const ordemProps = (status = StatusOS.RECEBIDA, numero = 'OS-1') => ({ id: 'os-1', numero, clienteId: 'cli-1', veiculoId: 'vei-1', mecanicoId: null, descricaoInicial: 'Barulho ao frenar', diagnostico: null as string | null, status, motivoCancelamento: null, createdAt: new Date(), updatedAt: new Date(), itensServico: [] });
 const ordem = (status = StatusOS.RECEBIDA, numero = 'OS-1') =>
   OrdemDeServico.reconstitute({ id: 'os-1', numero, clienteId: 'cli-1', veiculoId: 'vei-1', mecanicoId: null, descricaoInicial: 'Barulho ao frenar', diagnostico: null, status, motivoCancelamento: null, createdAt: new Date(), updatedAt: new Date(), itensServico: [] });
 const contador = async (passo: string, resultado: string) =>
   (await sagaPassos.get()).values.find((v) => v.labels.passo === passo && v.labels.resultado === resultado)?.value ?? 0;
 
 describe('OrquestradorSagaService (participantes por HTTP)', () => {
-  let repo: ReturnType<typeof fakeRepo>; let ucs: Record<string, ReturnType<typeof uc>>; let ordens: any; let svc: OrquestradorSagaService; let participantes: Participantes;
+  let repo: ReturnType<typeof fakeRepo>; let ucs: Record<string, ReturnType<typeof uc>>; let ordens: any; let svc: OrquestradorSagaService; let participantes: Participantes; let publisher: FakeDomainEventPublisher;
   /** Abre a OS como o CriarOrdemDeServicoUseCase faz: saga na transacao, comando depois do commit. */
   const abrir = async (falhaSimulada: PassoSaga | null = null) => {
     const { saga, comandos } = await uow.executar((tx: unknown) => svc.iniciar(ordem(), { descricaoProblema: 'Barulho ao frenar', falhaSimulada }, tx));
@@ -79,9 +83,10 @@ describe('OrquestradorSagaService (participantes por HTTP)', () => {
     uow.executar.mockClear();
     repo = fakeRepo();
     participantes = new Participantes();
+    publisher = new FakeDomainEventPublisher();
     ucs = { enfileiramento: uc(), diagnostico: uc(), orcamentoGerado: uc(), execucaoIniciada: uc(), execucaoFinalizada: uc(), pagamentoAprovado: uc(), cancelamento: uc() };
     ordens = { findByNumero: jest.fn(async () => null) };
-    svc = new OrquestradorSagaService(repo as any, ordens, uow, participantes, ucs.enfileiramento as any, ucs.diagnostico as any, ucs.orcamentoGerado as any, ucs.execucaoIniciada as any, ucs.execucaoFinalizada as any, ucs.pagamentoAprovado as any, ucs.cancelamento as any);
+    svc = new OrquestradorSagaService(repo as any, ordens, uow, participantes, ucs.enfileiramento as any, ucs.diagnostico as any, ucs.orcamentoGerado as any, ucs.execucaoIniciada as any, ucs.execucaoFinalizada as any, ucs.pagamentoAprovado as any, ucs.cancelamento as any, publisher);
   });
   afterEach(() => jest.restoreAllMocks());
 
@@ -98,7 +103,7 @@ describe('OrquestradorSagaService (participantes por HTTP)', () => {
     expect(participantes.tipos()).toEqual(['execucao.enfileirar']);
     expect(participantes.foraDaTransacao).toEqual([true]);
     expect(saga.passo).toBe(PassoSaga.AGUARDAR_DIAGNOSTICO);
-    expect(ucs.enfileiramento.execute).toHaveBeenCalledWith({ numero: 'OS-1', tx: 'tx' });
+    expect(ucs.enfileiramento.execute).toHaveBeenCalledWith({ numero: 'OS-1', tx: 'tx', eventos: expect.any(EventosDaTransacao) });
     // iniciar na transacao do chamador + processar(execucao.enfileirada) numa nova transacao
     expect(uow.executar).toHaveBeenCalledTimes(2);
   });
@@ -107,25 +112,25 @@ describe('OrquestradorSagaService (participantes por HTTP)', () => {
     await abrir();
     const r1 = await svc.processarEvento({ type: 'execucao.diagnostico-concluido', id: 'e2', data: { numeroOS: 'OS-1', mecanicoId: 'm', diagnostico: 'Pastilhas', itens: ITENS } });
     expect(r1.aplicado).toBe(true);
-    expect(ucs.diagnostico.execute).toHaveBeenCalledWith({ numero: 'OS-1', mecanicoId: 'm', diagnostico: 'Pastilhas', itens: ITENS, tx: 'tx' });
+    expect(ucs.diagnostico.execute).toHaveBeenCalledWith({ numero: 'OS-1', mecanicoId: 'm', diagnostico: 'Pastilhas', itens: ITENS, tx: 'tx', eventos: expect.any(EventosDaTransacao) });
     // a resposta 201 de POST /orcamentos (billing.orcamento-gerado) ja foi aplicada na mesma requisicao
     expect(r1.saga.passo).toBe(PassoSaga.AGUARDAR_APROVACAO);
-    expect(ucs.orcamentoGerado.execute).toHaveBeenCalledWith({ numero: 'OS-1', total: '1.00', tx: 'tx' });
+    expect(ucs.orcamentoGerado.execute).toHaveBeenCalledWith({ numero: 'OS-1', total: '1.00', tx: 'tx', eventos: expect.any(EventosDaTransacao) });
     expect(participantes.de('billing.gerar-orcamento')[0].data).toEqual({ numeroOS: 'OS-1', clienteId: 'cli-1', itens: ITENS });
     expect(participantes.foraDaTransacao.every(Boolean)).toBe(true);
 
     const r2 = await ev('billing.orcamento-aprovado', { orcamentoId: 'o1' });
     expect(r2.passo).toBe(PassoSaga.AGUARDAR_FINALIZACAO);
-    expect(ucs.execucaoIniciada.execute).toHaveBeenCalledWith({ numero: 'OS-1', tx: 'tx' });
+    expect(ucs.execucaoIniciada.execute).toHaveBeenCalledWith({ numero: 'OS-1', tx: 'tx', eventos: expect.any(EventosDaTransacao) });
 
     const r3 = await ev('execucao.finalizada', { finalizadaEm: new Date().toISOString() });
-    expect(ucs.execucaoFinalizada.execute).toHaveBeenCalledWith({ numero: 'OS-1', tx: 'tx' });
+    expect(ucs.execucaoFinalizada.execute).toHaveBeenCalledWith({ numero: 'OS-1', tx: 'tx', eventos: expect.any(EventosDaTransacao) });
     expect(r3.passo).toBe(PassoSaga.AGUARDAR_PAGAMENTO);
     expect(r3.prazoPagamento).toBeTruthy();
     expect(ucs.pagamentoAprovado.execute).not.toHaveBeenCalled();
 
     const fim = await ev('billing.pagamento-aprovado', { orderId: 'mp-1', valor: '1.00' });
-    expect(ucs.pagamentoAprovado.execute).toHaveBeenCalledWith({ numero: 'OS-1', tx: 'tx' });
+    expect(ucs.pagamentoAprovado.execute).toHaveBeenCalledWith({ numero: 'OS-1', tx: 'tx', eventos: expect.any(EventosDaTransacao) });
     expect(fim.status).toBe(StatusSaga.CONCLUIDA);
     expect(participantes.tipos()).toEqual(['execucao.enfileirar', 'billing.gerar-orcamento', 'execucao.iniciar', 'billing.cobrar']);
   });
@@ -144,7 +149,7 @@ describe('OrquestradorSagaService (participantes por HTTP)', () => {
     participantes.recusar('execucao.enfileirar', 'veiculo ja em execucao');
     const saga = await abrir();
     expect(saga.status).toBe(StatusSaga.CANCELADA);
-    expect(ucs.cancelamento.execute).toHaveBeenCalledWith({ numero: 'OS-1', motivo: MotivoCancelamento.EXECUCAO_RECUSADA, tx: 'tx' });
+    expect(ucs.cancelamento.execute).toHaveBeenCalledWith({ numero: 'OS-1', motivo: MotivoCancelamento.EXECUCAO_RECUSADA, tx: 'tx', eventos: expect.any(EventosDaTransacao) });
     expect(ucs.enfileiramento.execute).not.toHaveBeenCalled();
   });
 
@@ -152,7 +157,7 @@ describe('OrquestradorSagaService (participantes por HTTP)', () => {
     await abrir();
     await ev('execucao.diagnostico-concluido', { mecanicoId: 'm', diagnostico: 'Pastilhas', itens: ITENS });
     const s = await ev('billing.orcamento-rejeitado', { orcamentoId: 'o1' });
-    expect(ucs.cancelamento.execute).toHaveBeenCalledWith({ numero: 'OS-1', motivo: MotivoCancelamento.ORCAMENTO_REJEITADO, tx: 'tx' });
+    expect(ucs.cancelamento.execute).toHaveBeenCalledWith({ numero: 'OS-1', motivo: MotivoCancelamento.ORCAMENTO_REJEITADO, tx: 'tx', eventos: expect.any(EventosDaTransacao) });
     expect(participantes.tipos().slice(-1)).toEqual(['execucao.liberar-reservas']);
     expect(s.status).toBe(StatusSaga.CANCELADA);
     expect(s.compensacoes).toEqual([expect.objectContaining({ comando: 'execucao.liberar-reservas', confirmadaEm: expect.any(String) })]);
@@ -191,6 +196,66 @@ describe('OrquestradorSagaService (participantes por HTTP)', () => {
     expect(saga.passo).toBe(PassoSaga.AGUARDAR_DIAGNOSTICO);
     expect(participantes.tipos()).toEqual(['execucao.enfileirar', 'execucao.enfileirar']);
     expect(participantes.foraDaTransacao).toEqual([true, true]);
+  });
+
+  describe('retry esgotado no historico (US-F4-18: chamada-falhou com tentativas)', () => {
+    it('grava chamada-falhou com as tentativas numa transacao propria, fora da que decidiu o comando, e devolve a saga atualizada', async () => {
+      participantes.indisponivel('execucao.enfileirar');
+      const parada = await abrir();
+      const ultima = parada.historico[parada.historico.length - 1];
+      expect(ultima).toMatchObject({ passo: PassoSaga.ENFILEIRAR_EXECUCAO, evento: 'execucao.enfileirar', resultado: 'chamada-falhou', tentativas: 3 });
+      expect(ultima.detalhe).toContain('HTTP 503 apos 3 tentativa(s)');
+      expect(parada.aguardandoReprocessamento).toBe(true);
+      expect(parada.status).toBe(StatusSaga.EM_ANDAMENTO);
+      // persistido (GET /ordens-servico/:numero/saga mostra) e nao repetiu o comando
+      expect(repo.store.get('OS-1')!.historico.map((h) => h.resultado)).toEqual(['avancou', 'chamada-falhou']);
+      expect(participantes.tipos()).toEqual(['execucao.enfileirar']);
+
+      participantes.restaurar();
+      const { saga } = await svc.reprocessar('OS-1');
+      expect(saga.aguardandoReprocessamento).toBe(false);
+      expect(saga.historico.map((h) => h.resultado)).toEqual(['avancou', 'chamada-falhou', 'reprocessada', 'avancou']);
+    });
+
+    it('compensacao nao entregue tambem fica no historico (saga COMPENSANDO parada ate reprocessar)', async () => {
+      await abrir();
+      await ev('execucao.diagnostico-concluido', { mecanicoId: 'm', diagnostico: 'Pastilhas', itens: ITENS });
+      participantes.recusar('execucao.liberar-reservas', 'nao sei liberar');
+      const s = await ev('billing.orcamento-rejeitado', { motivo: 'caro' });
+      expect(s.status).toBe(StatusSaga.COMPENSANDO);
+      expect(s.historico[s.historico.length - 1]).toMatchObject({ resultado: 'chamada-falhou', evento: 'execucao.liberar-reservas', tentativas: 1 });
+      expect(s.aguardandoReprocessamento).toBe(true);
+    });
+
+    it('conflito ao gravar chamada-falhou e refeito; se persistir, so loga e a saga anterior segue', async () => {
+      participantes.indisponivel('execucao.enfileirar');
+      const { saga, comandos } = await uow.executar((tx: unknown) => svc.iniciar(ordem(), { descricaoProblema: 'd' }, tx));
+      const original = repo.save.getMockImplementation()!;
+      repo.save.mockImplementationOnce(async () => { throw new ConcurrentModificationError('saga OS-1'); }).mockImplementationOnce(original);
+      const comRetry = await svc.executarComandos(saga, comandos);
+      expect(comRetry.historico[comRetry.historico.length - 1].resultado).toBe('chamada-falhou');
+
+      repo.save.mockImplementation(async () => { throw new ConcurrentModificationError('saga OS-1'); });
+      const semGravar = await svc.executarComandos(comRetry, comandos);
+      expect(semGravar).toBe(comRetry);
+      expect(Logger.prototype.error).toHaveBeenCalledWith(expect.objectContaining({ msg: 'nao foi possivel registrar chamada-falhou no historico da saga', correlation_id: 'OS-1' }));
+      repo.save.mockImplementation(original);
+    });
+
+    it('saga apagada entre a chamada e o registro: nada a gravar, segue com a saga em memoria', async () => {
+      participantes.indisponivel('execucao.enfileirar');
+      const { saga, comandos } = await uow.executar((tx: unknown) => svc.iniciar(ordem(), { descricaoProblema: 'd' }, tx));
+      repo.store.clear();
+      expect(await svc.executarComandos(saga, comandos)).toBe(saga);
+    });
+
+    it('a linha de log da falha leva trace_id/correlation_id/servico/tentativa', async () => {
+      participantes.indisponivel('execucao.enfileirar');
+      await abrir();
+      expect(Logger.prototype.error).toHaveBeenCalledWith(
+        expect.objectContaining({ correlation_id: 'OS-1', servico: 'os-service', comando: 'execucao.enfileirar', tentativa: 3, resultado: 'esgotado' }),
+      );
+    });
   });
 
   it('resposta do participante que nao pode ser aplicada e registrada (resposta-falhou) sem derrubar a requisicao', async () => {
@@ -275,6 +340,70 @@ describe('OrquestradorSagaService (participantes por HTTP)', () => {
     ]);
     expect(saga.passo).toBe(PassoSaga.AGUARDAR_APROVACAO);
     await expect(svc.reprocessar('OS-404')).rejects.toThrow('nao encontrada');
+  });
+
+  describe('marcos para a notificacao (US-F4-12)', () => {
+    const marcos = () => publisher.publicados.filter((e): e is MarcoOrdemDeServicoEvent => e instanceof MarcoOrdemDeServicoEvent);
+    beforeEach(() => {
+      const comId = OrdemDeServico.reconstitute({ ...ordemProps(), diagnostico: 'Pastilhas gastas' });
+      ordens.findByNumero.mockImplementation(async () => comId);
+    });
+
+    it('respostas sincronas: orcamento-gerado (total + diagnostico) e cobranca-criada (linkPagamento) com id deterministico', async () => {
+      await ateAprovado();
+      await ev('execucao.finalizada');
+      const tipos = marcos().map((m) => m.type);
+      expect(tipos).toEqual(['billing.orcamento-gerado', 'billing.orcamento-aprovado', 'billing.cobranca-criada']);
+      const [gerado, aprovado, cobranca] = marcos();
+      expect(gerado).toMatchObject({ numeroOS: 'OS-1', ordemDeServicoId: 'os-1', clienteId: 'cli-1', eventoId: 'billing.orcamento-gerado:OS-1:orc-OS-1', dados: { total: 1, diagnostico: 'Pastilhas gastas' } });
+      // callback: id do envelope; aprovacao sem link
+      expect(aprovado.eventoId).toBe('env-billing.orcamento-aprovado');
+      expect(aprovado.dados.linkPagamento).toBeUndefined();
+      // o link da resposta 201 do cobrar deixa de ser descartado
+      expect(cobranca).toMatchObject({ eventoId: 'billing.cobranca-criada:OS-1:mp-1', dados: { linkPagamento: 'https://mp.test/pay/mp-1', valor: '300.00' } });
+    });
+
+    it('pagamento aprovado: marco do Billing antes do marco os.finalizada (que vem da transicao)', async () => {
+      const finalizada = { execute: jest.fn(async (i: { eventos: EventosDaTransacao }) => {
+        i.eventos.publish(new MarcoOrdemDeServicoEvent('os.finalizada', 'OS-1', 'os-1', 'cli-1', 'os.finalizada:OS-1'));
+      }) };
+      (svc as any).pagamentoAprovado = finalizada;
+      await ateAprovado();
+      await ev('execucao.finalizada');
+      publisher.limpar();
+      await ev('billing.pagamento-aprovado', { orderId: 'mp-1', valor: '300.00' });
+      expect(marcos().map((m) => [m.type, m.eventoId])).toEqual([
+        ['billing.pagamento-aprovado', 'env-billing.pagamento-aprovado'],
+        ['os.finalizada', 'os.finalizada:OS-1'],
+      ]);
+    });
+
+    it('pagamento recusado gera marco com motivo; reenvio do mesmo callback (ignorado pela saga) nao gera outro', async () => {
+      await ateAprovado();
+      await ev('execucao.finalizada');
+      publisher.limpar();
+      await svc.processarEvento({ type: 'billing.pagamento-recusado', id: 'rec-1', data: { numeroOS: 'OS-1', motivo: 'cartao recusado' } });
+      expect(marcos()).toEqual([expect.objectContaining({ type: 'billing.pagamento-recusado', eventoId: 'rec-1', dados: { motivo: 'cartao recusado' } })]);
+      publisher.limpar();
+      const dup = await svc.processarEvento({ type: 'billing.orcamento-aprovado', id: 'env-billing.orcamento-aprovado', data: { numeroOS: 'OS-1' } });
+      expect(dup.aplicado).toBe(false);
+      expect(marcos()).toEqual([]);
+    });
+
+    it('fatos que nao interessam ao cliente nao geram marco; OS nao encontrada tambem nao', async () => {
+      await abrir();
+      expect(marcos()).toEqual([]);
+      ordens.findByNumero.mockImplementation(async () => null);
+      await ev('execucao.diagnostico-concluido', { mecanicoId: 'm', diagnostico: 'Pastilhas', itens: ITENS });
+      expect(marcos()).toEqual([]);
+    });
+
+    it('idDoFato: envelope > recurso criado > so type+numero', () => {
+      expect(idDoFato({ type: 'billing.pagamento-aprovado', id: 'env-9', data: {} }, 'OS-1')).toBe('env-9');
+      expect(idDoFato({ type: 'billing.cobranca-criada', data: { orderId: 'mp-7' } }, 'OS-1')).toBe('billing.cobranca-criada:OS-1:mp-7');
+      expect(idDoFato({ type: 'billing.orcamento-gerado', data: { orcamentoId: 'o-1' } }, 'OS-1')).toBe('billing.orcamento-gerado:OS-1:o-1');
+      expect(idDoFato({ type: 'billing.cobranca-criada', data: {} }, 'OS-1')).toBe('billing.cobranca-criada:OS-1');
+    });
   });
 
   it('prazosDoAmbiente: dias/horas ou override em ms', () => {

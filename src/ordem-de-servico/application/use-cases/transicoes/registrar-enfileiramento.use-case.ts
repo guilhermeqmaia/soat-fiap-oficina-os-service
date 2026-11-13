@@ -9,6 +9,8 @@ export interface RegistrarEnfileiramentoInput {
   numero: string;
   /** Unit of work do orquestrador (OS + saga na mesma transacao). */
   tx?: unknown;
+  /** Coletor do orquestrador: eventos publicados so depois do commit (default: publisher direto). */
+  eventos?: DomainEventPublisher;
 }
 
 /** `execucao.enfileirada` -> EM_DIAGNOSTICO. */
@@ -20,7 +22,7 @@ export class RegistrarEnfileiramentoUseCase implements UseCase<RegistrarEnfileir
   ) {}
 
   async execute(input: RegistrarEnfileiramentoInput): Promise<OrdemDeServico> {
-    const { ordem } = await registrarTransicao(this.gateway, this.events, input.numero, StatusOS.EM_DIAGNOSTICO, (os) =>
+    const { ordem } = await registrarTransicao(this.gateway, input.eventos ?? this.events, input.numero, StatusOS.EM_DIAGNOSTICO, (os) =>
       os.iniciarDiagnostico(),
       input.tx,
     );

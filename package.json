@@ -1,19 +1,25 @@
 {
   "name": "software-architecture-tech-challenge-01",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "",
   "main": "dist/main.js",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/main.js",
     "start:dev": "ts-node -r tsconfig-paths/register src/main.ts",
-    "test": "npm run test:unit && npm run test:integration",
+    "test": "npm run test:unit && npm run test:contracts && npm run test:integration",
     "test:watch": "jest --watch",
     "test:unit": "jest --config jest.unit.config.ts",
     "test:unit:cov": "jest --config jest.unit.config.ts --coverage",
     "test:integration": "jest --config jest.integration.config.ts",
     "test:integration:cov": "jest --config jest.integration.config.ts --coverage",
+    "test:contracts": "jest --config jest.contracts.config.ts",
     "test:all:cov": "npm run test:unit:cov && npm run test:integration:cov",
+    "test:bdd": "cucumber-js",
+    "test:bdd:e2e": "cucumber-js --profile e2e",
+    "openapi:export": "ts-node -r tsconfig-paths/register scripts/openapi-export.ts",
+    "openapi:check": "ts-node -r tsconfig-paths/register scripts/openapi-export.ts --check",
+    "contracts:lint": "redocly lint docs/contratos/openapi/os-service.yaml",
     "perf:smoke": "mkdir -p perf-results && k6 run perf/smoke.js",
     "perf:load": "mkdir -p perf-results && k6 run perf/load.js",
     "perf:stress": "mkdir -p perf-results && k6 run perf/stress.js",
@@ -64,7 +70,9 @@
     "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {
+    "@cucumber/cucumber": "^13.3.0",
     "@nestjs/testing": "^11.1.18",
+    "@redocly/cli": "^2.77.0",
     "@testcontainers/postgresql": "^11.14.0",
     "@types/bcrypt": "^6.0.0",
     "@types/express": "^5.0.6",
@@ -75,6 +83,9 @@
     "@types/passport-jwt": "^4.0.1",
     "@types/pg": "^8.20.0",
     "@types/supertest": "^7.2.0",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "expect": "^30.5.2",
     "jest": "^30.3.0",
     "jsonwebtoken": "^9.0.3",
     "prisma": "^7.6.0",
@@ -83,7 +94,8 @@
     "ts-jest": "^29.4.9",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
-    "typescript": "^6.0.2"
+    "typescript": "^6.0.2",
+    "yaml": "^2.9.1"
   },
   "comment:overrides": "Pin vulnerable TRANSITIVE deps to patched versions (npm audit high+). All are non-breaking patch/minor bumps; leaves only, no direct-dep major changes.",
   "overrides": {

@@ -52,3 +52,6 @@ postgres-data/
 docs/roteiro-video-fase-2.md
 docs/apresentacao-fase-2.pptx
 docs/gen_pptx.py
+
+# Relatorios do Cucumber (US-F4-14)
+reports/

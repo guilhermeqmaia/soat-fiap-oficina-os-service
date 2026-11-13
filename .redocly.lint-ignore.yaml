@@ -1,0 +1,8 @@
+# This file instructs Redocly's linter to ignore the rules contained for specific parts of your API.
+# See https://redocly.com/docs/cli/ for more information.
+# /health e /health/ready vem do HealthModule do kit (sem decorators Swagger, sem 4xx:
+# liveness/readiness respondem 200/503). Nao adicionar excecoes de rotas deste servico aqui.
+docs/contratos/openapi/os-service.yaml:
+  operation-4xx-response:
+    - '#/paths/~1health/get/responses'
+    - '#/paths/~1health~1ready/get/responses'

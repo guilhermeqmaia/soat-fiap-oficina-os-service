@@ -1,0 +1,1764 @@
+openapi: 3.0.0
+info:
+  title: Oficina Mecânica — OS Service
+  description: Atendimento (clientes, veiculos, ordens de servico), orquestrador da saga e notificacoes. Endpoints internos e callback com JWT role SERVICO (x-role) — contrato em docs/contratos/http-interno.md.
+  version: 1.1.0
+  contact: {}
+  license:
+    name: ISC
+    url: https://opensource.org/license/isc-license-txt
+servers:
+  - url: http://os-service:3000
+    description: DNS interno do cluster (chamadas entre servicos; em dev, http://localhost:3000)
+tags: []
+paths:
+  /health:
+    get:
+      operationId: HealthController_liveness
+      parameters: []
+      responses:
+        "200":
+          description: Aplicacao respondendo
+      summary: Liveness probe - o processo esta de pe
+      tags:
+        - Health
+      security: []
+  /health/ready:
+    get:
+      operationId: HealthController_readiness
+      parameters: []
+      responses:
+        "200":
+          description: Dependencias acessiveis
+        "503":
+          description: Alguma dependencia inacessivel
+      summary: Readiness probe - verifica as dependencias (banco, broker...)
+      tags:
+        - Health
+      security: []
+  /auth/me:
+    get:
+      operationId: AuthController_me
+      parameters: []
+      responses:
+        "200":
+          description: Identidade do token
+          content:
+            application/json:
+              schema:
+                example:
+                  id: uuid
+                  nome: Maria
+                  cpf: "12345678909"
+                  role: CLIENTE
+        "401":
+          description: Token JWT ausente ou invalido
+      security:
+        - bearer: []
+      summary: Retorna a identidade do token emitido pela Lambda de CPF
+      tags:
+        - Auth
+  /usuario:
+    post:
+      operationId: UsuarioController_create
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUsuarioDto"
+      responses:
+        "201":
+          description: Usuário criado com sucesso
+          content:
+            application/json:
+              schema:
+                example:
+                  id: uuid-123
+                  nome: João Mecânico
+                  email: joao@mecanica.com
+                  role: MECANICO
+                  ativo: true
+        "400":
+          description: Dados inválidos
+        "401":
+          description: Token JWT ausente ou invalido
+        "403":
+          description: Somente ADMIN
+        "409":
+          description: Email já registrado
+      security:
+        - bearer: []
+      summary: Criar novo usuário
+      tags:
+        - Usuario
+    get:
+      operationId: UsuarioController_findAll
+      parameters:
+        - name: page
+          required: false
+          in: query
+          description: Número da página (paginação)
+          schema:
+            example: 1
+            type: number
+        - name: limit
+          required: false
+          in: query
+          description: Quantidade de itens por página
+          schema:
+            example: 10
+            type: number
+        - name: role
+          required: false
+          in: query
+          description: Filtrar por role
+          schema:
+            example: MECANICO
+            type: string
+            enum:
+              - ADMIN
+              - ATENDENTE
+              - MECANICO
+              - ESTOQUISTA
+              - CLIENTE
+        - name: ativo
+          required: false
+          in: query
+          description: Filtrar por status ativo/inativo
+          schema:
+            example: true
+            type: boolean
+      responses:
+        "200":
+          description: Lista de usuários
+          content:
+            application/json:
+              schema:
+                example:
+                  data:
+                    - id: uuid-123
+                      nome: João
+                      email: joao@test.com
+                      role: MECANICO
+                      ativo: true
+                  total: 1
+                  page: 1
+                  limit: 10
+        "401":
+          description: Token JWT ausente ou invalido
+        "403":
+          description: Somente ADMIN
+      security:
+        - bearer: []
+      summary: Listar usuários com paginação
+      tags:
+        - Usuario
+  /usuario/{id}:
+    get:
+      operationId: UsuarioController_findById
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Usuário encontrado
+          content:
+            application/json:
+              schema:
+                example:
+                  id: uuid-123
+                  nome: João
+                  email: joao@test.com
+                  role: MECANICO
+                  ativo: true
+        "401":
+          description: Token JWT ausente ou invalido
+        "403":
+          description: Somente ADMIN
+        "404":
+          description: Usuário não encontrado
+      security:
+        - bearer: []
+      summary: Buscar usuário por ID
+      tags:
+        - Usuario
+    put:
+      operationId: UsuarioController_update
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUsuarioDto"
+      responses:
+        "200":
+          description: Usuário atualizado com sucesso
+          content:
+            application/json:
+              schema:
+                example:
+                  id: uuid-123
+                  nome: João Atualizado
+                  email: joao.novo@test.com
+                  role: ATENDENTE
+                  ativo: false
+        "401":
+          description: Token JWT ausente ou invalido
+        "403":
+          description: Somente ADMIN
+        "404":
+          description: Usuário não encontrado
+        "409":
+          description: Email já registrado
+      security:
+        - bearer: []
+      summary: Atualizar usuário
+      tags:
+        - Usuario
+    delete:
+      operationId: UsuarioController_delete
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Usuário deletado com sucesso
+        "401":
+          description: Token JWT ausente ou invalido
+        "403":
+          description: Somente ADMIN
+        "404":
+          description: Usuário não encontrado
+      security:
+        - bearer: []
+      summary: Deletar usuário
+      tags:
+        - Usuario
+  /clientes:
+    post:
+      operationId: ClienteController_create
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateClienteDto"
+      responses:
+        "201":
+          description: Cliente criado com sucesso
+        "400":
+          description: CPF/CNPJ invalido ou dados obrigatorios ausentes
+        "401":
+          description: Token JWT ausente ou invalido
+        "403":
+          description: Role insuficiente
+        "409":
+          description: CPF/CNPJ ja cadastrado
+      security:
+        - bearer: []
+      summary: Cadastrar um novo cliente
+      tags:
+        - Clientes
+    get:
+      operationId: ClienteController_findAll
+      parameters:
+        - name: page
+          required: false
+          in: query
+          description: Numero da pagina
+          schema:
+            default: 1
+            example: 1
+            type: number
+        - name: limit
+          required: false
+          in: query
+          description: Itens por pagina
+          schema:
+            default: 10
+            example: 10
+            type: number
+        - name: nome
+          required: false
+          in: query
+          description: Filtrar por nome
+          schema:
+            example: Joao
+            type: string
+        - name: cpf
+          required: false
+          in: query
+          description: Filtrar por CPF (apenas numeros)
+          schema:
+            example: "12345678900"
+            type: string
+        - name: cnpj
+          required: false
+          in: query
+          description: Filtrar por CNPJ (apenas numeros)
+          schema:
+            example: "12345678901234"
+            type: string
+      responses:
+        "200":
+          description: Lista de clientes paginada
+        "401":
+          description: Token JWT ausente ou invalido
+        "403":
+          description: Role insuficiente
+      security:
+        - bearer: []
+      summary: Listar clientes com paginacao e filtro
+      tags:
+        - Clientes
+  /clientes/{id}:
+    get:
+      operationId: ClienteController_findById
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Cliente encontrado
+        "401":
+          description: Token JWT ausente ou invalido
+        "403":
+          description: Role insuficiente
+        "404":
+          description: Cliente nao encontrado
+      security:
+        - bearer: []
+      summary: Buscar cliente por ID
+      tags:
+        - Clientes
+    patch:
+      operationId: ClienteController_update
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateClienteDto"
+      responses:
+        "200":
+          description: Cliente atualizado com sucesso
+        "401":
+          description: Token JWT ausente ou invalido
+        "403":
+          description: Role insuficiente
+        "404":
+          description: Cliente nao encontrado
+      security:
+        - bearer: []
+      summary: Atualizar um cliente
+      tags:
+        - Clientes
+    delete:
+      operationId: ClienteController_delete
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Cliente removido com sucesso
+        "401":
+          description: Token JWT ausente ou invalido
+        "403":
+          description: Role insuficiente
+        "404":
+          description: Cliente nao encontrado
+      security:
+        - bearer: []
+      summary: Remover um cliente
+      tags:
+        - Clientes
+  /veiculos:
+    post:
+      operationId: VeiculoController_create
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateVeiculoDto"
+      responses:
+        "201":
+          description: Veiculo criado com sucesso
+        "401":
+          description: Token JWT ausente ou invalido
+        "403":
+          description: Role insuficiente
+        "404":
+          description: Cliente nao encontrado
+        "409":
+          description: Ja existe um veiculo com essa placa
+      security:
+        - bearer: []
+      summary: Cadastrar um novo veiculo
+      tags:
+        - Veiculos
+    get:
+      operationId: VeiculoController_findAll
+      parameters:
+        - name: page
+          required: false
+          in: query
+          description: Numero da pagina
+          schema:
+            default: 1
+            example: 1
+            type: number
+        - name: limit
+          required: false
+          in: query
+          description: Itens por pagina
+          schema:
+            default: 10
+            example: 10
+            type: number
+        - name: marca
+          required: false
+          in: query
+          description: Filtrar por marca
+          schema:
+            example: Toyota
+            type: string
+        - name: placa
+          required: false
+          in: query
+          description: "Filtrar por placa (ex: ABC-1234 ou ABC1234)"
+          schema:
+            example: ABC-1234
+            type: string
+      responses:
+        "200":
+          description: Lista de veiculos paginada
+        "401":
+          description: Token JWT ausente ou invalido
+        "403":
+          description: Role insuficiente
+      security:
+        - bearer: []
+      summary: Listar veiculos com paginacao e filtro
+      tags:
+        - Veiculos
+  /veiculos/{id}:
+    get:
+      operationId: VeiculoController_findById
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Veiculo encontrado
+        "401":
+          description: Token JWT ausente ou invalido
+        "403":
+          description: Role insuficiente
+        "404":
+          description: Veiculo nao encontrado
+      security:
+        - bearer: []
+      summary: Buscar veiculo por ID
+      tags:
+        - Veiculos
+    patch:
+      operationId: VeiculoController_update
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateVeiculoDto"
+      responses:
+        "200":
+          description: Veiculo atualizado com sucesso
+        "401":
+          description: Token JWT ausente ou invalido
+        "403":
+          description: Role insuficiente
+        "404":
+          description: Veiculo nao encontrado
+        "409":
+          description: Ja existe um veiculo com essa placa
+      security:
+        - bearer: []
+      summary: Atualizar um veiculo
+      tags:
+        - Veiculos
+    delete:
+      operationId: VeiculoController_delete
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Veiculo removido com sucesso
+        "401":
+          description: Token JWT ausente ou invalido
+        "403":
+          description: Role insuficiente
+        "404":
+          description: Veiculo nao encontrado
+      security:
+        - bearer: []
+      summary: Remover um veiculo
+      tags:
+        - Veiculos
+  /clientes/{clienteId}/veiculos:
+    get:
+      operationId: ClienteVeiculoController_findByCliente
+      parameters:
+        - name: clienteId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Lista de veiculos do cliente
+        "401":
+          description: Token JWT ausente ou invalido
+        "403":
+          description: Role insuficiente
+        "404":
+          description: Cliente nao encontrado
+      security:
+        - bearer: []
+      summary: Listar veiculos de um cliente
+      tags:
+        - Clientes
+  /ordens-servico:
+    post:
+      operationId: OrdemDeServicoController_create
+      parameters:
+        - name: x-simular-falha
+          required: false
+          in: header
+          description: "Demo (US-F4-11, so com SAGA_SIMULAR_FALHA_HABILITADO=true): passo da saga em que o evento de sucesso sera tratado como falha — ENFILEIRAR_EXECUCAO | AGUARDAR_APROVACAO | INICIAR_EXECUCAO | AGUARDAR_PAGAMENTO"
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateOrdemDeServicoDto"
+      responses:
+        "201":
+          description: OS criada com sucesso
+        "400":
+          description: Dados invalidos
+        "401":
+          description: Token JWT ausente ou invalido
+        "403":
+          description: Role insuficiente
+        "404":
+          description: Cliente ou veiculo nao encontrado
+        "409":
+          description: Veiculo nao pertence ao cliente
+      security:
+        - bearer: []
+      summary: "Abrir nova ordem de servico (a saga chama POST /execucao/ordens na hora: com 201 a OS ja volta EM_DIAGNOSTICO)"
+      tags:
+        - Ordens de Servico
+    get:
+      description: "Ordem: AGUARDANDO_PAGAMENTO > EM_EXECUCAO > AGUARDANDO_APROVACAO > EM_DIAGNOSTICO > RECEBIDA; mais antigas primeiro. FINALIZADA/ENTREGUE/CANCELADA ficam de fora por padrao (incluirEncerradas=true para incluir)."
+      operationId: OrdemDeServicoController_findAll
+      parameters:
+        - name: page
+          required: false
+          in: query
+          description: Numero da pagina (paginacao)
+          schema:
+            example: 1
+            type: number
+        - name: limit
+          required: false
+          in: query
+          description: Quantidade de itens por pagina
+          schema:
+            example: 10
+            type: number
+        - name: clienteId
+          required: false
+          in: query
+          description: Filtrar por ID do cliente
+          schema:
+            example: uuid-do-cliente
+            type: string
+        - name: status
+          required: false
+          in: query
+          description: Filtrar por status da OS
+          schema:
+            example: RECEBIDA
+            type: string
+            enum:
+              - RECEBIDA
+              - EM_DIAGNOSTICO
+              - AGUARDANDO_APROVACAO
+              - EM_EXECUCAO
+              - FINALIZADA
+              - ENTREGUE
+              - CANCELADA
+        - name: numero
+          required: false
+          in: query
+          description: Filtrar por número da OS
+          schema:
+            example: OS-001
+            type: string
+        - name: incluirEncerradas
+          required: false
+          in: query
+          description: Incluir ordens de servico finalizadas e entregues na listagem
+          schema:
+            example: false
+            type: boolean
+      responses:
+        "200":
+          description: Lista paginada de OS
+        "401":
+          description: Token JWT ausente ou invalido
+        "403":
+          description: Role insuficiente
+      security:
+        - bearer: []
+      summary: Listar ordens de servico com paginacao, filtros e ordenacao por prioridade de status
+      tags:
+        - Ordens de Servico
+  /ordens-servico/numero/{numero}/status:
+    get:
+      operationId: OrdemDeServicoController_findStatusByNumero
+      parameters:
+        - name: numero
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Status e itens (snapshot) da OS
+        "401":
+          description: Token JWT ausente ou invalido
+        "403":
+          description: Role insuficiente
+        "404":
+          description: OS nao encontrada para o numero informado
+      security: []
+      summary: Acompanhar OS pelo numero (publico, sem autenticacao) — US-16
+      tags:
+        - Ordens de Servico
+  /ordens-servico/numero/{numero}/saga:
+    get:
+      description: Passo atual, status (EM_ANDAMENTO/COMPENSANDO/CONCLUIDA/CANCELADA), historico de eventos (avancou/ignorado/compensando), compensacoes enviadas e confirmadas e prazos de aprovacao/pagamento — rastreamento do fluxo distribuido.
+      operationId: OrdemDeServicoController_findSaga
+      parameters:
+        - name: numero
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Estado da saga
+        "401":
+          description: Token JWT ausente ou invalido
+        "403":
+          description: Role insuficiente
+        "404":
+          description: OS sem saga (nao encontrada)
+      security:
+        - bearer: []
+      summary: Linha do tempo da saga da OS (US-F4-10)
+      tags:
+        - Ordens de Servico
+  /ordens-servico/{id}/audit-log:
+    get:
+      operationId: OrdemDeServicoController_findAuditLog
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Log em ordem cronologica
+        "401":
+          description: Token JWT ausente ou invalido
+        "403":
+          description: Role insuficiente
+      security:
+        - bearer: []
+      summary: Listar audit log da OS (transicoes e acoes registradas)
+      tags:
+        - Ordens de Servico
+  /ordens-servico/{id}:
+    get:
+      operationId: OrdemDeServicoController_findById
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OS encontrada (view detalhada)
+        "401":
+          description: Token JWT ausente ou invalido
+        "403":
+          description: Role insuficiente
+        "404":
+          description: OS nao encontrada
+      security:
+        - bearer: []
+      summary: Buscar ordem de servico por ID (cabecalho, corpo, rodape)
+      tags:
+        - Ordens de Servico
+    delete:
+      operationId: OrdemDeServicoController_delete
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "204":
+          description: OS removida
+        "401":
+          description: Token JWT ausente ou invalido
+        "403":
+          description: Role insuficiente
+        "404":
+          description: OS nao encontrada
+      security:
+        - bearer: []
+      summary: Deletar ordem de servico
+      tags:
+        - Ordens de Servico
+  /ordens-servico/{id}/entregar:
+    post:
+      operationId: OrdemDeServicoController_entregar
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Veiculo entregue com sucesso
+        "400":
+          description: Transicao de status invalida
+        "401":
+          description: Token JWT ausente ou invalido
+        "403":
+          description: Role insuficiente
+        "404":
+          description: OS nao encontrada
+        "409":
+          description: OS alterada por outra operacao ao mesmo tempo (releia e repita)
+      security:
+        - bearer: []
+      summary: Entregar veiculo (encerrar OS; so depois de paga = FINALIZADA)
+      tags:
+        - Ordens de Servico
+  /ordens-servico/{id}/cancelar:
+    post:
+      operationId: OrdemDeServicoController_cancelar
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CancelarOrdemDeServicoDto"
+      responses:
+        "200":
+          description: OS cancelada
+        "400":
+          description: OS ja em execucao/finalizada — nao pode ser cancelada
+        "401":
+          description: Token JWT ausente ou invalido
+        "403":
+          description: Role insuficiente
+        "404":
+          description: OS nao encontrada
+        "409":
+          description: OS alterada por outra operacao ao mesmo tempo (releia e repita)
+      security:
+        - bearer: []
+      summary: Cancelar OS (so antes da execucao comecar; a saga chama DELETE /orcamentos e DELETE /execucao/ordens — US-F4-10/US-F4-18)
+      tags:
+        - Ordens de Servico
+  /clientes/{cpfCnpj}/ordens-servico:
+    get:
+      operationId: ClienteOrdemDeServicoController_findByCpfCnpj
+      parameters:
+        - name: cpfCnpj
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: page
+          required: false
+          in: query
+          description: Numero da pagina (paginacao)
+          schema:
+            example: 1
+            type: number
+        - name: limit
+          required: false
+          in: query
+          description: Quantidade de itens por pagina
+          schema:
+            example: 10
+            type: number
+        - name: clienteId
+          required: false
+          in: query
+          description: Filtrar por ID do cliente
+          schema:
+            example: uuid-do-cliente
+            type: string
+        - name: status
+          required: false
+          in: query
+          description: Filtrar por status da OS
+          schema:
+            example: RECEBIDA
+            type: string
+            enum:
+              - RECEBIDA
+              - EM_DIAGNOSTICO
+              - AGUARDANDO_APROVACAO
+              - EM_EXECUCAO
+              - FINALIZADA
+              - ENTREGUE
+              - CANCELADA
+        - name: numero
+          required: false
+          in: query
+          description: Filtrar por número da OS
+          schema:
+            example: OS-001
+            type: string
+        - name: incluirEncerradas
+          required: false
+          in: query
+          description: Incluir ordens de servico finalizadas e entregues na listagem
+          schema:
+            example: false
+            type: boolean
+      responses:
+        "200":
+          description: Lista paginada de OS do cliente
+        "401":
+          description: Token JWT ausente ou invalido
+        "403":
+          description: Role insuficiente ou CPF/CNPJ nao pertence ao usuario
+        "404":
+          description: Cliente nao encontrado pelo CPF/CNPJ
+      security:
+        - bearer: []
+      summary: Historico de OS do cliente autenticado (US-16)
+      tags:
+        - Ordens de Servico
+  /admin/sagas/{numero}/reprocessar:
+    post:
+      description: "Uso quando uma chamada a Execucao/Billing esgotou as tentativas (alerta de saga parada; runbook docs/runbooks/saga-reprocessar.md). Reenvia o comando — idempotente por numeroOS — e aplica a resposta na mesma requisicao. Passos que aguardam cliente/participante devolvem `reenviados: []`."
+      operationId: SagaAdminController_reprocessar
+      parameters:
+        - name: numero
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Saga apos o reprocessamento e lista de comandos reenviados
+        "401":
+          description: Token JWT ausente ou invalido
+        "403":
+          description: Somente ADMIN
+        "404":
+          description: Saga nao encontrada
+      security:
+        - bearer: []
+      summary: Reprocessar saga travada (reenvia por HTTP o comando do passo atual ou as compensacoes pendentes)
+      tags:
+        - Saga (admin)
+  /ordens-servico/{numero}/eventos:
+    post:
+      description: "Corpo = envelope (`id` uuid, `type`, `version`, `occurredAt`, `producer`, `data`). Idempotente pelo `id`: repeticao devolve `{ aplicado: false, duplicado: true }`. O orquestrador aplica o evento na saga/OS e executa os comandos seguintes por HTTP antes de responder. Tipos: execucao.diagnostico-concluido, execucao.finalizada, billing.orcamento-aprovado, billing.orcamento-rejeitado, billing.pagamento-aprovado, billing.pagamento-recusado (os demais eventos chegam como resposta sincrona dos comandos)."
+      operationId: CallbackSagaController_receberEvento
+      parameters:
+        - name: numero
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: x-tentativa
+          required: false
+          in: header
+          description: Numero da tentativa do participante (opcional, so para log)
+          schema:
+            type: string
+        - name: traceparent
+          in: header
+          description: "W3C Trace Context de quem chamou: o callback continua o trace (US-F4-16)"
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        description: Envelope do callback; `data` segue o schema do `type` (docs/contratos/schemas/callbacks.schema.json)
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EnvelopeCallback"
+      responses:
+        "200":
+          description: Resultado na saga (aplicado ou duplicado)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResultadoCallbackDto"
+        "400":
+          description: Envelope invalido ou data.numeroOS diferente do :numero
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErroHttpDto"
+        "401":
+          description: Token JWT ausente ou invalido
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErroHttpDto"
+        "403":
+          description: Somente outro servico (JWT com role SERVICO)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErroHttpDto"
+        "404":
+          description: OS inexistente (erro de configuracao — nao repetir)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErroHttpDto"
+        "409":
+          description: OS/saga alterada ao mesmo tempo (releia e repita o callback)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErroHttpDto"
+      security:
+        - bearer: []
+      summary: Callback de evento de um participante da saga (Execucao/Billing) — role SERVICO
+      tags:
+        - Ordens de Servico
+      x-role: SERVICO
+  /notificacoes:
+    get:
+      operationId: NotificacaoController_findAll
+      parameters:
+        - name: page
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            default: 1
+            type: number
+        - name: limit
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            default: 10
+            type: number
+        - name: clienteId
+          required: false
+          in: query
+          schema:
+            type: string
+        - name: ordemDeServicoId
+          required: false
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Notificacoes paginadas
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificacoesPaginadasDto"
+        "401":
+          description: Token JWT ausente ou invalido
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErroHttpDto"
+        "403":
+          description: Role insuficiente
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErroHttpDto"
+      security:
+        - bearer: []
+      summary: Listar historico de notificacoes enviadas
+      tags:
+        - Notificacoes
+  /clientes/{cpfCnpj}/notificacoes:
+    get:
+      operationId: ClienteNotificacaoController_findByCpfCnpj
+      parameters:
+        - name: cpfCnpj
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: page
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            default: 1
+            type: number
+        - name: limit
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            default: 10
+            type: number
+        - name: clienteId
+          required: false
+          in: query
+          schema:
+            type: string
+        - name: ordemDeServicoId
+          required: false
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Notificacoes paginadas
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificacoesPaginadasDto"
+        "400":
+          description: CPF/CNPJ com formato invalido
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErroHttpDto"
+        "401":
+          description: Token JWT ausente ou invalido
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErroHttpDto"
+        "403":
+          description: Role insuficiente ou CPF/CNPJ nao pertence ao usuario
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErroHttpDto"
+        "404":
+          description: Cliente nao encontrado pelo CPF/CNPJ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErroHttpDto"
+      security:
+        - bearer: []
+      summary: Historico de notificacoes do cliente autenticado
+      tags:
+        - Notificacoes
+components:
+  securitySchemes:
+    bearer:
+      scheme: bearer
+      bearerFormat: JWT
+      type: http
+  schemas:
+    BillingOrcamentoAprovado:
+      description: billing.orcamento-aprovado — callback.
+      type: object
+      required:
+        - numeroOS
+        - orcamentoId
+      properties:
+        numeroOS:
+          $ref: "#/components/schemas/NumeroOS"
+        orcamentoId:
+          type: string
+          minLength: 1
+    BillingOrcamentoRejeitado:
+      description: billing.orcamento-rejeitado — callback.
+      type: object
+      required:
+        - numeroOS
+        - orcamentoId
+      properties:
+        numeroOS:
+          $ref: "#/components/schemas/NumeroOS"
+        orcamentoId:
+          type: string
+          minLength: 1
+        motivo:
+          type: string
+    BillingPagamentoAprovado:
+      description: billing.pagamento-aprovado — callback.
+      type: object
+      required:
+        - numeroOS
+        - orderId
+        - valor
+      properties:
+        numeroOS:
+          $ref: "#/components/schemas/NumeroOS"
+        orderId:
+          type: string
+          minLength: 1
+        valor:
+          $ref: "#/components/schemas/Dinheiro"
+    BillingPagamentoRecusado:
+      description: billing.pagamento-recusado — callback.
+      type: object
+      required:
+        - numeroOS
+        - orderId
+        - motivo
+      properties:
+        numeroOS:
+          $ref: "#/components/schemas/NumeroOS"
+        orderId:
+          type: string
+          minLength: 1
+        motivo:
+          type: string
+    CancelarOrdemDeServicoDto:
+      type: object
+      properties:
+        motivo:
+          type: string
+          description: Motivo do cancelamento manual. Default OPERADOR; os demais motivos sao atribuidos pela saga.
+          enum:
+            - OPERADOR
+          default: OPERADOR
+    CreateClienteDto:
+      type: object
+      properties:
+        nome:
+          type: string
+          description: Nome do cliente
+          example: Joao da Silva
+        cpfCnpj:
+          type: string
+          description: CPF ou CNPJ do cliente (com ou sem formatacao)
+          example: 123.456.789-09
+        telefone:
+          type: string
+          description: Telefone do cliente
+          example: (11) 99999-8888
+        email:
+          type: string
+          description: Email do cliente (opcional)
+          example: joao@email.com
+      required:
+        - nome
+        - cpfCnpj
+        - telefone
+    CreateOrdemDeServicoDto:
+      type: object
+      properties:
+        clienteId:
+          type: string
+          description: ID do cliente proprietario do veiculo
+          example: uuid-do-cliente
+        veiculoId:
+          type: string
+          description: ID do veiculo a ser atendido
+          example: uuid-do-veiculo
+        descricaoInicial:
+          type: string
+          description: Descricao inicial da OS (observacoes do atendente)
+          example: Cliente relata barulho ao frenar e ar quente
+      required:
+        - clienteId
+        - veiculoId
+        - descricaoInicial
+    CreateUsuarioDto:
+      type: object
+      properties:
+        nome:
+          type: string
+          description: Nome completo do usuário
+          example: João da Silva
+        email:
+          type: string
+          description: Email único do usuário
+          example: joao@mecanica.com
+        cpf:
+          type: string
+          description: CPF do usuário (11 dígitos, com ou sem máscara) — chave do login de staff na Lambda de autenticação (Fase 3)
+          example: 529.982.247-25
+        senha:
+          type: string
+          description: Senha do usuário
+          example: senha123
+        role:
+          type: string
+          description: Papel do usuário no sistema
+          enum:
+            - ADMIN
+            - ATENDENTE
+            - MECANICO
+            - ESTOQUISTA
+            - CLIENTE
+          example: MECANICO
+      required:
+        - nome
+        - email
+        - senha
+        - role
+    CreateVeiculoDto:
+      type: object
+      properties:
+        placa:
+          type: string
+          description: Placa do veiculo (formato antigo ABC-1234 ou Mercosul ABC1D23)
+          example: ABC1D23
+        marca:
+          type: string
+          description: Marca do veiculo
+          example: Toyota
+        modelo:
+          type: string
+          description: Modelo do veiculo
+          example: Corolla
+        ano:
+          type: number
+          description: Ano de fabricacao do veiculo
+          example: 2024
+        clienteId:
+          type: string
+          description: ID do cliente proprietario
+          example: uuid-do-cliente
+      required:
+        - placa
+        - marca
+        - modelo
+        - ano
+        - clienteId
+    Dinheiro:
+      type: string
+      pattern: ^\d+\.\d{2}$
+      description: Decimal como string com 2 casas (nunca float).
+      example: "300.00"
+    Envelope:
+      title: Envelope
+      description: "Envelope dos callbacks POST /ordens-servico/{numero}/eventos (http-interno.md). Sem correlationId no corpo: a correlacao e o {numero} do path e o cabecalho x-correlation-id. Campos extras sao tolerados (campo novo opcional = minor)."
+      type: object
+      required:
+        - id
+        - type
+        - version
+        - occurredAt
+        - producer
+        - data
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: UUID (v7) — chave de idempotencia do callback (processed_messages).
+        type:
+          type: string
+          pattern: ^[a-z]+\.[a-z][a-z0-9-]*$
+          description: <dominio>.<fato> (vocabulario do asyncapi.yaml).
+          example: execucao.diagnostico-concluido
+        version:
+          type: integer
+          minimum: 1
+          description: Versao do contrato do evento.
+        occurredAt:
+          type: string
+          format: date-time
+        producer:
+          type: string
+          enum:
+            - os-service
+            - billing-service
+            - execucao-service
+        data:
+          type: object
+          description: Payload do type (eventos.schema.json). numeroOS, se vier, deve ser igual ao {numero} do path.
+    EnvelopeBillingOrcamentoAprovado:
+      title: billing.orcamento-aprovado
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            type:
+              type: string
+              enum:
+                - billing.orcamento-aprovado
+            producer:
+              type: string
+              enum:
+                - billing-service
+            data:
+              $ref: "#/components/schemas/BillingOrcamentoAprovado"
+    EnvelopeBillingOrcamentoRejeitado:
+      title: billing.orcamento-rejeitado
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            type:
+              type: string
+              enum:
+                - billing.orcamento-rejeitado
+            producer:
+              type: string
+              enum:
+                - billing-service
+            data:
+              $ref: "#/components/schemas/BillingOrcamentoRejeitado"
+    EnvelopeBillingPagamentoAprovado:
+      title: billing.pagamento-aprovado
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            type:
+              type: string
+              enum:
+                - billing.pagamento-aprovado
+            producer:
+              type: string
+              enum:
+                - billing-service
+            data:
+              $ref: "#/components/schemas/BillingPagamentoAprovado"
+    EnvelopeBillingPagamentoRecusado:
+      title: billing.pagamento-recusado
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            type:
+              type: string
+              enum:
+                - billing.pagamento-recusado
+            producer:
+              type: string
+              enum:
+                - billing-service
+            data:
+              $ref: "#/components/schemas/BillingPagamentoRecusado"
+    EnvelopeCallback:
+      title: EnvelopeCallback
+      description: "Corpo de POST /ordens-servico/{numero}/eventos: o Envelope com o data do type. So os eventos que dependem de uma pessoa ou do Mercado Pago chegam por callback; os demais sao a resposta sincrona dos comandos."
+      oneOf:
+        - $ref: "#/components/schemas/EnvelopeExecucaoDiagnosticoConcluido"
+        - $ref: "#/components/schemas/EnvelopeExecucaoFinalizada"
+        - $ref: "#/components/schemas/EnvelopeBillingOrcamentoAprovado"
+        - $ref: "#/components/schemas/EnvelopeBillingOrcamentoRejeitado"
+        - $ref: "#/components/schemas/EnvelopeBillingPagamentoAprovado"
+        - $ref: "#/components/schemas/EnvelopeBillingPagamentoRecusado"
+      discriminator:
+        propertyName: type
+        mapping:
+          execucao.diagnostico-concluido: "#/components/schemas/EnvelopeExecucaoDiagnosticoConcluido"
+          execucao.finalizada: "#/components/schemas/EnvelopeExecucaoFinalizada"
+          billing.orcamento-aprovado: "#/components/schemas/EnvelopeBillingOrcamentoAprovado"
+          billing.orcamento-rejeitado: "#/components/schemas/EnvelopeBillingOrcamentoRejeitado"
+          billing.pagamento-aprovado: "#/components/schemas/EnvelopeBillingPagamentoAprovado"
+          billing.pagamento-recusado: "#/components/schemas/EnvelopeBillingPagamentoRecusado"
+    EnvelopeExecucaoDiagnosticoConcluido:
+      title: execucao.diagnostico-concluido
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            type:
+              type: string
+              enum:
+                - execucao.diagnostico-concluido
+            producer:
+              type: string
+              enum:
+                - execucao-service
+            data:
+              $ref: "#/components/schemas/ExecucaoDiagnosticoConcluido"
+    EnvelopeExecucaoFinalizada:
+      title: execucao.finalizada
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            type:
+              type: string
+              enum:
+                - execucao.finalizada
+            producer:
+              type: string
+              enum:
+                - execucao-service
+            data:
+              $ref: "#/components/schemas/ExecucaoFinalizada"
+    ErroHttpDto:
+      type: object
+      properties:
+        statusCode:
+          type: number
+          example: 404
+        message:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+          description: Mensagem (lista quando vem do ValidationPipe)
+          example: Ordem de Servico 'OS-2026-000123' nao encontrada
+        error:
+          type: string
+          example: Not Found
+          description: Ausente no 401 do guard JWT
+      required:
+        - statusCode
+        - message
+    ExecucaoDiagnosticoConcluido:
+      description: execucao.diagnostico-concluido — callback.
+      type: object
+      required:
+        - numeroOS
+        - mecanicoId
+        - diagnostico
+        - itens
+      properties:
+        numeroOS:
+          $ref: "#/components/schemas/NumeroOS"
+        mecanicoId:
+          type: string
+          minLength: 1
+        diagnostico:
+          type: string
+          minLength: 5
+          maxLength: 1000
+        itens:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/Item"
+    ExecucaoFinalizada:
+      description: execucao.finalizada — callback.
+      type: object
+      required:
+        - numeroOS
+        - finalizadaEm
+      properties:
+        numeroOS:
+          $ref: "#/components/schemas/NumeroOS"
+        finalizadaEm:
+          type: string
+          format: date-time
+    Item:
+      type: object
+      description: Item do diagnostico com preco congelado (servico ou produto).
+      required:
+        - tipo
+        - referenciaId
+        - nome
+        - quantidade
+        - precoUnitario
+      properties:
+        tipo:
+          type: string
+          enum:
+            - SERVICO
+            - PRODUTO
+        referenciaId:
+          type: string
+          minLength: 1
+        nome:
+          type: string
+          minLength: 1
+        quantidade:
+          type: integer
+          minimum: 1
+        precoUnitario:
+          $ref: "#/components/schemas/Dinheiro"
+        servicoId:
+          type: string
+          description: "Somente PRODUTO: referenciaId do SERVICO do mesmo diagnostico ao qual a peca pertence."
+    NotificacaoResponseDto:
+      type: object
+      properties:
+        id:
+          type: string
+        clienteId:
+          type: string
+        ordemDeServicoId:
+          type: string
+          nullable: true
+        numeroOS:
+          type: string
+          nullable: true
+          example: OS-2026-000001
+          description: Numero da OS (US-F4-12; null em notificacoes anteriores)
+        eventoId:
+          type: string
+          nullable: true
+          description: Id do fato que originou a notificacao (id do envelope do callback ou id deterministico); unico por tipo + canal — garante uma notificacao por fato
+        linkPagamento:
+          type: string
+          nullable: true
+          example: https://www.mercadopago.com.br/checkout/v1/redirect?pref_id=123
+          description: Link de pagamento (so em PAGAMENTO_PENDENTE, vindo de billing.cobranca-criada)
+        tipo:
+          type: string
+          enum:
+            - ORCAMENTO_PRONTO
+            - OS_FINALIZADA
+            - STATUS_OS_ALTERADO
+            - ORCAMENTO_APROVADO
+            - PAGAMENTO_PENDENTE
+            - PAGAMENTO_APROVADO
+            - PAGAMENTO_RECUSADO
+            - OS_CANCELADA
+        canal:
+          type: string
+          enum:
+            - EMAIL
+            - WEBHOOK
+          description: Canal real do envio (WEBHOOK quando NOTIFICATION_PROVIDER=webhook)
+        destinatario:
+          type: string
+        assunto:
+          type: string
+        mensagem:
+          type: string
+        status:
+          type: string
+          enum:
+            - PENDENTE
+            - ENVIADA
+            - FALHOU
+        erro:
+          type: string
+          nullable: true
+        enviadaEm:
+          type: string
+          nullable: true
+          format: date-time
+        createdAt:
+          format: date-time
+          type: string
+      required:
+        - id
+        - clienteId
+        - ordemDeServicoId
+        - tipo
+        - canal
+        - destinatario
+        - assunto
+        - mensagem
+        - status
+        - erro
+        - enviadaEm
+        - createdAt
+    NotificacoesPaginadasDto:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/NotificacaoResponseDto"
+        total:
+          type: number
+          example: 1
+        page:
+          type: number
+          example: 1
+        limit:
+          type: number
+          example: 10
+      required:
+        - data
+        - total
+        - page
+        - limit
+    NumeroOS:
+      type: string
+      minLength: 1
+      description: Numero da OS — chave de idempotencia dos comandos e correlacao (x-correlation-id).
+      example: OS-2026-000123
+    PassoSaga:
+      type: string
+      enum:
+        - ENFILEIRAR_EXECUCAO
+        - AGUARDAR_DIAGNOSTICO
+        - GERAR_ORCAMENTO
+        - AGUARDAR_APROVACAO
+        - INICIAR_EXECUCAO
+        - AGUARDAR_FINALIZACAO
+        - COBRAR
+        - AGUARDAR_PAGAMENTO
+        - CONCLUIDA
+      description: Passo da saga apos o evento (sempre presente quando a saga existe)
+    ResultadoCallbackDto:
+      type: object
+      properties:
+        aplicado:
+          type: boolean
+          description: false = ignorado (duplicado/fora de ordem)
+          example: true
+        duplicado:
+          type: boolean
+          description: true quando o id do envelope ja tinha sido aplicado (so aparece nesse caso)
+          example: true
+        passo:
+          description: Passo da saga apos o evento (sempre presente quando a saga existe)
+          example: GERAR_ORCAMENTO
+          allOf:
+            - $ref: "#/components/schemas/PassoSaga"
+        status:
+          description: Status da saga apos o evento (sempre presente quando a saga existe)
+          example: EM_ANDAMENTO
+          allOf:
+            - $ref: "#/components/schemas/StatusSaga"
+      required:
+        - aplicado
+    StatusSaga:
+      type: string
+      enum:
+        - EM_ANDAMENTO
+        - COMPENSANDO
+        - CONCLUIDA
+        - CANCELADA
+      description: Status da saga apos o evento (sempre presente quando a saga existe)
+    UpdateClienteDto:
+      type: object
+      properties:
+        nome:
+          type: string
+          description: Nome do cliente
+          example: Joao da Silva
+        cpfCnpj:
+          type: string
+          description: CPF ou CNPJ do cliente (com ou sem formatacao)
+          example: 123.456.789-09
+        telefone:
+          type: string
+          description: Telefone do cliente
+          example: (11) 99999-8888
+        email:
+          type: string
+          description: Email do cliente (opcional)
+          example: joao@email.com
+    UpdateUsuarioDto:
+      type: object
+      properties:
+        cpf:
+          type: string
+          description: CPF do usuário (11 dígitos) — chave do login de staff (Fase 3)
+          example: 529.982.247-25
+        nome:
+          type: string
+          description: Nome completo do usuário
+          example: João Silva Atualizado
+        email:
+          type: string
+          description: Email único do usuário
+          example: joao.novo@mecanica.com
+        role:
+          type: string
+          description: Papel do usuário no sistema
+          enum:
+            - ADMIN
+            - ATENDENTE
+            - MECANICO
+            - ESTOQUISTA
+            - CLIENTE
+          example: ATENDENTE
+        ativo:
+          type: boolean
+          description: Status ativo/inativo do usuário
+          example: true
+    UpdateVeiculoDto:
+      type: object
+      properties:
+        placa:
+          type: string
+          description: Placa do veiculo (formato antigo ABC-1234 ou Mercosul ABC1D23)
+          example: ABC1D23
+        marca:
+          type: string
+          description: Marca do veiculo
+          example: Toyota
+        modelo:
+          type: string
+          description: Modelo do veiculo
+          example: Corolla
+        ano:
+          type: number
+          description: Ano de fabricacao do veiculo
+          example: 2024

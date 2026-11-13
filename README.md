@@ -195,7 +195,7 @@ cp .env.example .env
 
 ### Notificação por webhook outbound
 
-Para demonstrar notificações sem infraestrutura própria de e-mail/SMS/push, a aplicação pode publicar mudanças de status da OS em um webhook externo.
+Para demonstrar notificações sem infraestrutura própria de e-mail/SMS/push, a aplicação pode publicar os marcos da OS (orçamento pronto/aprovado, pagamento pendente/aprovado/recusado, OS finalizada/cancelada e as demais mudanças de status) em um webhook externo.
 
 1. Abra `https://webhook.site/` ou um RequestBin e copie a URL gerada.
 2. Configure o `.env`:
@@ -207,7 +207,7 @@ NOTIFICATION_WEBHOOK_SECRET=segredo-usado-no-video
 NOTIFICATION_WEBHOOK_TIMEOUT_MS=5000
 ```
 
-Quando a OS mudar de status, a API envia `POST` com `Content-Type: application/json` e `X-Signature: sha256=<hmac>`. O body contém `ordemId`, `clienteId`, `statusAnterior`, `statusAtual`, `timestamp` e `tipoNotificacao`. Falhas de entrega, timeout e respostas 4xx/5xx são registradas em log e não bloqueiam o fluxo principal da OS. O POST outbound propaga o `X-Correlation-Id` da requisição de origem, para correlacionar a notificação recebida pelo webhook com a requisição que a disparou.
+A cada notificação a API envia `POST` com `Content-Type: application/json` e `X-Signature: sha256=<hmac>` (HMAC-SHA256 do body com `NOTIFICATION_WEBHOOK_SECRET`). O body (US-F4-12) é `{ numeroOS, tipo, mensagem, linkPagamento? }` — `linkPagamento` só em `PAGAMENTO_PENDENTE` — e mantém os campos da Fase 2 (`ordemId`, `clienteId`, `statusAnterior`, `statusAtual`, `timestamp`, `tipoNotificacao`). A notificação fica gravada com canal `WEBHOOK`. Falhas de entrega, timeout e respostas 4xx/5xx são registradas em log e não bloqueiam o fluxo principal da OS. O POST outbound propaga o `X-Correlation-Id` da requisição de origem, para correlacionar a notificação recebida pelo webhook com a requisição que a disparou.
 
 ---
 
@@ -620,7 +620,14 @@ precisa ser explícito e consultável).
   **fica no passo** (métrica `oficina_os_saga_passos_total{resultado="comando-falhou"}`), o alerta de saga
   parada acusa e `POST /admin/sagas/:numero/reprocessar` (ADMIN) reenvia o comando — idempotente pelo
   `numeroOS` no participante. Quem envia callbacks também repete 3x; `409` do OS significa "releia e repita".
-- Notificação continua **in-process** (`OsStatusAlteradoEvent`, `OrcamentoProntoEvent`, `OsFinalizadaEvent`).
+- Notificação continua **in-process** (US-F4-12): quando a saga **aplica** um fato do Billing
+  (`billing.orcamento-gerado`, `-aprovado`, `cobranca-criada` com o `linkPagamento` do `201` do cobrar,
+  `pagamento-aprovado`, `pagamento-recusado`) ou a OS é finalizada/cancelada, sai um
+  `MarcoOrdemDeServicoEvent` **depois do commit**; callback duplicado ou fora de ordem não notifica. Uma
+  notificação por fato: índice único `(evento_id, tipo, canal)` em `notificacao` (detalhes em
+  [`docs/notificacao-email.md`](docs/notificacao-email.md)).
+- **Eventos de domínio só depois do commit:** cada tentativa de transação acumula os eventos num
+  `EventosDaTransacao`; tentativa revertida (conflito de versão → retry) não dispara listener nenhum.
 - **Consistência:** cada evento roda numa única transação (OS + saga no mesmo Postgres); os comandos
   HTTP saem só depois do commit; conflito de versão é refeito em processo e, se persistir, devolve 409.
 - Métricas: `oficina_os_saga_passos_total`, `oficina_os_saga_passo_duracao_seconds`, `oficina_os_sagas`,

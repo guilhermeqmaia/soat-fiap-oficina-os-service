@@ -11,11 +11,12 @@ para o OS Service, quando depende de uma pessoa (mecânico, cliente) ou do Merca
 | Tema | Regra |
 |---|---|
 | Orquestração | O OS Service continua o orquestrador (RFC-0005). A máquina de estados `SagaOS` não muda; só o transporte. |
-| Chamadas OS → serviço | HTTP síncrono, base interna pelo DNS do cluster (`http://execucao-service:3002`, `http://billing-service:3001`); em dev, `localhost`. Timeout 5 s, **3 tentativas com backoff exponencial** (200 ms, 800 ms, 3 s) só para `5xx`/timeout/erro de rede. `4xx` não repete. Esgotadas as tentativas, a saga fica no passo e o alerta de saga parada / `POST /admin/sagas/:numero/reprocessar` reenvia. |
+| Chamadas OS → serviço | HTTP síncrono, base interna pelo DNS do cluster (`http://execucao-service:3002`, `http://billing-service:3001`); em dev, `localhost`. Timeout 5 s, **3 tentativas com backoff exponencial** (200 ms, 800 ms, 3 s) só para `5xx`/timeout/erro de rede. `4xx` não repete. Esgotadas as tentativas, a saga fica no passo (histórico `chamada-falhou` com `tentativas`, conta em `oficina_os_sagas_paradas` na hora) e o alerta de saga parada / `POST /admin/sagas/:numero/reprocessar` reenvia. |
 | Callbacks serviço → OS | `POST /ordens-servico/{numero}/eventos` no OS Service, corpo = envelope (abaixo). Quem chama também aplica retry 3x. O OS responde `200` com o resultado da saga (`aplicado`, `passo`, `status`) ou `409` se a OS/saga estiver em conflito (releia e repita). |
 | Idempotência | Comandos: chave = `numeroOS` (repetir a chamada não duplica efeito). Callbacks: chave = `id` do envelope (tabela `processed_messages` no OS; repetição devolve `200 { aplicado: false, duplicado: true }`). |
 | Autenticação entre serviços | JWT com `role: SERVICO` e `sub` = nome do serviço (`os-service`, `billing-service`, `execucao-service`), assinado com o **mesmo `JWT_SECRET`** da Lambda; emitido localmente por cada serviço (`mintServiceToken` do kit), sem passar pela Lambda. Endpoints internos e callbacks aceitam só `SERVICO`; endpoints de usuário continuam com os roles de hoje. |
-| Correlação | Cabeçalhos `x-correlation-id` (= número da OS) e `traceparent` propagados em toda chamada e callback (kit `logging`). |
+| Correlação | Cabeçalhos `x-correlation-id` (= número da OS) e `traceparent` propagados em toda chamada e callback (kit `logging`). Opcional no callback: `x-tentativa` (número da tentativa de quem chama; só vai para o log — o cliente do kit 0.3.0 ainda não envia). |
+| Observabilidade (US-F4-16) | Quem chama mede `oficina_http_interno_total{origem,destino,rota,resultado=sucesso\|recusa\|esgotado\|erro}` e `oficina_http_interno_duracao_seconds{origem,destino,rota,status}` (`rota` = template, ex. `POST /orcamentos/{numero}/cobrar`). O OS mede `oficina_callbacks_total{type,resultado=aplicado\|duplicado\|ignorado\|conflito\|nao_encontrado\|erro}`. Logs com `trace_id`, `correlation_id`, `servico`, `rota`, `tentativa`. |
 | Exposição | Os três serviços ficam atrás do API Gateway (prefixos `/ordens-servico|/clientes|/veiculos|/usuario|/notificacoes|/auth/me` → OS; `/orcamentos|/pagamentos|/webhooks` → Billing; `/execucao|/catalogo|/estoque` → Execução). Chamadas entre serviços **não passam** pelo gateway: vão direto pelo DNS interno. |
 | Erros de negócio | `409 Conflict` com `{ motivo }` significa "recusado" (ex.: enfileirar recusado, estoque insuficiente) e vira o evento de falha correspondente na saga. `404` = OS/recurso desconhecido no destino (erro de configuração, não repete). |
 
@@ -33,6 +34,8 @@ para o OS Service, quando depende de uma pessoa (mecânico, cliente) ou do Merca
 ```
 
 `correlationId` deixa de existir no corpo: é o `{numero}` do path e o cabeçalho `x-correlation-id`.
+
+**Schemas validáveis** (US-F4-15): [`schemas/`](schemas/) traz este envelope, o `data` de cada `type`, os corpos dos comandos e a tabela comando → endpoint/respostas ([`endpoints-participantes.json`](schemas/endpoints-participantes.json)) em JSON Schema; o OpenAPI do OS Service ([`openapi/os-service.yaml`](openapi/os-service.yaml)) é gerado deles. Mudou uma tabela deste documento? Mude o schema junto — os testes de contrato dos serviços leem de lá.
 
 ## OS Service → Execução Service
 
@@ -53,9 +56,9 @@ para o OS Service, quando depende de uma pessoa (mecânico, cliente) ou do Merca
 
 | Comando | Endpoint no Billing | Corpo | Resposta imediata = evento | Falha de negócio |
 |---|---|---|---|---|
-| `billing.gerar-orcamento` | `POST /orcamentos` | `{ numeroOS, clienteId, itens[] }` | `201 { numeroOS, orcamentoId, total, validoAte }` ≙ `billing.orcamento-gerado` | — (idempotente: com orçamento ativo para a OS, devolve o existente com `200`) |
+| `billing.gerar-orcamento` | `POST /orcamentos` | `{ numeroOS, clienteId, itens[] }` | `201 { numeroOS, orcamentoId, total, validoAte }` ≙ `billing.orcamento-gerado`; orçamento ativo já existente → `200` com o mesmo corpo | — (o OS também aceita `409` com o orçamento existente no corpo e trata como sucesso) |
 | `billing.cobrar` | `POST /orcamentos/{numeroOS}/cobrar` | — | `201 { numeroOS, orderId, linkPagamento, valor }` ≙ `billing.cobranca-criada` (order no Mercado Pago) | `409 { motivo }` se o orçamento não está aprovado |
-| `billing.cancelar-orcamento` | `DELETE /orcamentos/{numeroOS}` | `{ motivo }` | `200 { numeroOS, orcamentoId, estornado }` ≙ `billing.orcamento-cancelado` (`orcamentoId: null` se a OS foi cancelada antes de o orçamento existir) | `409 { motivo }` se o pagamento já foi aprovado; repetir o cancelamento é idempotente (`200`) |
+| `billing.cancelar-orcamento` | `DELETE /orcamentos/{numeroOS}` | `{ motivo }` | `200 { numeroOS, orcamentoId, estornado }` ≙ `billing.orcamento-cancelado` (idempotente; `orcamentoId: null` se a OS foi cancelada antes de o orçamento existir) | `409 { motivo }` se o pagamento já foi aprovado — inalcançável pela saga, que só compensa antes de `billing.cobrar` |
 
 **Callbacks do Billing para o OS:**
 
@@ -68,7 +71,7 @@ para o OS Service, quando depende de uma pessoa (mecânico, cliente) ou do Merca
 
 ## OS Service (o que recebe e o que expõe)
 
-- `POST /ordens-servico/{numero}/eventos` — callback (role `SERVICO`). `200 { aplicado, duplicado?, passo, status }`; `404` OS inexistente; `409` conflito de versão (repetir).
+- `POST /ordens-servico/{numero}/eventos` — callback (role `SERVICO`). `200 { aplicado, duplicado?, passo, status }` (`passo`/`status` só faltam se a saga não existir mais); `400` envelope inválido ou `data.numeroOS` ≠ `{numero}`; `401`/`403` sem JWT de `SERVICO`; `404` OS inexistente (não repetir); `409` conflito de versão (releia e repita). Os `4xx` do OS usam o corpo padrão do Nest `{ statusCode, message, error? }` — o `409 { motivo }` dos princípios é a recusa de negócio dos participantes, não o conflito do callback.
 - Eventos `os.aberta`, `os.cancelada`, `os.finalizada`, `os.entregue` deixam de ser publicados: a Notificação é **in-process** no OS Service (US-F4-12), alimentada pelos callbacks (ex.: `billing.cobranca-criada` → e-mail com `linkPagamento`).
 - Nenhum outro serviço precisa ser avisado de `os.cancelada`: o cancelamento chama `DELETE /execucao/ordens/{numeroOS}` e `DELETE /orcamentos/{numeroOS}` diretamente (compensações).
 

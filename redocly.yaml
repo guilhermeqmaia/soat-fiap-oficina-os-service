@@ -1,0 +1,5 @@
+# US-F4-15 — lint do OpenAPI publicado (npm run contracts:lint). Bloqueante no CI:
+# recommended-strict transforma todo aviso do recommended em erro.
+# Excecoes pontuais (rotas do kit sem decorators) ficam em .redocly.lint-ignore.yaml.
+extends:
+  - recommended-strict
