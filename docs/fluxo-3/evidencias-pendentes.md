@@ -6,7 +6,8 @@ provar com teste automatizado: precisa dos três serviços no ar com o Datadog. 
 pré-requisito, como produzir a evidência e onde guardar o print.
 
 Destino dos prints: `docs/qa-plans/evidencias/US-F4-16-<item>-<data>.png`, referenciados no
-`QA_PLAN_US-F4-16.md` (ainda não existe — criar com `/qa-plan F4-16` ao fechar a story).
+[`QA_PLAN_US-F4-16.md`](../qa-plans/QA_PLAN_US-F4-16.md) (TS-07, TS-08, TS-09). Visão do card inteiro:
+[`QA_PLAN_FLUXO-3.md`](../qa-plans/QA_PLAN_FLUXO-3.md).
 
 ## O que já está provado sem ambiente real
 

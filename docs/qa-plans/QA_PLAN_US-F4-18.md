@@ -108,9 +108,30 @@ Valida a troca da mensageria SNS/SQS por HTTP direto (RFC-0008): o cliente HTTP 
 | infra-k8s: `messaging/` removido, gateway com Execucao | TS-11, TS-12 |
 | Hub: compose sem LocalStack | TS-07 |
 
+## Execucao — fechamento do lado do OS Service (11/11/2026, FLUXO 3)
+
+Branch `ci/f4-13-sonarcloud-bdd`. Contrato `http-interno.md` marcado **estavel (v1.0)**.
+
+| Cenario | Status | Como foi executado |
+|---|---|---|
+| TS-01, TS-02 | coberto no kit (fora deste repo) | testes do `@guilhermeqmaia/oficina-kit/http`; no OS, o consumidor confere JWT `SERVICO` e `x-correlation-id` nas requisicoes gravadas (`test/contracts/participantes.consumer.contract.spec.ts`) e o BDD confere o token recebido pelo stub |
+| TS-03 | **executado** | e2e jest (`ordem-de-servico.e2e.spec.ts`) + provedor de contrato (`callback.provider.contract.spec.ts`) |
+| TS-04 | **executado** | e2e jest + BDD `@idempotencia` (servico e e2e) + provedor de contrato (fixtures de callback) |
+| TS-05 | **executado** | unit do orquestrador + BDD servico (stubs HTTP: `201`/`409`) |
+| TS-06 | **executado** | unit + integracao (`prisma-saga.repository.integration.spec.ts`) + BDD `@falha-plataforma` contra container real (3 x 5xx, `chamada-falhou`, `oficina_os_sagas_paradas` = 1, reprocessar) |
+| TS-07 | **executado com stubs** | `npm run test:bdd:e2e` (caminho feliz por HTTP entre containers, sem LocalStack) + roteiro [`teste-manual-ponta-a-ponta.md`](../fluxo-3/teste-manual-ponta-a-ponta.md) §3. Com as imagens reais do Billing/Execucao: **pendente** (`BDD_E2E_REAIS=1`) |
+| TS-08 | **executado** (rejeicao e cancelamento); timeout de aprovacao em unit/e2e jest (`orquestrador-saga.service.spec.ts`, `ordem-de-servico.e2e.spec.ts`) | BDD `@compensacao`/`@cancelamento`: stubs recebem os `DELETE` com `{ motivo }` e validam contra `docs/contratos/schemas` |
+| TS-09 | **executado** | grep do passo (`src k8s k8s-aws docker-compose.yml .env.example`) sem resultados em 11/11; migration de remocao do `outbox` aplicada pelos Testcontainers em toda execucao de integracao/BDD |
+| TS-10 | pendente — Billing/Execucao | depende dos repos dos participantes (FLUXO 1 e 2) |
+| TS-11, TS-12 | pendente — infra/EKS | proximo ciclo de deploy |
+
+Numeros da execucao local: unit 532 testes (linhas 95,16 %), integracao 227, contratos 91,
+BDD servico 15 cenarios, BDD ponta a ponta 12 cenarios — todos verdes. Plano do fluxo inteiro:
+[`QA_PLAN_FLUXO-3.md`](QA_PLAN_FLUXO-3.md).
+
 ## Checklist de Validacao
-- [ ] TS-01..TS-06 (kit + OS Service)
-- [ ] TS-07, TS-08 (ponta a ponta / compensacao)
-- [ ] TS-09 (remocao)
+- [x] TS-03..TS-06 (OS Service) — TS-01/TS-02 cobertos no kit
+- [x] TS-07, TS-08 (ponta a ponta com stubs / compensacao) — repetir com as imagens reais
+- [x] TS-09 (remocao)
 - [ ] TS-10 (Billing/Execucao)
 - [ ] TS-11, TS-12 (infra, no proximo ciclo de deploy)
