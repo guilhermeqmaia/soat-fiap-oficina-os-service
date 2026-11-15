@@ -20,7 +20,7 @@ export class SagaAdminController {
     summary: 'Reprocessar saga travada (reenvia por HTTP o comando do passo atual ou as compensacoes pendentes)',
     description:
       'Uso quando uma chamada a Execucao/Billing esgotou as tentativas (alerta de saga parada; runbook ' +
-      'docs/runbooks/saga-dlq-reprocessar.md). Reenvia o comando — idempotente por numeroOS — e aplica a resposta ' +
+      'docs/runbooks/saga-reprocessar.md). Reenvia o comando — idempotente por numeroOS — e aplica a resposta ' +
       'na mesma requisicao. Passos que aguardam cliente/participante devolvem `reenviados: []`.',
   })
   @ApiOkResponse({ description: 'Saga apos o reprocessamento e lista de comandos reenviados' })

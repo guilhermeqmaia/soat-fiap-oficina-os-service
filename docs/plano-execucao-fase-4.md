@@ -288,7 +288,7 @@ US-F4-17 (vídeo + PDF).
 | US-F4-03 | [Bancos por serviço (Postgres ×2, DynamoDB)](user-stories/f4-03-bancos-por-servico.md) | 5 | 1 | infra-db / infra-k8s |
 | US-F4-04 | [Repos + CI/CD por serviço (Sonar, deploy EKS)](user-stories/f4-04-repos-e-cicd-por-servico.md) | 8 | 1 | todos |
 | US-F4-05 | [API Gateway multi-serviço + webhook MP](user-stories/f4-05-gateway-multi-servico.md) | 5 | 1 | infra-k8s |
-| US-F4-18 | [Comunicação HTTP entre serviços (kit, OS, Billing, Execução, infra)](user-stories/f4-18-comunicacao-http-entre-servicos.md) — **nova em 03/11** | 8 | 1 | kit / os-service / billing / execucao / infra-k8s |
+| US-F4-18 | [Comunicação HTTP entre serviços (kit, OS, Billing, Execução, infra)](user-stories/f4-18-comunicacao-http-entre-servicos.md) — **nova em 03/11**; **encerrada do lado do os-service em 11/11** (contrato `http-interno.md` estável v1.0) | 8 | 1 | kit / os-service / billing / execucao / infra-k8s |
 | US-F4-06 | [OS Service — strangler do monólito](user-stories/f4-06-os-service-strangler.md) | 8 | 2 | os-service |
 | US-F4-07 | [Execução Service — fila, diagnóstico, catálogo, estoque (DynamoDB)](user-stories/f4-07-execucao-service.md) | 13 | 2 | execucao-service |
 | US-F4-08 | [Billing Service — orçamento, aprovação, rejeição](user-stories/f4-08-billing-orcamento.md) | 8 | 2 | billing-service |
@@ -304,6 +304,21 @@ US-F4-17 (vídeo + PDF).
 | US-F4-DOC-05 | [READMEs por serviço com evidências](user-stories/f4-doc-05-readmes-por-servico.md) | 3 | 5 | serviços |
 | US-F4-DOC-06 | [QA Plans da Fase 4](user-stories/f4-doc-06-qa-plans.md) | 5 | 5 | hub |
 | US-F4-17 | [Entrega — vídeo, PDF, diagrama](user-stories/f4-17-entrega-video-pdf.md) | 3 | 6 | hub |
+
+---
+
+### Andamento — US-F4-18 encerrada do lado do os-service (11/11/2026)
+
+Fechada no FLUXO 3 (branch `ci/f4-13-sonarcloud-bdd`): orquestrador por HTTP, callbacks com
+dedup, retry esgotado → saga parada → reprocessar, mensageria removida, provados por unit,
+integração, contratos e Cucumber de serviço e **ponta a ponta entre containers**
+(`docker-compose.fase4.yml` com stubs que validam contra `docs/contratos/schemas`).
+`docs/contratos/http-interno.md` está **estável (v1.0)**: daqui em diante só mudança compatível
+(ver o bloco de status do documento). Continua aberto na story: lado do **Billing** e da
+**Execução** (FLUXOS 1 e 2), repetir o BDD ponta a ponta com as imagens reais
+(`BDD_E2E_REAIS=1`) e os cenários de infra/EKS (TS-10..TS-12 do
+[`QA_PLAN_US-F4-18.md`](qa-plans/QA_PLAN_US-F4-18.md)). Plano do fluxo:
+[`QA_PLAN_FLUXO-3.md`](qa-plans/QA_PLAN_FLUXO-3.md).
 
 ---
 

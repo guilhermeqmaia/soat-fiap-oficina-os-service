@@ -354,4 +354,43 @@ describe('SagaOS — maquina de estados pura (RFC-0005)', () => {
       expect(s.status).toBe(StatusSaga.COMPENSANDO);
     });
   });
+
+  describe('registrarChamadaFalhou (US-F4-18)', () => {
+    const nova = () => SagaOS.iniciar({ numero: 'OS-CF', clienteId: 'c', veiculoId: 'v', descricaoProblema: 'd' });
+
+    it('registra comando, tentativas e motivo sem mudar passo/status; aguardandoReprocessamento ate a proxima entrada', () => {
+      const s = nova();
+      s.consumirComandos();
+      const agora = new Date('2026-11-10T12:00:00Z');
+      s.registrarChamadaFalhou('execucao.enfileirar', { erro: 'POST ... respondeu 503 (tentativa 3/3)', status: 503, tentativas: 3 }, agora);
+      expect(s.historico[s.historico.length - 1]).toEqual({
+        em: agora.toISOString(),
+        passo: PassoSaga.ENFILEIRAR_EXECUCAO,
+        evento: 'execucao.enfileirar',
+        resultado: 'chamada-falhou',
+        detalhe: 'HTTP 503 apos 3 tentativa(s): POST ... respondeu 503 (tentativa 3/3)',
+        tentativas: 3,
+      });
+      expect(s.passo).toBe(PassoSaga.ENFILEIRAR_EXECUCAO);
+      expect(s.status).toBe(StatusSaga.EM_ANDAMENTO);
+      expect(s.comandosPendentes).toHaveLength(0);
+      expect(s.aguardandoReprocessamento).toBe(true);
+      s.reprocessar({});
+      expect(s.aguardandoReprocessamento).toBe(false);
+    });
+
+    it('sem status nem tentativas: "sem resposta" e 1 tentativa; saga encerrada nunca aguarda reprocessamento', () => {
+      const s = nova();
+      s.registrarChamadaFalhou('execucao.enfileirar', { erro: 'fetch failed' });
+      expect(s.historico[s.historico.length - 1]).toMatchObject({ detalhe: 'sem resposta apos 1 tentativa(s): fetch failed', tentativas: 1 });
+      s.aplicar({ type: 'execucao.recusada', data: { numeroOS: 'OS-CF', motivo: 'x' } });
+      s.registrarChamadaFalhou('execucao.enfileirar', { erro: 'x' });
+      expect(s.status).toBe(StatusSaga.CANCELADA);
+      expect(s.aguardandoReprocessamento).toBe(false);
+    });
+
+    it('entradas normais nao tem o campo tentativas', () => {
+      expect(nova().historico[0]).not.toHaveProperty('tentativas');
+    });
+  });
 });

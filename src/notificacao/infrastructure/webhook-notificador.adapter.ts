@@ -9,7 +9,17 @@ import {
 } from '../application/ports/notificador.port';
 import { getCorrelationId } from '@guilhermeqmaia/oficina-kit/logging';
 
-interface WebhookPayload {
+/**
+ * Corpo do webhook (US-F4-12): `{ numeroOS, tipo, mensagem, linkPagamento? }`
+ * assinado com HMAC-SHA256 (`X-Signature: sha256=<hex>` sobre o corpo exato).
+ * Os campos da Fase 2 (`ordemId`, `clienteId`, `statusAnterior`, `statusAtual`,
+ * `timestamp`, `tipoNotificacao`) continuam no corpo para nao quebrar quem ja consome.
+ */
+export interface WebhookPayload {
+  numeroOS: string | null;
+  tipo: string | null;
+  mensagem: string;
+  linkPagamento?: string;
   ordemId: string | null;
   clienteId: string | null;
   statusAnterior: string | null;
@@ -20,7 +30,7 @@ interface WebhookPayload {
 
 @Injectable()
 export class WebhookNotificador implements Notificador {
-  readonly canal = CanalNotificacao.EMAIL;
+  readonly canal = CanalNotificacao.WEBHOOK;
   private readonly logger = new Logger(WebhookNotificador.name);
   private readonly url: string;
   private readonly secret: string;
@@ -80,13 +90,20 @@ export class WebhookNotificador implements Notificador {
       ? new Date(mensagem.contexto.timestamp).toISOString()
       : new Date().toISOString();
 
+    const tipo = mensagem.contexto?.tipoNotificacao ?? null;
     return {
+      numeroOS: mensagem.contexto?.numeroOS ?? null,
+      tipo,
+      mensagem: mensagem.corpo,
+      ...(mensagem.contexto?.linkPagamento
+        ? { linkPagamento: mensagem.contexto.linkPagamento }
+        : {}),
       ordemId: mensagem.contexto?.ordemId ?? null,
       clienteId: mensagem.contexto?.clienteId ?? null,
       statusAnterior: mensagem.contexto?.statusAnterior ?? null,
       statusAtual: mensagem.contexto?.statusAtual ?? null,
       timestamp,
-      tipoNotificacao: mensagem.contexto?.tipoNotificacao ?? null,
+      tipoNotificacao: tipo,
     };
   }
 

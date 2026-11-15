@@ -9,6 +9,8 @@ export interface RegistrarExecucaoIniciadaInput {
   numero: string;
   /** Unit of work do orquestrador (OS + saga na mesma transacao). */
   tx?: unknown;
+  /** Coletor do orquestrador: eventos publicados so depois do commit (default: publisher direto). */
+  eventos?: DomainEventPublisher;
 }
 
 /** `execucao.iniciada` -> EM_EXECUCAO (a aprovacao do orcamento, por si, nao muda a OS). */
@@ -20,7 +22,7 @@ export class RegistrarExecucaoIniciadaUseCase implements UseCase<RegistrarExecuc
   ) {}
 
   async execute(input: RegistrarExecucaoIniciadaInput): Promise<OrdemDeServico> {
-    const { ordem } = await registrarTransicao(this.gateway, this.events, input.numero, StatusOS.EM_EXECUCAO, (os) =>
+    const { ordem } = await registrarTransicao(this.gateway, input.eventos ?? this.events, input.numero, StatusOS.EM_EXECUCAO, (os) =>
       os.iniciarExecucao(),
       input.tx
     );

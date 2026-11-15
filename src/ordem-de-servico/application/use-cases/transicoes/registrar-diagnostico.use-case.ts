@@ -21,6 +21,8 @@ export interface ItemDiagnosticoInput {
 export interface RegistrarDiagnosticoInput {
   numero: string;
   tx?: unknown;
+  /** Coletor do orquestrador: eventos publicados so depois do commit (default: publisher direto). */
+  eventos?: DomainEventPublisher;
   mecanicoId: string;
   diagnostico: string;
   itens: ItemDiagnosticoInput[];
@@ -59,7 +61,7 @@ export class RegistrarDiagnosticoUseCase implements UseCase<RegistrarDiagnostico
     });
     const updated = await this.gateway.update(ordem, input.tx);
     // Nao muda o status, mas e uma acao rastreavel (quem diagnosticou, quantos itens).
-    this.events.publish(
+    (input.eventos ?? this.events).publish(
       new OsAcaoEvent(updated.id as string, updated.numero, 'DIAGNOSTICO_REGISTRADO', updated.status, updated.status, input.mecanicoId, {
         itens: updated.itensServico.length,
         valorTotal: updated.valorTotal(),

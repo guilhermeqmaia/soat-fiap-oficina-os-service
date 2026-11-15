@@ -1,5 +1,5 @@
 import { Controller, Get, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { CurrentUser, JwtAuthGuard, AuthenticatedUser } from '@guilhermeqmaia/oficina-kit/auth';
 
 /**
@@ -17,6 +17,11 @@ export class AuthController {
   @ApiOperation({
     summary: 'Retorna a identidade do token emitido pela Lambda de CPF',
   })
+  @ApiOkResponse({
+    description: 'Identidade do token',
+    schema: { example: { id: 'uuid', nome: 'Maria', cpf: '12345678909', role: 'CLIENTE' } },
+  })
+  @ApiUnauthorizedResponse({ description: 'Token JWT ausente ou invalido' })
   me(@CurrentUser() user: AuthenticatedUser) {
     return {
       id: user.id,

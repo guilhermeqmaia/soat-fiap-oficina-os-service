@@ -43,14 +43,14 @@ export class FakeParticipantesSaga implements ParticipantesSagaGateway {
     this.chamadas.push(comando);
     const numeroOS = String(comando.data.numeroOS);
     if (this.indisponiveis.has(comando.type)) {
-      return { entregue: false, erro: `${comando.type}: tentativas esgotadas (fake indisponivel)`, status: 503 };
+      return { entregue: false, erro: `${comando.type}: tentativas esgotadas (fake indisponivel)`, status: 503, tentativas: 3, resultado: 'esgotado' };
     }
     const motivo = this.recusas.get(comando.type);
     if (motivo !== undefined) {
       if (comando.type === 'execucao.enfileirar' || comando.type === 'execucao.iniciar') {
         return { entregue: true, evento: { type: 'execucao.recusada', data: { numeroOS, motivo } } };
       }
-      return { entregue: false, erro: `${comando.type}: 409 ${motivo}`, status: 409 };
+      return { entregue: false, erro: `${comando.type}: 409 ${motivo}`, status: 409, tentativas: 1, resultado: 'recusa' };
     }
     switch (comando.type) {
       case 'execucao.enfileirar':

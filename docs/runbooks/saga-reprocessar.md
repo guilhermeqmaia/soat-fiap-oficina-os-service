@@ -8,9 +8,9 @@ Principio: **nunca editar estado a mao** — use `reprocessar`, `cancelar` ou o 
 
 | Sinal | Origem |
 |---|---|
-| Gauge `oficina_os_sagas_paradas > 0` por mais de `SAGA_ALERTA_PARADA_MIN` (padrao 60 min) | OS Service, `/metrics`; alerta "saga parada" (US-F4-16) |
-| `oficina_os_http_interno_total{resultado="esgotado"}` incrementou | OS Service: uma chamada a Execucao/Billing falhou 3 vezes (`5xx`/timeout/rede) |
-| Logs `chamada-falhou` / `retry esgotado` com `correlation_id` = numero da OS | OS Service (orquestrador) ou Billing/Execucao (callback nao entregue) |
+| Gauge `oficina_os_sagas_paradas > 0` por mais de `SAGA_ALERTA_PARADA_MIN` (padrao 60 min) | OS Service, `/metrics`; alerta "saga parada" (US-F4-16, [`saga-parada.md`](saga-parada.md)). A gauge conta na hora as sagas cuja ultima entrada e `chamada-falhou` |
+| `oficina_http_interno_total{resultado="esgotado"}` incrementou (alerta "retry esgotado", [`retry-esgotado.md`](retry-esgotado.md)) | OS Service: uma chamada a Execucao/Billing falhou 3 vezes (`5xx`/timeout/rede) |
+| Historico `chamada-falhou` (com `tentativas`) / logs `comando nao entregue — tentativas esgotadas` com `correlation_id` = numero da OS | OS Service (orquestrador) ou Billing/Execucao (callback nao entregue) |
 | Saga `COMPENSANDO` ha mais de 1 h | `GET /ordens-servico/numero/:numero/saga` |
 | Saga em `AGUARDAR_PAGAMENTO` com `pagamento-pendente` / `pagamento em atraso` | idem (pendencia de negocio, nao falha) |
 

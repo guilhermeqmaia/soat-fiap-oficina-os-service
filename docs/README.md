@@ -79,6 +79,10 @@ documentos abaixo detalham cada tema.
 - [contratos/http-interno.md](contratos/http-interno.md) — **contrato efetivo** da comunicação HTTP entre os serviços (RFC-0008): endpoints, callbacks, envelope, retry/idempotência
 - [contratos/](contratos/README.md) — AsyncAPI (vocabulário/payloads dos eventos), OpenAPI por serviço (`openapi/`) e exemplos
 - [runbooks/saga-reprocessar.md](runbooks/saga-reprocessar.md) — saga parada / retry esgotado → reprocessar (sem DLQ)
+- Runbooks dos alertas do fluxo distribuído (US-F4-16, monitores em infra-k8s `observability/monitors.tf`):
+  [saga-parada](runbooks/saga-parada.md) · [retry-esgotado](runbooks/retry-esgotado.md) ·
+  [callback-conflito-repetido](runbooks/callback-conflito-repetido.md) ·
+  [latencia-entre-servicos](runbooks/latencia-entre-servicos.md) · [erros-5xx-por-servico](runbooks/erros-5xx-por-servico.md)
 - [mercado-pago-sandbox.md](mercado-pago-sandbox.md) — sandbox, orders de teste e webhook local do Mercado Pago
 - [tech-challenges/fase-4-tech-challenge.pdf](tech-challenges/fase-4-tech-challenge.pdf) — enunciado
 

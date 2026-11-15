@@ -36,7 +36,7 @@ Sem fila, sem outbox, sem LocalStack.
 - [ ] Testes unitarios >= 80% (dominio puro) + integracao com DynamoDB Local; Swagger
 ## APIs que expoe
 
-Conforme [`http-interno.md`](../contratos/http-interno.md). Prefixos `/execucao|/catalogo` ficam atras do API Gateway para os usuarios (o gateway tambem mapeia `/estoque`, que hoje nao tem rota); as rotas `SERVICO` sao chamadas pelo OS Service direto pelo DNS interno (`http://execucao-service:3002`).
+Conforme [`http-interno.md`](../contratos/http-interno.md). Prefixos `/execucao|/catalogo` ficam atras do API Gateway para os usuarios (o gateway tambem mapeia `/estoque`, que hoje nao tem rota); as rotas `SERVICO` sao chamadas pelo OS Service direto pelo DNS interno (`http://oficina-execucao-service:3002`).
 
 | Metodo | Rota | Role | Corpo | Resposta |
 |---|---|---|---|---|
@@ -60,7 +60,7 @@ Conforme [`http-interno.md`](../contratos/http-interno.md). Prefixos `/execucao|
 
 | Metodo | Rota (servico) | Quando | Corpo (envelope) | Resposta |
 |---|---|---|---|---|
-| POST | `/ordens-servico/{numeroOS}/eventos` (OS Service, `http://os-service:3000`) | mecanico conclui o diagnostico | `type: execucao.diagnostico-concluido`, `data: { numeroOS, mecanicoId, diagnostico, itens[] }` | `200 { aplicado, passo, status }` · `409` reler/repetir · `404` OS desconhecida |
+| POST | `/ordens-servico/{numeroOS}/eventos` (OS Service, `http://oficina-app:3000`) | mecanico conclui o diagnostico | `type: execucao.diagnostico-concluido`, `data: { numeroOS, mecanicoId, diagnostico, itens[] }` | `200 { aplicado, passo, status }` · `409` reler/repetir · `404` OS desconhecida |
 | POST | `/ordens-servico/{numeroOS}/eventos` (OS Service) | mecanico finaliza | `type: execucao.finalizada`, `data: { numeroOS, finalizadaEm }` | idem |
 
 JWT `SERVICO` (`sub: execucao-service`) emitido localmente com `mintServiceToken`; 3 tentativas com backoff; `x-correlation-id` = `numeroOS`. Nao chama o Billing nem a Lambda.

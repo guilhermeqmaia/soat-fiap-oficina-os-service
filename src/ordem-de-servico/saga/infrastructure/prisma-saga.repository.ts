@@ -74,8 +74,22 @@ export class PrismaSagaRepository implements SagaRepository {
     return Object.fromEntries(grupos.map((g) => [g.status, g._count._all]));
   }
 
+  /**
+   * Paradas = EM_ANDAMENTO no mesmo passo desde antes de `desde` OU (EM_ANDAMENTO
+   * ou COMPENSANDO) cuja ultima entrada do historico e `chamada-falhou` — comando
+   * nao entregue conta na hora, sem esperar SAGA_ALERTA_PARADA_MIN (US-F4-18);
+   * sai da contagem quando o reprocessamento registra a proxima entrada.
+   * SQL cru porque o Prisma nao filtra pelo ultimo elemento de um array JSON.
+   */
   async countParadasDesde(desde: Date): Promise<number> {
-    return this.prisma.sagaOS.count({ where: { status: StatusSaga.EM_ANDAMENTO, passoDesde: { lte: desde } } });
+    const [linha] = await this.prisma.$queryRaw<Array<{ total: number }>>`
+      SELECT COUNT(*)::int AS total
+        FROM saga_os
+       WHERE (status = ${StatusSaga.EM_ANDAMENTO} AND passo_desde <= ${desde})
+          OR (status IN (${StatusSaga.EM_ANDAMENTO}, ${StatusSaga.COMPENSANDO})
+              AND jsonb_typeof(historico) = 'array'
+              AND historico -> -1 ->> 'resultado' = 'chamada-falhou')`;
+    return Number(linha?.total ?? 0);
   }
 
   private db(tx?: unknown): PrismaTx {

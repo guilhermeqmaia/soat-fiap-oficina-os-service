@@ -1,0 +1,11 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "..",
+    "incremental": false,
+    "resolveJsonModule": true,
+    "types": ["node", "jest"]
+  },
+  "include": ["**/*.ts", "../src/**/*.ts", "../scripts/**/*.ts"],
+  "exclude": ["../src/**/*.spec.ts", "../src/generated"]
+}

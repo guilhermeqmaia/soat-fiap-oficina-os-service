@@ -22,6 +22,37 @@ describe("inicializarSeriesDeNegocio", () => {
     );
   });
 
+  it("expoe as metricas do fluxo distribuido (US-F4-16) com 0: http_interno por rota e callbacks por type/resultado", async () => {
+    inicializarSeriesDeNegocio();
+    const texto = await registry.metrics();
+    for (const resultado of ["sucesso", "recusa", "esgotado", "erro"]) {
+      expect(texto).toContain(
+        `oficina_http_interno_total{origem="os-service",destino="billing-service",rota="POST /orcamentos/{numero}/cobrar",resultado="${resultado}"} 0`,
+      );
+    }
+    expect(texto).toContain(
+      'oficina_http_interno_total{origem="os-service",destino="execucao-service",rota="POST /execucao/ordens",resultado="esgotado"} 0',
+    );
+    for (const resultado of ["aplicado", "duplicado", "ignorado", "conflito", "nao_encontrado", "erro"]) {
+      expect(texto).toContain(
+        `oficina_callbacks_total{type="billing.pagamento-aprovado",resultado="${resultado}"} 0`,
+      );
+    }
+    expect(texto).toContain('oficina_callbacks_total{type="outro",resultado="erro"} 0');
+    // histograma declarado (HELP/TYPE) mesmo antes da primeira chamada
+    expect(texto).toContain("# TYPE oficina_http_interno_duracao_seconds histogram");
+    // a antiga continua sendo emitida (deprecated so para os participantes)
+    expect(texto).toContain(
+      'oficina_integracoes_total{integracao="billing-service",resultado="falha"} 0',
+    );
+  });
+
+  it("tipoCallbackDaMetrica: so os types do contrato viram label; o resto e 'outro'", async () => {
+    const { tipoCallbackDaMetrica, TIPOS_CALLBACK } = await import("./metrics.registry");
+    for (const t of TIPOS_CALLBACK) expect(tipoCallbackDaMetrica(t)).toBe(t);
+    expect(tipoCallbackDaMetrica("execucao.enfileirada")).toBe("outro");
+  });
+
   it("e idempotente (nao zera contagens ja registradas)", async () => {
     const { osTransicoes } = await import("./metrics.registry");
     osTransicoes.inc({ de: "RECEBIDA", para: "EM_DIAGNOSTICO" });

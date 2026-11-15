@@ -8,8 +8,8 @@ import { DomainEvent } from '@guilhermeqmaia/oficina-kit/core';
  *
  * Consumido pelo audit log para registrar quem fez o que e quando.
  *
- * Distinto de `OrcamentoProntoEvent` e `OsFinalizadaEvent`, que sao
- * eventos de NEGOCIO (orientam acoes em outros BCs como Notificacao).
+ * Distinto de `MarcoOrdemDeServicoEvent`, que e um evento de
+ * NEGOCIO (orientam acoes em outros BCs como Notificacao).
  * Este evento eh tecnico e foca em rastreabilidade.
  */
 export class OsAcaoEvent extends DomainEvent {

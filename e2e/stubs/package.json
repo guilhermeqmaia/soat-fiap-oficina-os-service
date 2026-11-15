@@ -1,0 +1,29 @@
+{
+  "name": "oficina-participantes-stub",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Stubs do Billing (3001) e da Execucao (3002) para o ambiente ponta a ponta do FLUXO 3 (US-F4-14). Seguem docs/contratos/http-interno.md e validam as proprias respostas contra docs/contratos/schemas.",
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start:billing": "node dist/billing.js",
+    "start:execucao": "node dist/execucao.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@guilhermeqmaia/oficina-kit": "0.3.0",
+    "@nestjs/common": "^11.1.17",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "jsonwebtoken": "^9.0.3",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.3"
+  }
+}

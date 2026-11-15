@@ -1,10 +1,18 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { DOMAIN_EVENT_PUBLISHER, DomainEventPublisher } from '@guilhermeqmaia/oficina-kit/core';
 import { OrdemDeServico } from '../../domain/ordem-de-servico.entity';
 import { OrdemDeServicoNotFoundError } from '../../domain/errors/ordem-de-servico-not-found.error';
 import { InvalidStatusTransitionError } from '../../domain/errors/invalid-status-transition.error';
 import { ConcurrentModificationError } from '../../domain/errors/concurrent-modification.error';
 import { ORDEM_DE_SERVICO_GATEWAY, OrdemDeServicoGateway } from '../../application/gateways/ordem-de-servico.gateway';
 import { UNIT_OF_WORK, UnitOfWork } from '../../application/ports/unit-of-work';
+import { EventosDaTransacao } from '../../application/eventos-da-transacao';
+import {
+  DadosMarcoOS,
+  MarcoOrdemDeServicoEvent,
+  TIPOS_MARCO_BILLING,
+  TipoMarcoOS,
+} from '../../../shared/domain/events/marco-ordem-de-servico.event';
 import {
   RegistrarCancelamentoUseCase,
   RegistrarDiagnosticoUseCase,
@@ -17,8 +25,9 @@ import {
 import { ComandoSaga, EventoSaga, ItemContrato, PassoSaga, Prazos, SagaOS, TransicaoOS } from '../domain/saga-os.entity';
 import { SagaNotFoundError } from '../domain/errors/saga-not-found.error';
 import { SAGA_REPOSITORY, SagaRepository } from '../domain/saga.repository';
-import { PARTICIPANTES_SAGA_GATEWAY, ParticipantesSagaGateway } from './ports/participantes-saga.gateway';
+import { PARTICIPANTES_SAGA_GATEWAY, ParticipantesSagaGateway, ResultadoComando } from './ports/participantes-saga.gateway';
 import { sagaPassoDuracao, sagaPassos } from '../../../observabilidade/metrics.registry';
+import { camposDeRastreio } from '../../../observabilidade/rastreio';
 
 /**
  * Prazos configuraveis por ambiente (demo usa minutos; producao dias/horas).
@@ -34,6 +43,19 @@ export function prazosDoAmbiente(env: NodeJS.ProcessEnv = process.env): Prazos {
 }
 
 const TENTATIVAS_CONFLITO = 3;
+
+/**
+ * Id do fato para a deduplicacao das notificacoes (US-F4-12): o `id` do envelope
+ * quando o fato veio por callback; para respostas sincronas (sem envelope), um id
+ * deterministico com o recurso criado pelo participante (`orderId` de cada
+ * cobranca, `orcamentoId`) — um retry da mesma resposta gera o mesmo id, uma
+ * cobranca nova (outro `orderId`) gera outro.
+ */
+export function idDoFato(evento: EventoSaga, numero: string): string {
+  if (evento.id) return evento.id;
+  const recurso = evento.data.orderId ?? evento.data.orcamentoId ?? evento.data.pagamentoId;
+  return [evento.type, numero, recurso].filter((p) => p !== undefined && p !== null && p !== '').join(':');
+}
 
 /** Saga gravada + comandos decididos nessa transacao (a executar depois do commit). */
 export interface SagaComComandos {
@@ -58,11 +80,23 @@ export interface ResultadoEvento {
  * nada. Conflito de lock otimista e refeito em processo ate 3 vezes; depois o
  * erro sobe (409 no HTTP — quem chamou o callback repete).
  *
+ * Eventos de dominio (notificacao, auditoria, metricas) tambem so saem DEPOIS
+ * do commit: cada tentativa acumula os seus num `EventosDaTransacao`, que e
+ * descartado se a transacao reverter (conflito de versao -> retry) e
+ * descarregado no publisher quando ela commita. Quando a saga aceita um fato
+ * `billing.*` que interessa ao cliente, o orquestrador gera o
+ * `MarcoOrdemDeServicoEvent` correspondente (US-F4-12).
+ *
  * Os comandos decididos pela saga sao executados DEPOIS do commit, por HTTP
  * (`ParticipantesSagaGateway`): a resposta sincrona de cada chamada vira o
  * evento correspondente e e reinjetada em `processar` — nova transacao, sem
  * reentrancia dentro da anterior. Se a chamada esgotar as tentativas, a saga
- * fica no passo (metrica `comando-falhou`; `reprocessar` reenvia).
+ * fica no passo: o historico ganha `chamada-falhou` com as tentativas (outra
+ * transacao curta), a saga passa a contar em `oficina_os_sagas_paradas` e
+ * `reprocessar` reenvia.
+ *
+ * Logs (US-F4-16): toda linha leva `trace_id`, `correlation_id` (numero da OS)
+ * e `servico` (`camposDeRastreio`); as de chamada levam tambem `rota`/`tentativa`.
  */
 @Injectable()
 export class OrquestradorSagaService {
@@ -80,6 +114,7 @@ export class OrquestradorSagaService {
     private readonly execucaoFinalizada: RegistrarExecucaoFinalizadaUseCase,
     private readonly pagamentoAprovado: RegistrarPagamentoAprovadoUseCase,
     private readonly cancelamento: RegistrarCancelamentoUseCase,
+    @Inject(DOMAIN_EVENT_PUBLISHER) private readonly events: DomainEventPublisher,
   ) {}
 
   /**
@@ -131,12 +166,12 @@ export class OrquestradorSagaService {
         sagaPassos.inc({ passo: atual.passo, resultado: 'comando-falhou' });
         this.logger.error({
           msg: 'comando nao entregue ao participante — saga fica no passo (alerta de saga parada / reprocessar)',
+          ...camposDeRastreio(saga.numero, { comando: comando.type, passo: atual.passo, status: resultado.status, tentativa: resultado.tentativas }),
           numeroOS: saga.numero,
-          comando: comando.type,
-          passo: atual.passo,
-          status: resultado.status,
+          resultado: resultado.resultado,
           erro: resultado.erro,
         });
+        atual = (await this.registrarChamadaFalhou(saga.numero, comando, resultado, agora)) ?? atual;
         continue;
       }
       try {
@@ -147,6 +182,7 @@ export class OrquestradorSagaService {
         sagaPassos.inc({ passo: atual.passo, resultado: 'resposta-falhou' });
         this.logger.error({
           msg: 'resposta do participante nao aplicada na saga',
+          ...camposDeRastreio(saga.numero),
           numeroOS: saga.numero,
           comando: comando.type,
           evento: resultado.evento.type,
@@ -157,16 +193,54 @@ export class OrquestradorSagaService {
     return atual;
   }
 
+  /**
+   * Grava `chamada-falhou` (com as tentativas) no historico da saga, numa
+   * transacao propria — a chamada ja aconteceu fora da transacao que decidiu o
+   * comando. Conflito de versao e refeito como em `aplicarComRetry`; se ainda
+   * assim nao gravar, so loga (a metrica `comando-falhou` e o log ja contaram a
+   * falha, e o alerta de saga parada continua valendo pelo tempo no passo).
+   */
+  private async registrarChamadaFalhou(
+    numero: string,
+    comando: ComandoSaga,
+    falha: Extract<ResultadoComando, { entregue: false }>,
+    agora: Date,
+  ): Promise<SagaOS | null> {
+    for (let tentativa = 1; ; tentativa++) {
+      try {
+        const salva = await this.uow.executar(async (tx) => {
+          const saga = await this.sagas.findByNumero(numero, tx);
+          if (!saga) return null;
+          saga.registrarChamadaFalhou(comando.type, { erro: falha.erro, status: falha.status, tentativas: falha.tentativas }, agora);
+          return this.sagas.save(saga, tx);
+        });
+        return salva;
+      } catch (e) {
+        if (e instanceof ConcurrentModificationError && tentativa < TENTATIVAS_CONFLITO) continue;
+        this.logger.error({
+          msg: 'nao foi possivel registrar chamada-falhou no historico da saga',
+          ...camposDeRastreio(numero, { comando: comando.type }),
+          erro: (e as Error).message,
+        });
+        return null;
+      }
+    }
+  }
+
   private async aplicarComRetry(
     evento: EventoSaga,
     agora: Date,
   ): Promise<SagaComComandos & { aplicado: boolean; motivo?: string }> {
     for (let tentativa = 1; ; tentativa++) {
       try {
-        return await this.uow.executar((tx) => this.processarNaTransacao(evento, agora, tx));
+        // Coletor novo por tentativa: o de uma tentativa revertida e descartado sem publicar nada.
+        const eventos = new EventosDaTransacao();
+        const resultado = await this.uow.executar((tx) => this.processarNaTransacao(evento, agora, tx, eventos));
+        eventos.descarregarEm(this.events); // commit bem-sucedido -> listeners
+        return resultado;
       } catch (e) {
         if (e instanceof ConcurrentModificationError && tentativa < TENTATIVAS_CONFLITO) {
-          this.logger.warn({ msg: 'conflito de versao — refazendo', numeroOS: evento.data.numeroOS, type: evento.type, tentativa });
+          this.logger.warn({ msg: 'conflito de versao — refazendo', ...camposDeRastreio(String(evento.data.numeroOS ?? '')), numeroOS: evento.data.numeroOS, type: evento.type, tentativa });
           continue;
         }
         throw e;
@@ -178,6 +252,7 @@ export class OrquestradorSagaService {
     evento: EventoSaga,
     agora: Date,
     tx: unknown,
+    eventos: EventosDaTransacao,
   ): Promise<SagaComComandos & { aplicado: boolean; motivo?: string }> {
     const numero = String(evento.data.numeroOS ?? '');
     let saga = await this.sagas.findByNumero(numero, tx);
@@ -190,7 +265,7 @@ export class OrquestradorSagaService {
     // Demo (US-F4-11): troca o evento de sucesso pelo de falha no passo marcado.
     const efetivo = saga.simularFalha(evento, agora);
     if (efetivo !== evento) {
-      this.logger.warn({ msg: 'falha simulada (demo)', numeroOS: numero, passo: passoAntes, de: evento.type, para: efetivo.type });
+      this.logger.warn({ msg: 'falha simulada (demo)', ...camposDeRastreio(numero), numeroOS: numero, passo: passoAntes, de: evento.type, para: efetivo.type });
       evento = efetivo;
     }
 
@@ -202,11 +277,14 @@ export class OrquestradorSagaService {
       throw new InvalidStatusTransitionError(passoAntes, 'CANCELADA');
     }
     if (!resultado.aplicado) {
-      this.logger.warn({ msg: 'evento ignorado pela saga', numeroOS: numero, type: evento.type, passo: passoAntes, motivo: resultado.motivo });
+      this.logger.warn({ msg: 'evento ignorado pela saga', ...camposDeRastreio(numero), numeroOS: numero, type: evento.type, passo: passoAntes, motivo: resultado.motivo });
       return { saga: await this.sagas.save(saga, tx), comandos: comandosDaAdocao, aplicado: false, motivo: resultado.motivo };
     }
 
-    if (resultado.transicaoOS) await this.transicionar(numero, resultado.transicaoOS, evento, tx);
+    // Fato do Billing aceito pela saga -> marco para a notificacao (antes da transicao: "pagamento
+    // aprovado" vem antes de "OS finalizada"). Duplicado/fora de ordem ja saiu acima, sem marco.
+    await this.registrarMarcoDoBilling(numero, evento, tx, eventos);
+    if (resultado.transicaoOS) await this.transicionar(numero, resultado.transicaoOS, evento, tx, eventos);
     const comandos = [...comandosDaAdocao, ...saga.consumirComandos()];
     const salva = await this.sagas.save(saga, tx);
     if (salva.passo !== passoAntes) {
@@ -214,6 +292,7 @@ export class OrquestradorSagaService {
     }
     this.logger.log({
       msg: 'saga avancou',
+      ...camposDeRastreio(numero),
       numeroOS: numero,
       type: evento.type,
       de: passoAntes,
@@ -249,17 +328,36 @@ export class OrquestradorSagaService {
       const comandos = saga.consumirComandos();
       sagaPassos.inc({ passo: saga.passo, resultado: 'reprocessada' });
       const salva = await this.sagas.save(saga, tx);
-      this.logger.log({ msg: 'saga reprocessada', numeroOS: numero, passo: salva.passo, status: salva.status, reenviados: comandos.map((c) => c.type) });
+      this.logger.log({ msg: 'saga reprocessada', ...camposDeRastreio(numero), numeroOS: numero, passo: salva.passo, status: salva.status, reenviados: comandos.map((c) => c.type) });
       return { saga: salva, comandos };
     });
     const final = await this.executarComandos(saga, comandos, agora);
     return { saga: final, reenviados: comandos.map((c) => c.type) };
   }
 
-  private async transicionar(numero: string, t: TransicaoOS, evento: EventoSaga, tx: unknown): Promise<void> {
+  private async registrarMarcoDoBilling(numero: string, evento: EventoSaga, tx: unknown, eventos: EventosDaTransacao): Promise<void> {
+    if (!TIPOS_MARCO_BILLING.has(evento.type)) return;
+    const ordem = await this.ordens.findByNumero(numero, tx);
+    if (!ordem?.id) return;
+    const d = evento.data;
+    const texto = (v: unknown) => (v === undefined || v === null || v === '' ? undefined : String(v));
+    const dados: DadosMarcoOS = {
+      linkPagamento: texto(d.linkPagamento),
+      total: d.total !== undefined && d.total !== null ? Number(d.total) : undefined,
+      diagnostico: evento.type === 'billing.orcamento-gerado' ? ordem.diagnostico ?? undefined : undefined,
+      motivo: texto(d.motivo),
+      valor: texto(d.valor),
+    };
+    for (const k of Object.keys(dados) as Array<keyof DadosMarcoOS>) if (dados[k] === undefined) delete dados[k];
+    eventos.publish(
+      new MarcoOrdemDeServicoEvent(evento.type as TipoMarcoOS, numero, ordem.id, ordem.clienteId, idDoFato(evento, numero), dados),
+    );
+  }
+
+  private async transicionar(numero: string, t: TransicaoOS, evento: EventoSaga, tx: unknown, eventos: EventosDaTransacao): Promise<void> {
     switch (t.tipo) {
       case 'iniciarDiagnostico':
-        await this.enfileiramento.execute({ numero, tx });
+        await this.enfileiramento.execute({ numero, tx, eventos });
         return;
       case 'registrarDiagnostico':
         await this.diagnostico.execute({
@@ -268,22 +366,23 @@ export class OrquestradorSagaService {
           diagnostico: evento.data.diagnostico,
           itens: evento.data.itens ?? [],
           tx,
+          eventos,
         });
         return;
       case 'aguardarAprovacao':
-        await this.orcamentoGerado.execute({ numero, total: evento.data.total, tx });
+        await this.orcamentoGerado.execute({ numero, total: evento.data.total, tx, eventos });
         return;
       case 'iniciarExecucao':
-        await this.execucaoIniciada.execute({ numero, tx });
+        await this.execucaoIniciada.execute({ numero, tx, eventos });
         return;
       case 'aguardarPagamento':
-        await this.execucaoFinalizada.execute({ numero, tx });
+        await this.execucaoFinalizada.execute({ numero, tx, eventos });
         return;
       case 'finalizar':
-        await this.pagamentoAprovado.execute({ numero, tx });
+        await this.pagamentoAprovado.execute({ numero, tx, eventos });
         return;
       case 'cancelar':
-        await this.cancelamento.execute({ numero, motivo: t.motivo, tx });
+        await this.cancelamento.execute({ numero, motivo: t.motivo, tx, eventos });
         return;
     }
   }
@@ -292,7 +391,7 @@ export class OrquestradorSagaService {
   private async adotar(numero: string, agora: Date, tx: unknown): Promise<SagaComComandos> {
     const ordem = await this.ordens.findByNumero(numero, tx);
     if (!ordem) throw new OrdemDeServicoNotFoundError(numero);
-    this.logger.warn({ msg: 'OS sem saga — adotando a partir do status atual', numeroOS: numero, status: ordem.status });
+    this.logger.warn({ msg: 'OS sem saga — adotando a partir do status atual', ...camposDeRastreio(numero), numeroOS: numero, status: ordem.status });
     const saga = SagaOS.adotar(
       {
         numero,

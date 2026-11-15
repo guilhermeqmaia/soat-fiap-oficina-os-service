@@ -1,0 +1,36 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://contratos.oficina-mecanica.local/schemas/comandos.schema.json",
+  "title": "Corpos das requisicoes que o OS Service envia (comandos da saga)",
+  "description": "Um $def por comando com corpo. execucao.iniciar e billing.cobrar nao tem corpo (o numeroOS vai no path). Rotas e respostas em endpoints-participantes.json.",
+  "$defs": {
+    "ExecucaoEnfileirar": {
+      "description": "POST /execucao/ordens",
+      "type": "object",
+      "required": ["numeroOS", "veiculoId", "descricaoProblema"],
+      "properties": {
+        "numeroOS": { "$ref": "comum.schema.json#/$defs/NumeroOS" },
+        "veiculoId": { "type": "string", "minLength": 1 },
+        "descricaoProblema": { "type": "string", "minLength": 1 }
+      }
+    },
+    "ExecucaoLiberarReservas": {
+      "description": "DELETE /execucao/ordens/{numeroOS}",
+      "$ref": "comum.schema.json#/$defs/Motivo"
+    },
+    "BillingGerarOrcamento": {
+      "description": "POST /orcamentos",
+      "type": "object",
+      "required": ["numeroOS", "clienteId", "itens"],
+      "properties": {
+        "numeroOS": { "$ref": "comum.schema.json#/$defs/NumeroOS" },
+        "clienteId": { "type": "string", "minLength": 1 },
+        "itens": { "type": "array", "minItems": 1, "items": { "$ref": "comum.schema.json#/$defs/Item" } }
+      }
+    },
+    "BillingCancelarOrcamento": {
+      "description": "DELETE /orcamentos/{numeroOS}",
+      "$ref": "comum.schema.json#/$defs/Motivo"
+    }
+  }
+}

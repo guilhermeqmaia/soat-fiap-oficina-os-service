@@ -5,6 +5,7 @@ import {
   ApiConflictResponse,
   ApiCreatedResponse,
   ApiForbiddenResponse,
+  ApiNoContentResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
@@ -12,7 +13,8 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { Public, Roles, Role } from '@guilhermeqmaia/oficina-kit/auth';
+import { Roles, Role } from '@guilhermeqmaia/oficina-kit/auth';
+import { RotaPublica } from '../../shared/infrastructure/rota-publica.decorator';
 import { AuditLogService } from '../application/audit-log.service';
 import { CreateOrdemDeServicoDto } from './dto/create-ordem-de-servico.dto';
 import { CancelarOrdemDeServicoDto } from './dto/cancelar-ordem-de-servico.dto';
@@ -107,7 +109,7 @@ export class OrdemDeServicoController {
   }
 
   @Get('numero/:numero/status')
-  @Public()
+  @RotaPublica()
   @Throttle({ default: { limit: 30, ttl: 60000 } })
   @ApiOperation({ summary: 'Acompanhar OS pelo numero (publico, sem autenticacao) — US-16' })
   @ApiOkResponse({ description: 'Status e itens (snapshot) da OS' })
@@ -186,6 +188,7 @@ export class OrdemDeServicoController {
   @Roles(Role.ADMIN)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Deletar ordem de servico' })
+  @ApiNoContentResponse({ description: 'OS removida' })
   @ApiNotFoundResponse({ description: 'OS nao encontrada' })
   async delete(@Param('id', ParseUUIDPipe) id: string) {
     await this.deletarOrdemDeServicoUseCase.execute({ id });

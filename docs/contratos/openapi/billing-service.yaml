@@ -1,0 +1,527 @@
+openapi: 3.0.0
+paths:
+  /health:
+    get:
+      operationId: HealthController_liveness
+      parameters: []
+      responses:
+        '200':
+          description: Aplicacao respondendo
+      summary: Liveness probe - o processo esta de pe
+      tags: &ref_0
+        - Health
+      security: []
+  /health/ready:
+    get:
+      operationId: HealthController_readiness
+      parameters: []
+      responses:
+        '200':
+          description: Dependencias acessiveis
+        '503':
+          description: Alguma dependencia inacessivel
+      summary: Readiness probe - verifica as dependencias (banco, broker...)
+      tags: *ref_0
+      security: []
+  /orcamentos:
+    post:
+      operationId: OrcamentoController_criar
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CriarOrcamentoDto'
+      responses:
+        '200':
+          description: Orcamento ativo ja existente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrcamentoGeradoDto'
+        '201':
+          description: billing.orcamento-gerado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrcamentoGeradoDto'
+        '401': &ref_1
+          description: Token JWT ausente ou invalido
+        '403': &ref_2
+          description: Role sem acesso ou orcamento de outro cliente
+      security: &ref_3
+        - bearer: []
+      summary: Gera o orcamento (billing.gerar-orcamento) — role SERVICO
+      tags: &ref_4
+        - Orcamentos
+    get:
+      operationId: OrcamentoController_listar
+      parameters:
+        - name: clienteId
+          required: false
+          in: query
+          schema: {}
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OrcamentoDto'
+        '401': *ref_1
+        '403': *ref_2
+      security: *ref_3
+      summary: Lista orcamentos de um cliente
+      tags: *ref_4
+  /orcamentos/{numeroOS}/cobrar:
+    post:
+      operationId: OrcamentoController_cobrar
+      parameters:
+        - name: numeroOS
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        '201':
+          description: billing.cobranca-criada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CobrancaCriadaDto'
+        '401': *ref_1
+        '403': *ref_2
+        '404':
+          description: Orcamento inexistente
+        '409':
+          description: Orcamento nao aprovado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MotivoDto'
+      security: *ref_3
+      summary: Cria a order no Mercado Pago (billing.cobrar) — role SERVICO
+      tags: *ref_4
+  /orcamentos/{numeroOS}:
+    delete:
+      operationId: OrcamentoController_cancelar
+      parameters:
+        - name: numeroOS
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelarOrcamentoDto'
+      responses:
+        '200':
+          description: billing.orcamento-cancelado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrcamentoCanceladoDto'
+        '401': *ref_1
+        '403': *ref_2
+        '409':
+          description: Pagamento ja aprovado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MotivoDto'
+      security: *ref_3
+      summary: Cancela o orcamento, idempotente (compensacao) — role SERVICO
+      tags: *ref_4
+    get:
+      operationId: OrcamentoController_buscar
+      parameters:
+        - name: numeroOS
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrcamentoDto'
+        '401': *ref_1
+        '403': *ref_2
+        '404':
+          description: Orcamento inexistente
+      security: *ref_3
+      summary: Consulta o orcamento e a cobranca vigente da OS
+      tags: *ref_4
+  /orcamentos/{numeroOS}/aprovar:
+    post:
+      operationId: OrcamentoController_aprovar
+      parameters:
+        - name: numeroOS
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrcamentoDto'
+        '401': *ref_1
+        '403': *ref_2
+        '404':
+          description: Orcamento inexistente
+        '409':
+          description: Orcamento ja decidido ou expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MotivoDto'
+      security: *ref_3
+      summary: Cliente aprova; dispara o callback billing.orcamento-aprovado
+      tags: *ref_4
+  /orcamentos/{numeroOS}/rejeitar:
+    post:
+      operationId: OrcamentoController_rejeitar
+      parameters:
+        - name: numeroOS
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RejeitarOrcamentoDto'
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrcamentoDto'
+        '401': *ref_1
+        '403': *ref_2
+        '404':
+          description: Orcamento inexistente
+        '409':
+          description: Orcamento ja decidido ou expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MotivoDto'
+      security: *ref_3
+      summary: Cliente rejeita; dispara o callback billing.orcamento-rejeitado
+      tags: *ref_4
+  /pagamentos/{numeroOS}:
+    get:
+      operationId: PagamentoController_buscar
+      parameters:
+        - name: numeroOS
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CobrancaDto'
+        '404':
+          description: Sem cobranca para a OS
+      security:
+        - bearer: []
+      summary: Cobranca vigente da OS, com o link de pagamento
+      tags:
+        - Pagamentos
+  /webhooks/mercadopago:
+    post:
+      operationId: WebhookController_mercadoPago
+      parameters:
+        - name: x-request-id
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: x-signature
+          in: header
+          description: ts=<ts>,v1=<hmac>
+          required: true
+          schema:
+            type: string
+        - name: data_id
+          required: false
+          in: query
+          description: Forma alternativa de data.id
+          schema: {}
+        - name: data.id
+          required: false
+          in: query
+          description: Id da order
+          schema: {}
+        - name: type
+          required: false
+          in: query
+          schema:
+            example: order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookRecebidoDto'
+        '400':
+          description: Notificacao sem data.id valido
+        '401':
+          description: Assinatura invalida
+      summary: Notificacao de Order do Mercado Pago (publica, valida x-signature)
+      tags:
+        - Webhooks
+      security: []
+info:
+  title: oficina-billing-service
+  description: Orçamento, aprovação/rejeição e pagamento via Mercado Pago (Billing Service)
+  version: 0.1.0
+  contact: {}
+tags: []
+servers:
+  - url: http://billing-service:3001
+    description: DNS interno do cluster
+components:
+  securitySchemes:
+    bearer:
+      scheme: bearer
+      bearerFormat: JWT
+      type: http
+  schemas:
+    ItemOrcamentoDto:
+      type: object
+      properties:
+        tipo:
+          type: string
+          enum:
+            - SERVICO
+            - PRODUTO
+        referenciaId:
+          type: string
+        servicoId:
+          type: string
+          description: Servico a que o PRODUTO pertence
+        nome:
+          type: string
+        quantidade:
+          type: number
+          minimum: 1
+        precoUnitario:
+          type: string
+          example: '200.00'
+          pattern: ^\d+\.\d{2}$
+      required:
+        - tipo
+        - referenciaId
+        - nome
+        - quantidade
+        - precoUnitario
+    CriarOrcamentoDto:
+      type: object
+      properties:
+        numeroOS:
+          type: string
+          example: OS-2026-0001
+        clienteId:
+          type: string
+        itens:
+          type: array
+          items:
+            $ref: '#/components/schemas/ItemOrcamentoDto'
+      required:
+        - numeroOS
+        - clienteId
+        - itens
+    OrcamentoGeradoDto:
+      type: object
+      properties:
+        numeroOS:
+          type: string
+        orcamentoId:
+          type: string
+        total:
+          type: string
+          example: '300.00'
+        validoAte:
+          type: string
+          format: date-time
+      required:
+        - numeroOS
+        - orcamentoId
+        - total
+        - validoAte
+    CobrancaCriadaDto:
+      type: object
+      properties:
+        numeroOS:
+          type: string
+        orderId:
+          type: string
+        linkPagamento:
+          type: string
+        valor:
+          type: string
+          example: '300.00'
+      required:
+        - numeroOS
+        - orderId
+        - linkPagamento
+        - valor
+    MotivoDto:
+      type: object
+      properties:
+        motivo:
+          type: string
+      required:
+        - motivo
+    CancelarOrcamentoDto:
+      type: object
+      properties:
+        motivo:
+          type: string
+      required:
+        - motivo
+    OrcamentoCanceladoDto:
+      type: object
+      properties:
+        numeroOS:
+          type: string
+        orcamentoId:
+          type: string
+          nullable: true
+        estornado:
+          type: boolean
+      required:
+        - numeroOS
+        - orcamentoId
+        - estornado
+    ItemViewDto:
+      type: object
+      properties:
+        tipo:
+          type: string
+          enum:
+            - SERVICO
+            - PRODUTO
+        referenciaId:
+          type: string
+        servicoId:
+          type: string
+          nullable: true
+        nome:
+          type: string
+        quantidade:
+          type: number
+        precoUnitario:
+          type: string
+      required:
+        - tipo
+        - referenciaId
+        - servicoId
+        - nome
+        - quantidade
+        - precoUnitario
+    OrcamentoDto:
+      type: object
+      properties:
+        numeroOS:
+          type: string
+        orcamentoId:
+          type: string
+        clienteId:
+          type: string
+        status:
+          type: string
+        subtotal:
+          type: string
+        total:
+          type: string
+        validoAte:
+          type: string
+          format: date-time
+        decididoEm:
+          type: string
+          nullable: true
+          format: date-time
+        motivoRejeicao:
+          type: string
+          nullable: true
+        itens:
+          type: array
+          items:
+            $ref: '#/components/schemas/ItemViewDto'
+        cobranca:
+          anyOf:
+            - $ref: '#/components/schemas/CobrancaDto'
+            - type: object
+              nullable: true
+      required:
+        - numeroOS
+        - orcamentoId
+        - clienteId
+        - status
+        - subtotal
+        - total
+        - validoAte
+        - decididoEm
+        - motivoRejeicao
+        - itens
+        - cobranca
+    RejeitarOrcamentoDto:
+      type: object
+      properties:
+        motivo:
+          type: string
+    CobrancaDto:
+      type: object
+      properties:
+        orderId:
+          type: string
+          nullable: true
+        status:
+          type: string
+        linkPagamento:
+          type: string
+          nullable: true
+        valor:
+          type: string
+          example: '300.00'
+      required:
+        - orderId
+        - status
+        - linkPagamento
+        - valor
+    WebhookRecebidoDto:
+      type: object
+      properties:
+        recebido:
+          type: boolean
+      required:
+        - recebido

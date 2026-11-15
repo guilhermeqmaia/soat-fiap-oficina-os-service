@@ -14,6 +14,9 @@ interface NotificacaoRecord {
   id: string;
   clienteId: string;
   ordemDeServicoId: string | null;
+  numeroOS: string | null;
+  eventoId: string | null;
+  linkPagamento: string | null;
   tipo: string;
   canal: string;
   destinatario: string;
@@ -25,20 +28,34 @@ interface NotificacaoRecord {
   createdAt: Date;
 }
 
+/** Violacao de unique no Prisma (indice `notificacao_evento_id_tipo_canal_key`). */
+const UNIQUE_VIOLATION = 'P2002';
+
 @Injectable()
 export class PrismaNotificacaoRepository implements NotificacaoRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(notificacao: Notificacao): Promise<Notificacao> {
     const record = await this.prisma.notificacao.create({
+      data: this.toData(notificacao),
+    });
+    return this.toDomain(record);
+  }
+
+  async reservar(notificacao: Notificacao): Promise<Notificacao | null> {
+    try {
+      return await this.create(notificacao);
+    } catch (e) {
+      // Mesmo (eventoId, tipo, canal) ja gravado: o fato ja foi notificado.
+      if ((e as { code?: string }).code === UNIQUE_VIOLATION) return null;
+      throw e;
+    }
+  }
+
+  async atualizarResultado(notificacao: Notificacao): Promise<Notificacao> {
+    const record = await this.prisma.notificacao.update({
+      where: { id: notificacao.id },
       data: {
-        clienteId: notificacao.clienteId,
-        ordemDeServicoId: notificacao.ordemDeServicoId,
-        tipo: notificacao.tipo,
-        canal: notificacao.canal,
-        destinatario: notificacao.destinatario,
-        assunto: notificacao.assunto,
-        mensagem: notificacao.mensagem,
         status: notificacao.status,
         erro: notificacao.erro,
         enviadaEm: notificacao.enviadaEm,
@@ -79,11 +96,32 @@ export class PrismaNotificacaoRepository implements NotificacaoRepository {
     };
   }
 
+  private toData(notificacao: Notificacao) {
+    return {
+      clienteId: notificacao.clienteId,
+      ordemDeServicoId: notificacao.ordemDeServicoId,
+      numeroOS: notificacao.numeroOS,
+      eventoId: notificacao.eventoId,
+      linkPagamento: notificacao.linkPagamento,
+      tipo: notificacao.tipo,
+      canal: notificacao.canal,
+      destinatario: notificacao.destinatario,
+      assunto: notificacao.assunto,
+      mensagem: notificacao.mensagem,
+      status: notificacao.status,
+      erro: notificacao.erro,
+      enviadaEm: notificacao.enviadaEm,
+    };
+  }
+
   private toDomain(record: NotificacaoRecord): Notificacao {
     return Notificacao.reconstitute({
       id: record.id,
       clienteId: record.clienteId,
       ordemDeServicoId: record.ordemDeServicoId,
+      numeroOS: record.numeroOS,
+      eventoId: record.eventoId,
+      linkPagamento: record.linkPagamento,
       tipo: record.tipo as TipoNotificacao,
       canal: record.canal as CanalNotificacao,
       destinatario: record.destinatario,

@@ -53,7 +53,7 @@ describe('WebhookNotificador', () => {
 
     await adapter.enviar(mensagem);
 
-    expect(adapter.canal).toBe(CanalNotificacao.EMAIL);
+    expect(adapter.canal).toBe(CanalNotificacao.WEBHOOK);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0];
     const body = init.body as string;
@@ -68,6 +68,9 @@ describe('WebhookNotificador', () => {
       'X-Signature': `sha256=${signature}`,
     });
     expect(JSON.parse(body)).toEqual({
+      numeroOS: null,
+      tipo: 'STATUS_OS_ALTERADO',
+      mensagem: 'Sua OS mudou de status',
       ordemId: 'os-1',
       clienteId: 'cliente-1',
       statusAnterior: 'EM_EXECUCAO',
@@ -75,6 +78,42 @@ describe('WebhookNotificador', () => {
       timestamp: '2026-06-25T10:00:00.000Z',
       tipoNotificacao: 'STATUS_OS_ALTERADO',
     });
+  });
+
+  it('US-F4-12: payload { numeroOS, tipo, mensagem, linkPagamento } assinado com HMAC', async () => {
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200 });
+    const adapter = makeAdapter();
+
+    await adapter.enviar({
+      destinatario: 'cliente@email.com',
+      assunto: 'OS OS-2026-000001 concluida - pague para retirar o veiculo',
+      corpo: 'Pague em https://mp.test/pay/mp-1',
+      contexto: {
+        ordemId: 'os-1',
+        clienteId: 'cliente-1',
+        numeroOS: 'OS-2026-000001',
+        linkPagamento: 'https://mp.test/pay/mp-1',
+        tipoNotificacao: 'PAGAMENTO_PENDENTE',
+      },
+    });
+
+    const [, init] = fetchMock.mock.calls[0];
+    const body = init.body as string;
+    expect(init.headers['X-Signature']).toBe(
+      `sha256=${createHmac('sha256', 'super-secret').update(body).digest('hex')}`,
+    );
+    expect(JSON.parse(body)).toMatchObject({
+      numeroOS: 'OS-2026-000001',
+      tipo: 'PAGAMENTO_PENDENTE',
+      mensagem: 'Pague em https://mp.test/pay/mp-1',
+      linkPagamento: 'https://mp.test/pay/mp-1',
+    });
+  });
+
+  it('sem link de pagamento, o campo linkPagamento fica fora do payload', async () => {
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200 });
+    await makeAdapter().enviar(mensagem);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).not.toHaveProperty('linkPagamento');
   });
 
   it('aplica timeout e tenta uma vez adicional', async () => {

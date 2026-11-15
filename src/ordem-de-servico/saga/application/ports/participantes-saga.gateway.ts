@@ -10,7 +10,15 @@ import { ComandoSaga, EventoSaga } from '../../domain/saga-os.entity';
  */
 export type ResultadoComando =
   | { entregue: true; evento: EventoSaga }
-  | { entregue: false; erro: string; status?: number };
+  | {
+      entregue: false;
+      erro: string;
+      status?: number;
+      /** Tentativas feitas pelo cliente HTTP (3 quando esgotou; 1 para 4xx). Vai para o historico `chamada-falhou`. */
+      tentativas?: number;
+      /** `esgotado` = 5xx/timeout/rede apos as tentativas; `recusa` = 409 sem evento de recusa; `erro` = outro 4xx. */
+      resultado?: 'esgotado' | 'recusa' | 'erro';
+    };
 
 /** Porta de saida do orquestrador para os participantes da saga. */
 export interface ParticipantesSagaGateway {

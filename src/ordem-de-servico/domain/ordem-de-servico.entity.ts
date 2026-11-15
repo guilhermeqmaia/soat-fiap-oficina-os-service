@@ -202,7 +202,7 @@ export class OrdemDeServico {
     this._status = StatusOSVO.create(StatusOS.AGUARDANDO_PAGAMENTO);
   }
 
-  /** `billing.pagamento-aprovado`: pago; veiculo pronto para retirada (notificacao in-process via OsFinalizadaEvent). */
+  /** `billing.pagamento-aprovado`: pago; veiculo pronto para retirada (notificacao in-process via marco `os.finalizada`, US-F4-12). */
   finalizar(): void {
     this.exigirStatus(StatusOS.AGUARDANDO_PAGAMENTO, StatusOS.FINALIZADA);
     this._status = StatusOSVO.create(StatusOS.FINALIZADA);

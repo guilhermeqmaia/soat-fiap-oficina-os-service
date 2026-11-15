@@ -10,6 +10,7 @@ const tx = { sagaOS: { create: jest.fn(), updateMany: jest.fn(), findUniqueOrThr
 const prisma = {
   sagaOS: { findUnique: jest.fn(), findMany: jest.fn(), groupBy: jest.fn(), count: jest.fn(), deleteMany: jest.fn() },
   $transaction: jest.fn(async (fn: (t: typeof tx) => unknown) => fn(tx)),
+  $queryRaw: jest.fn(),
 } as any;
 
 describe('PrismaSagaRepository (unit)', () => {
@@ -51,10 +52,14 @@ describe('PrismaSagaRepository (unit)', () => {
   it('deleteByNumero e countParadasDesde delegam ao Prisma', async () => {
     await repo.deleteByNumero('OS-1');
     expect(prisma.sagaOS.deleteMany).toHaveBeenCalledWith({ where: { numero: 'OS-1' } });
-    prisma.sagaOS.count.mockResolvedValue(2);
+    prisma.$queryRaw.mockResolvedValueOnce([{ total: 2 }]);
     const desde = new Date();
     expect(await repo.countParadasDesde(desde)).toBe(2);
-    expect(prisma.sagaOS.count.mock.calls[0][0].where).toEqual({ status: 'EM_ANDAMENTO', passoDesde: { lte: desde } });
+    const [sql, ...valores] = prisma.$queryRaw.mock.calls[0];
+    expect(sql.join('?')).toContain("historico -> -1 ->> 'resultado' = 'chamada-falhou'");
+    expect(valores).toEqual(['EM_ANDAMENTO', desde, 'EM_ANDAMENTO', 'COMPENSANDO']);
+    prisma.$queryRaw.mockResolvedValueOnce([]);
+    expect(await repo.countParadasDesde(desde)).toBe(0);
   });
 
   it('findComPrazoVencido e countPorStatus delegam ao Prisma', async () => {

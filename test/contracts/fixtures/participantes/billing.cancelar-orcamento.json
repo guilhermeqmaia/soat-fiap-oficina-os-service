@@ -1,0 +1,13 @@
+{
+  "comando": "billing.cancelar-orcamento",
+  "respostas": {
+    "200": {
+      "numeroOS": "OS-2026-000123",
+      "orcamentoId": "orc-0001",
+      "estornado": false
+    },
+    "409": {
+      "motivo": "Orcamento com pagamento aprovado nao pode ser cancelado"
+    }
+  }
+}

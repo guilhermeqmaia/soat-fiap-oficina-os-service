@@ -37,8 +37,8 @@ domínio: serviços internos mudam (meia-vida de 1,5 ano), o contrato externo n�
   finaliza pela API da Execução passando pelo gateway, com o mesmo JWT.
 - **Chamadas entre serviços não passam pelo gateway**: OS → Execução/Billing e os
   callbacks Execução/Billing → OS vão direto pelo DNS interno do cluster
-  (`http://execucao-service:3002`, `http://billing-service:3001`,
-  `http://os-service:3000`), autenticadas por JWT de serviço (`role: SERVICO`).
+  (`http://oficina-execucao-service:3002`, `http://oficina-billing-service:3001`,
+  `http://oficina-app:3000`), autenticadas por JWT de serviço (`role: SERVICO`).
   Ver [RFC-0008](../rfcs/RFC-0008-comunicacao-http-entre-servicos.md) e
   [`docs/contratos/http-interno.md`](../../contratos/http-interno.md).
 - A rota `/admin*` (reprocessar saga) entra no prefixo do OS Service.

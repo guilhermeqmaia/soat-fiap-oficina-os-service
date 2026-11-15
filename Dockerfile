@@ -28,6 +28,10 @@ COPY --chown=node:node prisma ./prisma
 
 COPY --chown=node:node prisma.config.ts ./prisma.config.ts
 
+# JSON Schemas dos contratos HTTP (US-F4-15): o Swagger UI (/api, fora de producao)
+# monta o envelope dos callbacks a partir deles (src/config/openapi.ts).
+COPY --chown=node:node docs/contratos/schemas ./docs/contratos/schemas
+
 COPY --chown=node:node --from=builder /app/node_modules/dotenv ./node_modules/dotenv
 
 USER node

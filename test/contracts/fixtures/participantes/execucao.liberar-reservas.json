@@ -1,0 +1,8 @@
+{
+  "comando": "execucao.liberar-reservas",
+  "respostas": {
+    "200": {
+      "numeroOS": "OS-2026-000123"
+    }
+  }
+}
