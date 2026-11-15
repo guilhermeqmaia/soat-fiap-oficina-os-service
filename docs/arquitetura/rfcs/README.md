@@ -14,7 +14,7 @@ Template: [TEMPLATE.md](TEMPLATE.md)
 | [RFC-0004](RFC-0004-decomposicao-em-microsservicos.md) | Decomposição em microsserviços (3 × 5 × alternativa) | Aceita | 2026-09-30 |
 | [RFC-0005](RFC-0005-estrategia-de-saga.md) | Estratégia de Saga — orquestração vs coreografia | Aceita | 2026-09-30 |
 | [RFC-0006](RFC-0006-mensageria.md) | Mensageria assíncrona (SNS+SQS × RabbitMQ × Kafka × EventBridge) | Substituída pela RFC-0008 | 2026-09-30 |
-| [RFC-0007](RFC-0007-banco-nosql.md) | Banco NoSQL para o Execução Service (DynamoDB) | Aceita | 2026-09-30 |
+| [RFC-0007](RFC-0007-banco-nosql.md) | Banco NoSQL para o Execução Service (DynamoDB) | Aceita (revisada em 2026-11-09: uma tabela por agregado) | 2026-09-30 |
 | [RFC-0008](RFC-0008-comunicacao-http-entre-servicos.md) | Comunicação HTTP entre os serviços (substitui a mensageria) | Aceita | 2026-11-03 |
 
 ## Ciclo de vida
