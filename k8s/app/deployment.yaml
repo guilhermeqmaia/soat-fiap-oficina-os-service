@@ -34,6 +34,14 @@ spec:
         app.kubernetes.io/name: oficina-app
         app.kubernetes.io/part-of: oficina-mecanica
         app.kubernetes.io/component: api
+      # Coleta do /metrics pelo agente do Datadog (OpenMetrics por autodiscovery de
+      # anotacoes de POD, infra-k8s observability/datadog-values.yaml) e pelo Prometheus.
+      # Sem isto as metricas da saga e das chamadas entre servicos nao chegam aos
+      # dashboards (o Billing e a Execucao ja anotam os pods do mesmo jeito).
+      annotations:
+        prometheus.io/scrape: 'true'
+        prometheus.io/port: '3000'
+        prometheus.io/path: '/metrics'
     spec:
       securityContext:
         runAsNonRoot: true
