@@ -7,6 +7,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Um push novo no mesmo PR cancela a execucao anterior (economiza runner). Em
+# push na main e workflow_dispatch NAO cancela: cada merge roda o deploy inteiro.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
@@ -67,15 +73,33 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      # O gate que barra o PR e o `coverageThreshold` (80 % em linhas, branches,
+      # funcoes e statements) do jest.unit.config.ts: `npm run test:unit:cov` ja
+      # falha abaixo dele. Este passo le o MESMO resultado (coverage-summary.json,
+      # reporter json-summary) para publicar o resumo no job e conferir de novo —
+      # se o arquivo faltar ou vier sem numeros, falha (antes o grep -P com
+      # lookbehind variavel dava erro, saia vazio e o passo passava sempre).
       - name: Check coverage gate (80%)
         run: |
-          COVERAGE=$(grep -oP '(?<=Lines.*?\s)\d+\.\d+' coverage/unit/lcov-report/index.html | head -1)
-          echo "📊 Line coverage: $COVERAGE%"
-          if (( $(echo "$COVERAGE < 80" | bc -l) )); then
-            echo "❌ Coverage $COVERAGE% is below gate 80%"
-            exit 1
-          fi
-          echo "✅ Coverage $COVERAGE% meets gate 80%"
+          node - <<'NODE'
+          const fs = require('fs');
+          const GATE = 80;
+          const arquivo = 'coverage/unit/coverage-summary.json';
+          if (!fs.existsSync(arquivo)) { console.error(`::error::${arquivo} nao encontrado (reporter json-summary)`); process.exit(1); }
+          const total = JSON.parse(fs.readFileSync(arquivo, 'utf8')).total;
+          const linhas = ['| Métrica | Cobertura | Gate |', '|---|---|---|'];
+          let falhou = false;
+          for (const m of ['lines', 'branches', 'functions', 'statements']) {
+            const pct = Number(total?.[m]?.pct);
+            if (!Number.isFinite(pct)) { console.error(`::error::cobertura de ${m} ausente em ${arquivo}`); falhou = true; continue; }
+            const ok = pct >= GATE;
+            if (!ok) { console.error(`::error::cobertura de ${m} ${pct}% abaixo do gate de ${GATE}%`); falhou = true; }
+            console.log(`${ok ? '✅' : '❌'} ${m}: ${pct}%`);
+            linhas.push(`| ${m} | ${pct}% | ${ok ? '✅' : '❌'} ≥ ${GATE}% |`);
+          }
+          if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### Cobertura (unit)\n\n${linhas.join('\n')}\n`);
+          process.exit(falhou ? 1 : 0);
+          NODE
 
   # ---------------------------------------------------------------------------
   # Qualidade: SonarCloud com quality gate bloqueante (US-F4-13, ADR-0011)
