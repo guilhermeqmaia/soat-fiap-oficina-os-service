@@ -75,6 +75,7 @@ documentos abaixo detalham cada tema.
 
 ## Fase 4
 
+- [entrega-fase-4.md](entrega-fase-4.md) — documento de entrega da Fase 4 (fonte do PDF): participantes, repositórios, arquitetura final, estratégia da saga, justificativas, roteiro do vídeo e checklist da demo
 - [plano-execucao-fase-4.md](plano-execucao-fase-4.md) — plano da Fase 4 (insights de mercado, decisões revisadas em 03/11, ondas, 23 histórias)
 - [contratos/http-interno.md](contratos/http-interno.md) — **contrato efetivo** da comunicação HTTP entre os serviços (RFC-0008): endpoints, callbacks, envelope, retry/idempotência
 - [contratos/](contratos/README.md) — AsyncAPI (vocabulário/payloads dos eventos), OpenAPI por serviço (`openapi/`) e exemplos
