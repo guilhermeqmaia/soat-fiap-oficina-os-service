@@ -66,10 +66,10 @@ estática. A maior parte da verificação é feita com `gh api` (somente leitura
   | Repo | `checks` obrigatórios | `reviews` | `force_push` / `delecao` |
   |---|---|---|---|
   | os-service | `1️⃣ Execução dos Testes Automatizados`, `🔎 SonarCloud (quality gate)`, `🥒 BDD (Cucumber — serviço)`, `🥒 BDD ponta a ponta (docker-compose.fase4)` | 1 | `false` / `false` |
-  | billing-service | `Lint, typecheck, testes (gate 80%) e build`, `Build da imagem` | 1 | `false` / `false` |
-  | execucao-service | `Lint, typecheck, testes (gate 80%) e build`, `Build da imagem` | 1 | `false` / `false` |
+  | billing-service | `Lint, typecheck, testes (gate 80%) e build`, `Build da imagem`, `SonarCloud (quality gate)`, `BDD (Gherkin + Cucumber)` | 1 | `false` / `false` |
+  | execucao-service | `Lint, typecheck, testes (gate 80%) e build`, `Build da imagem`, `SonarCloud (quality gate)`, `BDD (Gherkin + Cucumber)` | 1 | `false` / `false` |
 
-- **Alvo após US-F4-13/14:** Billing e Execução passam a exigir também `SonarCloud (quality gate)` e `BDD (Gherkin + Cucumber)` (nomes exatos dos jobs no `ci.yml` de cada repo). Re-executar este cenário depois da mudança e atualizar a tabela
+- **Estado em 15/11/2026:** Billing e Execução já exigem também `SonarCloud (quality gate)` (com `sonar.qualitygate.wait=true`, bloqueante) e `BDD (Gherkin + Cucumber)`, os nomes exatos dos jobs no `ci.yml` de cada repo
 - **Alternativo:** um check obrigatório com nome diferente do `name:` do job → o PR fica eternamente "Expected — Waiting for status to be reported"
 
 ### TS-03: PR sem aprovação ou com check vermelho não pode ser mesclado — [LOCAL]
