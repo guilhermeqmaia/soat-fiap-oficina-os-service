@@ -45,11 +45,11 @@
 
 ---
 
-## 3. Vídeo (≤ 15 min)
+## 3. Vídeo (≤ 10 min; o enunciado permite até 15)
 
 ⏳ **Link:** _a publicar (YouTube não listado)_
 
-O roteiro está na [seção 8](#8-roteiro-do-vídeo-15-min).
+O roteiro está na [seção 8](#8-roteiro-do-vídeo--10-min).
 
 ---
 
@@ -131,18 +131,28 @@ Diagramas detalhados (rede, máquina de estados, caminho feliz, compensação, p
 
 ---
 
-## 8. Roteiro do vídeo (≤ 15 min)
+## 8. Roteiro do vídeo (≤ 10 min)
 
-| Tempo | Bloco | O que mostrar |
-|---|---|---|
-| 0:00–1:30 | Arquitetura | Diagrama da seção 4; 3 serviços, bancos, gateway, saga orquestrada |
-| 1:30–5:30 | **Fluxo completo de uma OS** | Atendente abre a OS pelo gateway → Execução enfileira → mecânico atribui, vincula serviços/peças e conclui o diagnóstico (estoque baixa) → Billing gera o orçamento → cliente aprova → execução → finalizar → cobrança no Mercado Pago (link do sandbox) → pagamento aprovado → `FINALIZADA` → entrega. Mostrar `GET .../saga` em cada passo |
-| 5:30–8:30 | **Saga e tratamento de falhas** | (a) Orçamento rejeitado → `COMPENSANDO` → estoque devolvido (`GET /execucao/ordens/{n}/movimentacoes`) → OS `CANCELADA`. (b) Falha injetada com `x-simular-falha` → retry esgotado → alerta de saga parada → `POST /admin/sagas/{n}/reprocessar` → saga retoma. (c) Pagamento recusado → OS retida sem rollback |
-| 8:30–11:30 | **Deploy automatizado com testes** | PR em um serviço → checks obrigatórios (testes, SonarCloud, BDD) → merge → `cd-aws` → imagem no ECR → rollout no EKS (`kubectl rollout status`) |
-| 11:30–14:30 | **Monitoramento e rastreamento** | Datadog: trace de uma OS atravessando OS → Execução → Billing (mesmo `x-correlation-id`), dashboard "Fluxo distribuído", logs correlacionados, monitor de saga parada |
-| 14:30–15:00 | Encerramento | Links dos repositórios e do PDF |
+O vídeo é conduzido pelos diagramas ([`slides/`](arquitetura/diagramas/fase4/slides/README.md)). Depois de cada
+diagrama vêm de 5 a 15 s de **evidência real** do ambiente na AWS, porque o enunciado pede para *demonstrar*
+o fluxo da OS, a saga com tratamento de falhas, o deploy com validação de testes e o monitoramento.
 
----
+| Tempo | Seção | Slide | Evidência (gravada na sessão da AWS) |
+|---|---|---|---|
+| 0:00–0:30 | **1. Abertura**: grupo, desafio da fase, os 3 serviços | — | — |
+| 0:30–2:15 | **2. Infraestrutura**: o que fica fora da AWS (clientes, Mercado Pago, Datadog), a borda pública (API Gateway), os serviços regionais e o que fica dentro da VPC (NLB, EKS, Lambda, RDS por serviço, endpoint do DynamoDB). Comunicação por HTTP + callbacks no lugar de mensageria (RFC-0008): retry, idempotência e reprocessamento dão a resiliência | `11-infra-slide.png` | Console da AWS: EKS com os 3 deployments, as 2 instâncias RDS e as tabelas `oficina-*` |
+| 2:15–4:30 | **3. Fluxo de uma OS**: os 13 passos, quem age, qual sistema processa e o status da OS em cada um | `09-fluxo-os-por-ator.png` | `GET /ordens-servico/numero/{n}/saga` de uma OS `ENTREGUE`, com o histórico completo |
+| 4:30–6:30 | **4. Saga e falhas**: os 8 passos da saga e os 3 tipos de falha (negócio → compensação; técnica → retry, alerta e reprocessar; pagamento recusado → OS retida, sem rollback) | `12-saga-falhas.png` (+ `06-compensacao-rejeicao.png`) | Saga `CANCELADA` com a devolução das peças em `GET /execucao/ordens/{n}/movimentacoes`; saga com falha pendente antes e depois do `reprocessar` |
+| 6:30–8:00 | **5. Deploy automatizado**: PR, CI (testes com gate de 80%, BDD, SonarCloud), merge, CD (OIDC, Trivy, ECR, Secrets Manager, kustomize, rollout e smoke) e infraestrutura por Terraform | `13-deploy.png` | PR com os checks verdes, SonarCloud, run do `CD - AWS (ECR + EKS)` e `kubectl -n oficina rollout status` |
+| 8:00–9:30 | **6. Monitoramento**: correlação pelo número da OS, um trace atravessando os 3 serviços, dashboards, alertas e runbooks | `10-observabilidade.png` | Datadog: trace da OS da seção 3, dashboard "Oficina — Fluxo distribuído", monitor "saga de OS parada" |
+| 9:30–10:00 | **7. Encerramento**: repositórios e documentação | — | — |
+
+**Evidências a capturar na sessão da AWS** (cerca de 15 min de cliques com o ambiente no ar):
+1. Uma OS do início ao fim, até `ENTREGUE`, pagando no sandbox do Mercado Pago. Print da saga e do trace no APM.
+2. Uma OS com o orçamento rejeitado: saga `CANCELADA` e as movimentações com `DEVOLUCAO`.
+3. Uma OS com falha injetada (header `x-simular-falha`) e o `POST /admin/sagas/{n}/reprocessar`: saga antes e depois, e o monitor disparado.
+4. Um PR pequeno num serviço até o deploy no EKS (gravar e cortar na edição).
+5. Console da AWS com o cluster, os bancos e as tabelas.
 
 ## 9. Preparação da demo (checklist operacional)
 

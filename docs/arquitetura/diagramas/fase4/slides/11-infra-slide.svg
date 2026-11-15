@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" font-family="Inter, Helvetica Neue, Arial, sans-serif">
+<defs><marker id="ah" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,4.5 L0,9 z" fill="#262626"/></marker><marker id="ah-s" markerWidth="9" markerHeight="9" refX="1" refY="4.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M9,0 L0,4.5 L9,9 z" fill="#262626"/></marker></defs>
+<rect width="1920" height="1080" fill="#ffffff"/>
+<text x="960" y="42.0" font-size="32" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">Infraestrutura da Fase 4: o que fica fora e dentro da VPC</text>
+<rect x="30" y="90" width="300" height="960" rx="10" fill="#fffbf0" stroke="#d48806" stroke-width="2" stroke-dasharray="8 6"/>
+<text x="180" y="118.0" font-size="20" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#874d00">Fora da AWS</text>
+<rect x="55" y="160" width="250" height="110" rx="10" fill="#fff7e6" stroke="#d48806" stroke-width="2"/>
+<text x="180.0" y="193.0" font-size="17" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">web/admin</text>
+<text x="180.0" y="215.0" font-size="17" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">atendente · mecânico</text>
+<text x="180.0" y="237.0" font-size="17" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">gestor</text>
+<rect x="55" y="300" width="250" height="90" rx="10" fill="#fff7e6" stroke="#d48806" stroke-width="2"/>
+<text x="180.0" y="334.0" font-size="17" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">web/cliente</text>
+<text x="180.0" y="356.0" font-size="17" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">cliente (só CPF)</text>
+<rect x="55" y="470" width="250" height="110" rx="10" fill="#fff7e6" stroke="#d48806" stroke-width="2"/>
+<text x="180.0" y="503.0" font-size="17" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">Mercado Pago</text>
+<text x="180.0" y="525.0" font-size="17" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">checkout (API de Orders)</text>
+<text x="180.0" y="547.0" font-size="17" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">webhook assinado</text>
+<rect x="55" y="800" width="250" height="110" rx="10" fill="#fff7e6" stroke="#d48806" stroke-width="2"/>
+<text x="180.0" y="833.0" font-size="17" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">Datadog (SaaS)</text>
+<text x="180.0" y="855.0" font-size="17" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">APM · logs · métricas</text>
+<text x="180.0" y="877.0" font-size="17" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">dashboards e alertas</text>
+<rect x="370" y="90" width="1520" height="960" rx="14" fill="#fcfcfc" stroke="#595959" stroke-width="2"/>
+<text x="470" y="118.0" font-size="20" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#262626">AWS · us-east-1</text>
+<rect x="400" y="150" width="420" height="120" rx="10" fill="#f9f0ff" stroke="#722ed1" stroke-width="2"/>
+<text x="610.0" y="188.0" font-size="17" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">API Gateway (HTTP API)</text>
+<text x="610.0" y="210.0" font-size="17" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">única entrada pública · JWT (authorizer)</text>
+<text x="610.0" y="232.0" font-size="17" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">rotas por prefixo · throttling · access logs</text>
+<rect x="1120" y="140" width="740" height="140" rx="10" fill="#f5f5f5" stroke="#8c8c8c" stroke-width="2" stroke-dasharray="8 6"/>
+<text x="1490" y="162.0" font-size="17" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#434343">Serviços regionais (fora da VPC)</text>
+<rect x="1140" y="185" width="160" height="80" rx="10" fill="#ffffff" stroke="#8c8c8c" stroke-width="2"/>
+<text x="1220.0" y="215.0" font-size="16" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">Secrets</text>
+<text x="1220.0" y="235.0" font-size="16" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">Manager</text>
+<rect x="1315" y="185" width="120" height="80" rx="10" fill="#ffffff" stroke="#8c8c8c" stroke-width="2"/>
+<text x="1375.0" y="225.0" font-size="16" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">ECR</text>
+<rect x="1450" y="185" width="160" height="80" rx="10" fill="#ffffff" stroke="#8c8c8c" stroke-width="2"/>
+<text x="1530.0" y="215.0" font-size="16" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">CloudWatch</text>
+<text x="1530.0" y="235.0" font-size="16" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">logs da borda</text>
+<path d="M1625,194 a107.5,14 0 0,0 215,0 a107.5,14 0 0,0 -215,0 v64 a107.5,14 0 0,0 215,0 v-64" fill="#f6ffed" stroke="#389e0d" stroke-width="2"/>
+<text x="1732.5" y="221.0" font-size="17" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">DynamoDB</text>
+<text x="1732.5" y="243.0" font-size="17" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">4 tabelas oficina-*</text>
+<rect x="400" y="310" width="1460" height="720" rx="14" fill="#f0f7ff" stroke="#1677ff" stroke-width="2"/>
+<text x="1000" y="336.0" font-size="20" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#0958d9">VPC 10.0.0.0/16 · 2 AZs</text>
+<rect x="1590" y="370" width="250" height="190" rx="10" fill="#e6fffb" stroke="#08979c" stroke-width="2" stroke-dasharray="8 6"/>
+<text x="1715" y="392.0" font-size="16" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#006d75">Subnets públicas</text>
+<rect x="1605" y="410" width="220" height="135" rx="10" fill="#ffffff" stroke="#08979c" stroke-width="2"/>
+<text x="1715.0" y="449.0" font-size="15" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">NAT + Internet Gateway</text>
+<text x="1715.0" y="468.0" font-size="15" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">saída da VPC: ECR,</text>
+<text x="1715.0" y="487.0" font-size="15" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">Secrets, Datadog,</text>
+<text x="1715.0" y="506.0" font-size="15" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">Mercado Pago</text>
+<rect x="1590" y="780" width="250" height="110" rx="10" fill="#ffffff" stroke="#389e0d" stroke-width="2"/>
+<text x="1715.0" y="815.0" font-size="16" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">VPC Gateway</text>
+<text x="1715.0" y="835.0" font-size="16" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">Endpoint · DynamoDB</text>
+<text x="1715.0" y="855.0" font-size="16" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">política: oficina-*</text>
+<rect x="425" y="370" width="1140" height="640" rx="10" fill="#ffffff" stroke="#1677ff" stroke-width="2" stroke-dasharray="8 6"/>
+<text x="1000" y="394.0" font-size="17" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#0958d9">Subnets privadas</text>
+<rect x="450" y="430" width="260" height="120" rx="10" fill="#f9f0ff" stroke="#722ed1" stroke-width="2"/>
+<text x="580.0" y="468.0" font-size="17" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">VPC Link →</text>
+<text x="580.0" y="490.0" font-size="17" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">NLB interno</text>
+<text x="580.0" y="512.0" font-size="17" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">1 listener por serviço</text>
+<rect x="450" y="650" width="260" height="120" rx="10" fill="#f9f0ff" stroke="#722ed1" stroke-width="2"/>
+<text x="580.0" y="688.0" font-size="17" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">Lambda de CPF</text>
+<text x="580.0" y="710.0" font-size="17" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">emite o JWT</text>
+<text x="580.0" y="732.0" font-size="17" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">(ENIs na VPC)</text>
+<rect x="750" y="420" width="500" height="560" rx="12" fill="#f6ffed" stroke="#52c41a" stroke-width="2"/>
+<text x="1000" y="446.0" font-size="18" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#237804">EKS · namespace oficina</text>
+<rect x="780" y="475" width="440" height="105" rx="10" fill="#e6f4ff" stroke="#1677ff" stroke-width="2"/>
+<text x="1000.0" y="516.5" font-size="17" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">OS Service</text>
+<text x="1000.0" y="538.5" font-size="17" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">OS, clientes, veículos · orquestrador da saga</text>
+<rect x="780" y="640" width="205" height="110" rx="10" fill="#e6f4ff" stroke="#1677ff" stroke-width="2"/>
+<text x="882.5" y="675.0" font-size="16" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">Execução</text>
+<text x="882.5" y="695.0" font-size="16" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">fila, diagnóstico,</text>
+<text x="882.5" y="715.0" font-size="16" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">catálogo e estoque</text>
+<rect x="1015" y="640" width="205" height="110" rx="10" fill="#e6f4ff" stroke="#1677ff" stroke-width="2"/>
+<text x="1117.5" y="675.0" font-size="16" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">Billing</text>
+<text x="1117.5" y="695.0" font-size="16" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">orçamento e</text>
+<text x="1117.5" y="715.0" font-size="16" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">pagamento</text>
+<rect x="780" y="880" width="440" height="75" rx="10" fill="#fff7e6" stroke="#d48806" stroke-width="2"/>
+<text x="1000.0" y="917.5" font-size="16" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">Datadog Agent (DaemonSet) · logs, métricas e traces</text>
+<path d="M1300,484 a117.5,14 0 0,0 235,0 a117.5,14 0 0,0 -235,0 v87 a117.5,14 0 0,0 235,0 v-87" fill="#f6ffed" stroke="#389e0d" stroke-width="2"/>
+<text x="1417.5" y="522.5" font-size="17" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">RDS PostgreSQL</text>
+<text x="1417.5" y="544.5" font-size="17" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">do OS</text>
+<path d="M1300,654 a117.5,14 0 0,0 235,0 a117.5,14 0 0,0 -235,0 v87 a117.5,14 0 0,0 235,0 v-87" fill="#f6ffed" stroke="#389e0d" stroke-width="2"/>
+<text x="1417.5" y="692.5" font-size="17" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">RDS PostgreSQL</text>
+<text x="1417.5" y="714.5" font-size="17" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">do Billing</text>
+<polyline points="305,215 350,215 350,190 400,190" fill="none" stroke="#262626" stroke-width="2.4" marker-end="url(#ah)"/>
+<rect x="301.88" y="127" width="100.24000000000001" height="26" rx="5" fill="#ffffff" stroke="#bfbfbf"/>
+<text x="352" y="140.0" font-size="14" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#434343">HTTPS + JWT</text>
+<polyline points="305,345 350,345 350,240 400,240" fill="none" stroke="#262626" stroke-width="2.4" marker-end="url(#ah)"/>
+<polyline points="305,525 370,525 370,258 400,258" fill="none" stroke="#262626" stroke-width="2.4" stroke-dasharray="7 6" marker-end="url(#ah)"/>
+<rect x="310.56" y="587" width="68.88" height="26" rx="5" fill="#ffffff" stroke="#bfbfbf"/>
+<text x="345" y="600.0" font-size="14" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#434343">webhook</text>
+<polyline points="580,270 580,430" fill="none" stroke="#262626" stroke-width="2.4" marker-end="url(#ah)"/>
+<rect x="601.64" y="287" width="76.72" height="26" rx="5" fill="#ffffff" stroke="#bfbfbf"/>
+<text x="640" y="300.0" font-size="14" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#434343">VPC Link</text>
+<polyline points="450,262 438,262 438,710 450,710" fill="none" stroke="#262626" stroke-width="2.4" stroke-dasharray="7 6" marker-end="url(#ah)"/>
+<rect x="453.8" y="602" width="92.4" height="26" rx="5" fill="#ffffff" stroke="#bfbfbf"/>
+<text x="500" y="615.0" font-size="14" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#434343">POST /auth</text>
+<polyline points="710,490 780,520" fill="none" stroke="#262626" stroke-width="2.4" marker-end="url(#ah)"/>
+<rect x="661.36" y="582" width="147.28" height="26" rx="5" fill="#ffffff" stroke="#bfbfbf"/>
+<text x="735" y="595.0" font-size="14" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#434343">rotas por prefixo</text>
+<polyline points="895,580 880,640" fill="none" stroke="#262626" stroke-width="2.4" marker-end="url(#ah)" marker-start="url(#ah-s)"/>
+<polyline points="1105,580 1117,640" fill="none" stroke="#262626" stroke-width="2.4" marker-end="url(#ah)" marker-start="url(#ah-s)"/>
+<rect x="840.12" y="599" width="319.76000000000005" height="26" rx="5" fill="#ffffff" stroke="#bfbfbf"/>
+<text x="1000" y="612.0" font-size="14" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#434343">comandos HTTP ⇄ callbacks (DNS interno)</text>
+<polyline points="1220,527 1300,527" fill="none" stroke="#262626" stroke-width="2.4" marker-end="url(#ah)"/>
+<polyline points="1220,697 1300,697" fill="none" stroke="#262626" stroke-width="2.4" marker-end="url(#ah)"/>
+<polyline points="580,770 580,1000 1560,1000 1560,527 1535,527" fill="none" stroke="#262626" stroke-width="2.4" stroke-dasharray="7 6" marker-end="url(#ah)"/>
+<rect x="851.88" y="987" width="296.24" height="26" rx="5" fill="#ffffff" stroke="#bfbfbf"/>
+<text x="1000" y="1000.0" font-size="14" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#434343">Lambda consulta o CPF no banco do OS</text>
+<polyline points="882,750 882,820 1575,820 1575,835 1590,835" fill="none" stroke="#262626" stroke-width="2.4" marker-end="url(#ah)"/>
+<rect x="1060.52" y="807" width="358.96000000000004" height="26" rx="5" fill="#ffffff" stroke="#bfbfbf"/>
+<text x="1240" y="820.0" font-size="14" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#434343">Execução → DynamoDB sem sair para a internet</text>
+<polyline points="1840,835 1872,835 1872,226 1840,226" fill="none" stroke="#262626" stroke-width="2.4" marker-end="url(#ah)"/>
+<polyline points="1220,917 1580,917 1580,500 1605,500" fill="none" stroke="#262626" stroke-width="2.4" stroke-dasharray="7 6" marker-end="url(#ah)"/>
+<rect x="1342.04" y="904" width="115.92000000000002" height="26" rx="5" fill="#ffffff" stroke="#bfbfbf"/>
+<text x="1400" y="917.0" font-size="14" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#434343">saída via NAT</text>
+</svg>

@@ -11,7 +11,8 @@ autenticação por CPF continuam; muda o que roda dentro do cluster e como os
 pedaços se falam.
 
 > Para o PDF e os slides, as imagens já exportadas estão em
-> [`diagramas/fase4/`](diagramas/fase4/) (`01-visao-geral.png` … `08-deploy-eks.png`).
+> [`diagramas/fase4/`](diagramas/fase4/) (`01-visao-geral.png` … `10-observabilidade.png`). Os slides 16:9 do vídeo ficam em
+> [`diagramas/fase4/slides/`](diagramas/fase4/slides/README.md).
 > Para regenerar após editar um bloco:
 > `npx -p @mermaid-js/mermaid-cli mmdc -i docs/arquitetura/arquitetura-fase4.md -o /tmp/fase4.png -b white -s 2`
 > (ou cole o bloco em <https://mermaid.live>).
@@ -360,6 +361,66 @@ sequenceDiagram
 | Lock otimista (`version`) + retry em `ConcurrentModificationError` | OS Service | callback e resposta síncrona concorrentes não perdem transição |
 | `x-correlation-id` + `traceparent` propagados | kit `/http` + Datadog APM | uma OS é um trace só atravessando os três serviços |
 
+### 3.6 Quem age e qual sistema processa cada passo
+
+Visão por ator para apresentação (vídeo e PDF): cada coluna é um ator ou um serviço com o seu banco, e as
+notas no OS Service mostram o status da OS depois de cada passo. Os atores entram pelo API Gateway com
+o JWT da Lambda; os serviços se chamam pelo DNS interno do cluster.
+
+```mermaid
+%%{init: {"sequence": {"mirrorActors": false, "actorMargin": 40, "messageMargin": 22, "noteMargin": 8, "boxMargin": 6}, "themeVariables": {"fontSize": "15px", "noteBkgColor": "#e6f4ff", "noteBorderColor": "#1677ff"}}}%%
+sequenceDiagram
+    actor AT as Atendente
+    actor ME as Mecânico
+    actor CL as Cliente
+    participant OS as OS Service<br/>saga · Postgres
+    participant EX as Execução<br/>DynamoDB
+    participant BI as Billing<br/>Postgres
+    participant MP as Mercado Pago
+
+    rect rgb(255, 247, 230)
+    Note over AT,MP: Abertura · atores entram pelo API Gateway (JWT) · serviços se chamam pelo DNS interno do cluster
+    AT->>OS: 1. abre a OS (cliente, veículo, problema)
+    Note over OS: RECEBIDA
+    OS->>EX: 2. enfileirar
+    Note over OS: EM_DIAGNOSTICO
+    end
+
+    rect rgb(246, 255, 237)
+    Note over AT,MP: Diagnóstico e orçamento
+    ME->>EX: 3. assume, vincula serviços e peças, conclui o diagnóstico
+    Note over EX: 4. baixa peças<br/>do estoque
+    EX-->>OS: callback: diagnóstico concluído
+    OS->>BI: 5. gerar orçamento
+    Note over OS: AGUARDANDO_APROVACAO
+    OS-->>CL: e-mail com o orçamento
+    end
+
+    rect rgb(249, 240, 255)
+    Note over AT,MP: Aprovação e execução
+    CL->>BI: 6. aprova o orçamento
+    BI-->>OS: callback: orçamento aprovado
+    OS->>EX: 7. iniciar
+    Note over OS: EM_EXECUCAO
+    ME->>EX: 8. executa e finaliza
+    EX-->>OS: callback: execução finalizada
+    end
+
+    rect rgb(230, 255, 251)
+    Note over AT,MP: Cobrança, pagamento e entrega
+    OS->>BI: 9. cobrar
+    BI->>MP: 10. cria a order (checkout)
+    Note over OS: AGUARDANDO_PAGAMENTO
+    OS-->>CL: link de pagamento
+    CL->>MP: 11. paga
+    MP-->>BI: webhook: order paga
+    BI-->>OS: 12. callback: pagamento aprovado
+    Note over OS: FINALIZADA
+    AT->>OS: 13. entrega o veículo
+    Note over OS: ENTREGUE · saga CONCLUIDA
+    end
+```
+
 ---
 
 ## 4. Deploy no EKS
@@ -420,7 +481,63 @@ flowchart LR
 
 ---
 
-## 5. Onde cada decisão está registrada
+## 5. Observabilidade: como seguir uma OS entre os serviços
+
+Os três serviços escrevem logs JSON e enviam traces pelo `dd-trace`. O OS Service também expõe
+`/metrics` com as métricas da saga e das chamadas entre serviços. O agente do Datadog (DaemonSet) junta
+tudo. O número da OS vai como `x-correlation-id` e o `traceparent` é propagado em toda chamada e
+callback, então uma OS vira um trace só atravessando os três serviços. Dashboards, monitores e
+runbooks: [`observability/` no infra-k8s](https://github.com/guilhermeqmaia/soat-fiap-oficina-infra-k8s/tree/main/observability)
+e [`docs/runbooks/`](../runbooks/).
+
+```mermaid
+%%{init: {"flowchart": {"curve": "basis", "nodeSpacing": 28, "rankSpacing": 55}, "themeVariables": {"fontSize": "15px"}}}%%
+flowchart LR
+    subgraph EKS["Cluster EKS · namespace oficina"]
+        direction TB
+        OS["<b>OS Service</b><br/>saga + chamadas<br/>entre serviços<br/>logs JSON · /metrics<br/>dd‑trace"]
+        EX["<b>Execução</b><br/>logs JSON<br/>dd‑trace"]
+        BI["<b>Billing</b><br/>logs JSON<br/>dd‑trace"]
+        AG["<b>Datadog Agent</b> (DaemonSet)<br/>lê os logs dos containers ·<br/>coleta o /metrics · recebe traces"]
+    end
+
+    CORR["<b>Correlação</b><br/>x‑correlation‑id<br/>= número da OS<br/>traceparent em toda<br/>chamada e callback"]
+
+    subgraph DD["Datadog (SaaS)"]
+        direction TB
+        APM["APM · um trace por OS<br/>atravessando os 3 serviços"]
+        LOGS["Logs · filtrados pelo<br/>número da OS / trace_id"]
+        MET["Métricas da saga<br/>passos · sagas paradas<br/>p95 e erros<br/>entre serviços"]
+    end
+
+    subgraph VIS["O que o time vê"]
+        direction TB
+        DASH["<b>Dashboards</b><br/>Operação · Saúde técnica ·<br/>Fluxo distribuído"]
+        MON["<b>Alertas</b><br/>saga parada<br/>retry esgotado<br/>5xx por serviço<br/>latência · 409 repetido"]
+        RUN["<b>Runbooks</b> (docs/runbooks)<br/>ex.: reprocessar a saga"]
+    end
+
+    OS & EX & BI --> AG
+    CORR -.- OS & EX & BI
+    AG --> APM & LOGS & MET
+    APM & LOGS & MET --> DASH
+    MET --> MON --> RUN
+
+    classDef svc fill:#e6f4ff,stroke:#1677ff,color:#002c66
+    classDef ag fill:#fff7e6,stroke:#d48806,color:#3a2a00
+    classDef dd fill:#f9f0ff,stroke:#722ed1,color:#2a0a52
+    classDef vis fill:#f6ffed,stroke:#389e0d,color:#0b3d00
+    classDef nota fill:#fffbe6,stroke:#faad14,color:#3a2a00,stroke-dasharray: 4 3
+    class OS,EX,BI svc
+    class AG ag
+    class APM,LOGS,MET dd
+    class DASH,MON,RUN vis
+    class CORR nota
+```
+
+---
+
+## 6. Onde cada decisão está registrada
 
 | Tema | Documento |
 |---|---|
