@@ -52,8 +52,20 @@ jobs:
       - name: Run integration tests (testcontainers/Postgres)
         # testcontainers sobe um Postgres efêmero via Docker (disponível no
         # runner ubuntu-latest). Exercita os repositórios Prisma contra um banco
-        # real — cobre os fluxos que os testes unitários mockam.
-        run: npm run test:integration
+        # real — cobre os fluxos que os testes unitários mockam. Com cobertura
+        # (coverage/integration/lcov.info) para o SonarCloud somar à do unit.
+        run: npm run test:integration:cov
+
+      # US-F4-13: os dois lcov vão para o job do SonarCloud (sem rodar os testes de novo).
+      - name: Publicar relatórios de cobertura (lcov)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: coverage-lcov
+          path: |
+            coverage/unit/lcov.info
+            coverage/integration/lcov.info
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Check coverage gate (80%)
         run: |
@@ -64,6 +76,155 @@ jobs:
             exit 1
           fi
           echo "✅ Coverage $COVERAGE% meets gate 80%"
+
+  # ---------------------------------------------------------------------------
+  # Qualidade: SonarCloud com quality gate bloqueante (US-F4-13, ADR-0011)
+  #
+  # Reaproveita o lcov de unit + integração do passo 1 (não roda os testes de
+  # novo). `sonar.qualitygate.wait=true` faz o scanner esperar o resultado do
+  # gate e falhar o job se ele reprovar — é este check ("🔎 SonarCloud (quality
+  # gate)") que entra como obrigatório na branch protection da main.
+  # Sem o secret SONAR_TOKEN, ou com os placeholders do sonar-project.properties
+  # ainda lá, o job FALHA com a instrução do que configurar (não pula).
+  # ---------------------------------------------------------------------------
+  sonarcloud:
+    name: "🔎 SonarCloud (quality gate)"
+    runs-on: ubuntu-latest
+    needs: automated-tests
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read # decoração do PR pelo SonarCloud
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0 # blame/"new code" do Sonar precisam do histórico
+
+      - name: Baixar cobertura do passo 1
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: coverage-lcov
+          path: coverage
+
+      - name: Conferir configuração do SonarCloud
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          falhou=0
+          if [ -z "${SONAR_TOKEN}" ]; then
+            echo "::error title=SONAR_TOKEN ausente::Crie o secret SONAR_TOKEN em Settings > Secrets and variables > Actions (token gerado em sonarcloud.io > My Account > Security). Sem ele o quality gate não roda e o PR não pode ser aprovado."
+            falhou=1
+          fi
+          if grep -qE '^sonar\.(organization|projectKey)=SONAR_(ORG|PROJECT_KEY)$' sonar-project.properties; then
+            echo "::error file=sonar-project.properties,title=Placeholders do SonarCloud::Troque SONAR_ORG e SONAR_PROJECT_KEY pelos valores do projeto no SonarCloud (e nos badges do README.md)."
+            falhou=1
+          fi
+          ls -l coverage/unit/lcov.info coverage/integration/lcov.info
+          exit $falhou
+
+      - name: Análise SonarCloud + quality gate (bloqueante)
+        uses: SonarSource/sonarqube-scan-action@e805d875275f728fac1885b413934be6d7c63f65 # v8.4.1
+        env:
+          # Sem SONAR_HOST_URL a action usa o SonarCloud (sonarcloud.io).
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.qualitygate.wait=true
+            -Dsonar.qualitygate.timeout=300
+
+  # ---------------------------------------------------------------------------
+  # BDD nível de serviço (US-F4-14): Cucumber com Nest em memória + Postgres
+  # (Testcontainers) + stubs HTTP da Execução/Billing. Todo PR. ~2 min.
+  # Node 22: o @cucumber/cucumber 13 não suporta Node 20.
+  # ---------------------------------------------------------------------------
+  bdd:
+    name: "🥒 BDD (Cucumber — serviço)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Cucumber (features/*.feature)
+        run: npm run test:bdd
+
+      - name: Publicar relatório HTML do Cucumber
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cucumber-os-service
+          path: reports/cucumber/
+          if-no-files-found: warn
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # BDD ponta a ponta (US-F4-14 / FLUXO 3): sobe o docker-compose.fase4.yml
+  # (os-service real + Postgres, Billing/Execução = stubs de e2e/stubs, Mailpit)
+  # e roda features/e2e só por HTTP entre containers.
+  #
+  # Roda em TODO PR (e na main), não só com label/nightly: medido em 11/11/2026,
+  # build das imagens SEM cache 58 s + up/healthchecks 19 s + 12 cenários 11 s +
+  # down 5 s ≈ 1,5 min local (estimativa no runner, com npm ci e pull das imagens
+  # base: 4–6 min). Corre em paralelo e termina antes do deploy em kind (passo 4),
+  # então não alonga a pipeline — e é a única prova do ciclo entre containers.
+  # Se passar de ~10 min, mover para label `e2e` + nightly.
+  # ---------------------------------------------------------------------------
+  bdd-e2e:
+    name: "🥒 BDD ponta a ponta (docker-compose.fase4)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Subir o ambiente da Fase 4 (npm run e2e:up)
+        run: npm run e2e:up
+
+      - name: Cucumber ponta a ponta (features/e2e)
+        run: npm run test:bdd:e2e
+
+      - name: Logs do compose (em falha)
+        if: failure()
+        run: |
+          mkdir -p reports
+          docker compose -f docker-compose.fase4.yml ps -a
+          docker compose -f docker-compose.fase4.yml logs --no-color > reports/e2e-compose.log 2>&1 || true
+
+      - name: Publicar relatório HTML do Cucumber (e2e)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cucumber-e2e
+          path: |
+            reports/cucumber/
+            reports/e2e-compose.log
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Derrubar o ambiente (npm run e2e:down)
+        if: always()
+        run: npm run e2e:down
 
   # ---------------------------------------------------------------------------
   # Passo 2: Build da aplicação
@@ -165,13 +326,13 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
         with:
           terraform_version: "1.9.8"
           terraform_wrapper: false
 
       - name: Setup kubectl
-        uses: azure/setup-kubectl@v4
+        uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4.0.1
 
       - name: Install kind CLI
         # A versao DEVE casar com o kind embutido no provider tehcyx/kind (v0.11.0
@@ -263,6 +424,9 @@ jobs:
     needs:
       [
         automated-tests,
+        sonarcloud,
+        bdd,
+        bdd-e2e,
         build-application,
         build-docker-image,
         deploy-terraform-k8s,
@@ -272,10 +436,13 @@ jobs:
       - name: Display CI/CD Pipeline Summary
         run: |
           echo "╔════════════════════════════════════════════════════════════════╗"
-          echo "║          CI/CD Pipeline - All 4 Steps Completed               ║"
+          echo "║          CI/CD Pipeline - Resumo                              ║"
           echo "╚════════════════════════════════════════════════════════════════╝"
           echo ""
           echo "1️⃣  Execução dos Testes Automatizados: ${{ needs.automated-tests.result }}"
+          echo "🔎 SonarCloud (quality gate): ${{ needs.sonarcloud.result }}"
+          echo "🥒 BDD (serviço): ${{ needs.bdd.result }}"
+          echo "🥒 BDD ponta a ponta: ${{ needs.bdd-e2e.result }}"
           echo "2️⃣  Build da Aplicação: ${{ needs.build-application.result }}"
           echo "3️⃣  Build da Imagem Docker: ${{ needs.build-docker-image.result }}"
           echo "4️⃣  Provisionamento (Terraform) + Deploy (k8s): ${{ needs.deploy-terraform-k8s.result }}"
@@ -284,6 +451,9 @@ jobs:
           echo ""
 
           if [ "${{ needs.automated-tests.result }}" = "failure" ] || \
+             [ "${{ needs.sonarcloud.result }}" = "failure" ] || \
+             [ "${{ needs.bdd.result }}" = "failure" ] || \
+             [ "${{ needs.bdd-e2e.result }}" = "failure" ] || \
              [ "${{ needs.build-application.result }}" = "failure" ] || \
              [ "${{ needs.build-docker-image.result }}" = "failure" ] || \
              [ "${{ needs.deploy-terraform-k8s.result }}" = "failure" ]; then
@@ -292,5 +462,5 @@ jobs:
             exit 1
           fi
 
-          echo "✅ Todos os 4 passos da CI/CD executaram com sucesso!"
+          echo "✅ Todos os passos da CI/CD executaram com sucesso!"
           echo "╚════════════════════════════════════════════════════════════════╝"

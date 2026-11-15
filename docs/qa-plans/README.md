@@ -15,7 +15,9 @@ Legenda: ✅ tem QA Plan · ⚠️ pendente (nao prioritario neste ciclo) · —
 | US-F4-06 | OS Service — strangler | ✅ [QA_PLAN_US-F4-06](QA_PLAN_US-F4-06.md) |
 | US-F4-10 | Saga orquestrada | ✅ [QA_PLAN_US-F4-10](QA_PLAN_US-F4-10.md) |
 | US-F4-11 | Compensacoes e rollback | ✅ [QA_PLAN_US-F4-11](QA_PLAN_US-F4-11.md) |
-| US-F4-18 | Comunicacao HTTP entre servicos (RFC-0008) | ✅ [QA_PLAN_US-F4-18](QA_PLAN_US-F4-18.md) *(plano previo a implementacao)* |
+| US-F4-18 | Comunicacao HTTP entre servicos (RFC-0008) | ✅ [QA_PLAN_US-F4-18](QA_PLAN_US-F4-18.md) *(executado do lado do OS Service em 11/11)* |
+| US-F4-16 | Observabilidade distribuida | ✅ [QA_PLAN_US-F4-16](QA_PLAN_US-F4-16.md) *(prints do Datadog pendentes)* |
+| FLUXO 3 | OS ponta a ponta: integracao, notificacoes e rastreamento | ✅ [QA_PLAN_FLUXO-3](QA_PLAN_FLUXO-3.md) |
 
 ## Fase 3 (`f3-*`) — cobertura completa das historias testaveis
 

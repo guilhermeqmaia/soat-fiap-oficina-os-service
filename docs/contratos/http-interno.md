@@ -1,5 +1,26 @@
 # Comunicação HTTP entre os serviços (Fase 4, decisão de 03/11/2026)
 
+> **Status: ESTÁVEL — versão 1.0, congelada em 11/11/2026** (fechamento da US-F4-18 no OS
+> Service, FLUXO 3). Provado entre containers pelo BDD ponta a ponta contra stubs do
+> contrato (`features/e2e/ciclo-completo-os.feature`, stubs validando tudo contra [`schemas/`](schemas/);
+> a rodada com as imagens reais do Billing e da Execução fica para depois do merge dos FLUXOS 1 e 2)
+> e pelos testes de contrato (`npm run test:contracts`).
+>
+> **Regra de mudança a partir daqui** — só mudanças **compatíveis** sem nova versão:
+> - permitido: campo **opcional** novo em corpo/resposta/`data`; `type` de callback novo
+>   (o OS responde `200 { aplicado: false }` a `type` que não conhece); endpoint novo;
+>   novo valor de `motivo`; cabeçalho opcional novo;
+> - **proibido** na 1.x: remover/renomear campo ou endpoint, tornar obrigatório um campo
+>   opcional, mudar tipo/formato, mudar o significado de um código HTTP (`201`/`200`/`409`/`404`)
+>   ou da chave de idempotência;
+> - mudança incompatível = `version` 2 no envelope (o OS aceita 1 e 2 em paralelo durante a
+>   migração) e/ou rota nova, com RFC; nunca troca no lugar.
+>
+> Toda mudança, mesmo compatível, altera no **mesmo PR** este documento, o JSON Schema em
+> `schemas/`, o OpenAPI (`npm run openapi:export`) e as fixtures dos testes de contrato; o CI
+> reprova se o OpenAPI publicado divergir (`openapi:check`) ou se um contrato quebrar.
+> Histórico: 1.0 (11/11/2026) — primeira versão estável.
+
 Substitui a mensageria SNS/SQS (RFC-0006, ADR-0009). Decisão registrada na RFC-0008.
 Os **nomes e payloads** dos comandos/eventos do `asyncapi.yaml` são mantidos como
 vocabulário: cada comando vira um endpoint HTTP e cada evento vira (a) a resposta
