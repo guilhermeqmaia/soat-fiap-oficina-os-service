@@ -1,0 +1,815 @@
+openapi: 3.0.0
+paths:
+  /health:
+    get:
+      operationId: HealthController_liveness
+      parameters: []
+      responses:
+        '200':
+          description: Aplicacao respondendo
+      summary: Liveness probe - o processo esta de pe
+      tags:
+        - Health
+      security: []
+  /health/ready:
+    get:
+      operationId: HealthController_readiness
+      parameters: []
+      responses:
+        '200':
+          description: Dependencias acessiveis
+        '503':
+          description: Alguma dependencia inacessivel
+      summary: Readiness probe - verifica as dependencias (banco, broker...)
+      tags:
+        - Health
+      security: []
+  /catalogo/servicos:
+    post:
+      operationId: ServicoController_create
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateServicoDto'
+      responses:
+        '201':
+          description: Servico criado
+        '400':
+          description: Dados invalidos
+        '401':
+          description: Token JWT ausente ou invalido
+        '403':
+          description: Role insuficiente
+      security:
+        - bearer: []
+      summary: Cadastrar servico no catalogo (ADMIN)
+      tags:
+        - Servicos (catalogo)
+    get:
+      operationId: ServicoController_findAll
+      parameters: []
+      responses:
+        '200':
+          description: Servicos ordenados por nome
+        '401':
+          description: Token JWT ausente ou invalido
+        '403':
+          description: Role insuficiente
+      security:
+        - bearer: []
+      summary: Listar servicos do catalogo
+      tags:
+        - Servicos (catalogo)
+  /catalogo/servicos/{servicoId}:
+    get:
+      operationId: ServicoController_findById
+      parameters:
+        - name: servicoId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Servico encontrado
+        '401':
+          description: Token JWT ausente ou invalido
+        '403':
+          description: Role insuficiente
+        '404':
+          description: Servico nao encontrado
+      security:
+        - bearer: []
+      summary: Buscar servico por id
+      tags:
+        - Servicos (catalogo)
+    patch:
+      operationId: ServicoController_update
+      parameters:
+        - name: servicoId
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateServicoDto'
+      responses:
+        '200':
+          description: Servico atualizado
+        '401':
+          description: Token JWT ausente ou invalido
+        '403':
+          description: Role insuficiente
+        '404':
+          description: Servico nao encontrado
+      security:
+        - bearer: []
+      summary: Atualizar servico (ADMIN)
+      tags:
+        - Servicos (catalogo)
+    delete:
+      operationId: ServicoController_remove
+      parameters:
+        - name: servicoId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Servico removido
+        '401':
+          description: Token JWT ausente ou invalido
+        '403':
+          description: Role insuficiente
+        '404':
+          description: Servico nao encontrado
+      security:
+        - bearer: []
+      summary: Remover servico do catalogo (ADMIN)
+      tags:
+        - Servicos (catalogo)
+  /catalogo/produtos:
+    post:
+      operationId: ProdutoController_create
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProdutoDto'
+      responses:
+        '201':
+          description: Produto criado
+        '400':
+          description: Dados invalidos
+        '401':
+          description: Token JWT ausente ou invalido
+        '403':
+          description: Role insuficiente
+        '409':
+          description: SKU ja cadastrado
+      security:
+        - bearer: []
+      summary: Cadastrar produto com saldo inicial (ADMIN, ESTOQUISTA)
+      tags:
+        - Produtos e estoque
+    get:
+      operationId: ProdutoController_findAll
+      parameters: []
+      responses:
+        '200':
+          description: Produtos ordenados por nome
+        '401':
+          description: Token JWT ausente ou invalido
+        '403':
+          description: Role insuficiente
+      security:
+        - bearer: []
+      summary: Listar produtos com saldo
+      tags:
+        - Produtos e estoque
+  /catalogo/produtos/{produtoId}:
+    get:
+      operationId: ProdutoController_findById
+      parameters:
+        - name: produtoId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Produto encontrado
+        '401':
+          description: Token JWT ausente ou invalido
+        '403':
+          description: Role insuficiente
+        '404':
+          description: Produto nao encontrado
+      security:
+        - bearer: []
+      summary: Buscar produto por id
+      tags:
+        - Produtos e estoque
+    patch:
+      operationId: ProdutoController_update
+      parameters:
+        - name: produtoId
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProdutoDto'
+      responses:
+        '200':
+          description: Produto atualizado
+        '401':
+          description: Token JWT ausente ou invalido
+        '403':
+          description: Role insuficiente
+        '404':
+          description: Produto nao encontrado
+        '409':
+          description: SKU ja cadastrado em outro produto
+      security:
+        - bearer: []
+      summary: Atualizar cadastro (nome, sku, preco) — nao altera saldo
+      tags:
+        - Produtos e estoque
+    delete:
+      operationId: ProdutoController_remove
+      parameters:
+        - name: produtoId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Produto removido
+        '401':
+          description: Token JWT ausente ou invalido
+        '403':
+          description: Role insuficiente
+        '404':
+          description: Produto nao encontrado
+      security:
+        - bearer: []
+      summary: Remover produto do catalogo (ADMIN)
+      tags:
+        - Produtos e estoque
+  /catalogo/produtos/{produtoId}/entradas:
+    post:
+      operationId: ProdutoController_entrada
+      parameters:
+        - name: produtoId
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EntradaEstoqueDto'
+      responses:
+        '201':
+          description: Saldo atualizado
+        '401':
+          description: Token JWT ausente ou invalido
+        '403':
+          description: Role insuficiente
+        '404':
+          description: Produto nao encontrado
+      security:
+        - bearer: []
+      summary: Registrar entrada (reposicao) de estoque — transacional e auditada
+      tags:
+        - Produtos e estoque
+  /catalogo/produtos/{produtoId}/movimentacoes:
+    get:
+      operationId: ProdutoController_movimentacoes
+      parameters:
+        - name: produtoId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Movimentacoes em ordem cronologica
+        '401':
+          description: Token JWT ausente ou invalido
+        '403':
+          description: Role insuficiente
+      security:
+        - bearer: []
+      summary: Historico de movimentacoes (ENTRADA, BAIXA, DEVOLUCAO) do produto
+      tags:
+        - Produtos e estoque
+  /execucao/ordens:
+    post:
+      operationId: ExecucaoController_create
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnfileirarExecucaoDto'
+      responses:
+        '201':
+          description: '{ numeroOS, posicaoFila } = execucao.enfileirada'
+        '401':
+          description: Token JWT ausente ou invalido
+        '403':
+          description: Role insuficiente ou execucao de outro mecanico
+        '409':
+          description: '{ motivo } = execucao.recusada (veiculo ja em execucao)'
+      security:
+        - bearer: []
+      summary: '`execucao.enfileirar` (OS Service): coloca a OS na fila'
+      tags:
+        - Execucao (ordens)
+    get:
+      operationId: ExecucaoController_findAll
+      parameters:
+        - name: mecanicoId
+          required: false
+          in: query
+          schema:
+            type: string
+        - name: status
+          required: false
+          in: query
+          schema:
+            type: string
+            enum:
+              - NA_FILA
+              - ATRIBUIDA
+              - EM_DIAGNOSTICO
+              - AGUARDANDO_APROVACAO
+              - EM_EXECUCAO
+              - EXECUTADA
+              - CANCELADA
+      responses:
+        '200':
+          description: Execucoes por ordem de chegada
+        '401':
+          description: Token JWT ausente ou invalido
+        '403':
+          description: Role insuficiente ou execucao de outro mecanico
+      security:
+        - bearer: []
+      summary: Fila/lista de execucoes (MECANICO ve as suas e as NA_FILA)
+      tags:
+        - Execucao (ordens)
+  /execucao/ordens/{numeroOS}:
+    get:
+      operationId: ExecucaoController_findOne
+      parameters:
+        - name: numeroOS
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Execucao
+        '401':
+          description: Token JWT ausente ou invalido
+        '403':
+          description: Role insuficiente ou execucao de outro mecanico
+        '404':
+          description: Execucao nao encontrada
+      security:
+        - bearer: []
+      summary: Detalhe da execucao com servicos, pecas e valor total
+      tags:
+        - Execucao (ordens)
+    delete:
+      operationId: ExecucaoController_liberarReservas
+      parameters:
+        - name: numeroOS
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LiberarExecucaoDto'
+      responses:
+        '200':
+          description: '{ numeroOS, devolucoes } = execucao.reservas-liberadas (idempotente)'
+        '401':
+          description: Token JWT ausente ou invalido
+        '403':
+          description: Role insuficiente ou execucao de outro mecanico
+        '409':
+          description: Execucao ja EXECUTADA (pecas usadas no conserto)
+        '503':
+          description: 'Conflito de versao persistente: repita'
+      security:
+        - bearer: []
+      summary: >-
+        `execucao.liberar-reservas` (OS Service): cancela e devolve as pecas
+        baixadas (rollback)
+      tags:
+        - Execucao (ordens)
+  /execucao/ordens/{numeroOS}/atribuir-mecanico:
+    post:
+      operationId: ExecucaoController_atribuirMecanico
+      parameters:
+        - name: numeroOS
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AtribuirMecanicoDto'
+      responses:
+        '200':
+          description: Execucao ATRIBUIDA
+        '401':
+          description: Token JWT ausente ou invalido
+        '403':
+          description: Role insuficiente ou execucao de outro mecanico
+        '409':
+          description: Diagnostico ja concluido
+      security:
+        - bearer: []
+      summary: Tira da fila atribuindo o mecanico (MECANICO so a si mesmo)
+      tags:
+        - Execucao (ordens)
+  /execucao/ordens/{numeroOS}/servicos:
+    post:
+      operationId: ExecucaoController_servicos
+      parameters:
+        - name: numeroOS
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VincularServicosDto'
+      responses:
+        '201':
+          description: Servicos vinculados; status EM_DIAGNOSTICO
+        '401':
+          description: Token JWT ausente ou invalido
+        '403':
+          description: Role insuficiente ou execucao de outro mecanico
+        '404':
+          description: Execucao ou servico nao encontrado
+        '409':
+          description: Diagnostico ja concluido
+      security:
+        - bearer: []
+      summary: Vincula N servicos do catalogo (inicia o diagnostico)
+      tags:
+        - Execucao (ordens)
+  /execucao/ordens/{numeroOS}/servicos/{servicoId}:
+    delete:
+      operationId: ExecucaoController_removerServicoDaOs
+      parameters:
+        - name: numeroOS
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: servicoId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Servico removido da execucao
+        '401':
+          description: Token JWT ausente ou invalido
+        '403':
+          description: Role insuficiente ou execucao de outro mecanico
+      security:
+        - bearer: []
+      summary: Desvincula um servico (e suas pecas) da OS
+      tags:
+        - Execucao (ordens)
+  /execucao/ordens/{numeroOS}/servicos/{servicoId}/produtos:
+    post:
+      operationId: ExecucaoController_produtos
+      parameters:
+        - name: numeroOS
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: servicoId
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VincularProdutosDto'
+      responses:
+        '201':
+          description: Pecas vinculadas
+        '401':
+          description: Token JWT ausente ou invalido
+        '403':
+          description: Role insuficiente ou execucao de outro mecanico
+        '404':
+          description: Execucao ou produto nao encontrado
+      security:
+        - bearer: []
+      summary: Vincula pecas a um servico da OS (um produto pode atender varios)
+      tags:
+        - Execucao (ordens)
+  /execucao/ordens/{numeroOS}/diagnostico:
+    post:
+      operationId: ExecucaoController_diagnostico
+      parameters:
+        - name: numeroOS
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConcluirDiagnosticoDto'
+      responses:
+        '200':
+          description: Execucao AGUARDANDO_APROVACAO, estoque baixado
+        '400':
+          description: Diagnostico sem servicos/laudo
+        '401':
+          description: Token JWT ausente ou invalido
+        '403':
+          description: Role insuficiente ou execucao de outro mecanico
+        '409':
+          description: '{ motivo }: estoque insuficiente, status invalido ou OS recusou'
+        '502':
+          description: >-
+            OS Service nao confirmou (timeout/5xx): diagnostico e baixa
+            mantidos; repita o POST para reenviar o mesmo callback
+      security:
+        - bearer: []
+      summary: >-
+        Conclui o diagnostico: baixa as pecas (transacao) e envia
+        execucao.diagnostico-concluido
+      tags:
+        - Execucao (ordens)
+  /execucao/ordens/{numeroOS}/iniciar:
+    post:
+      operationId: ExecucaoController_iniciar
+      parameters:
+        - name: numeroOS
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        '200':
+          description: '{ numeroOS } = execucao.iniciada (idempotente)'
+        '401':
+          description: Token JWT ausente ou invalido
+        '403':
+          description: Role insuficiente ou execucao de outro mecanico
+        '404':
+          description: Execucao nao encontrada
+        '409':
+          description: '{ motivo } = execucao.recusada (nao aguarda aprovacao)'
+      security:
+        - bearer: []
+      summary: '`execucao.iniciar` (OS Service, orcamento aprovado): EM_EXECUCAO'
+      tags:
+        - Execucao (ordens)
+  /execucao/ordens/{numeroOS}/finalizar:
+    post:
+      operationId: ExecucaoController_finalizar
+      parameters:
+        - name: numeroOS
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Execucao EXECUTADA
+        '401':
+          description: Token JWT ausente ou invalido
+        '403':
+          description: Role insuficiente ou execucao de outro mecanico
+        '409':
+          description: Execucao nao esta EM_EXECUCAO
+        '502':
+          description: OS Service indisponivel (status revertido)
+      security:
+        - bearer: []
+      summary: Conclui o servico (EXECUTADA) e envia execucao.finalizada
+      tags:
+        - Execucao (ordens)
+  /execucao/ordens/{numeroOS}/movimentacoes:
+    get:
+      operationId: ExecucaoController_movimentacoes
+      parameters:
+        - name: numeroOS
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Movimentacoes em ordem cronologica
+        '401':
+          description: Token JWT ausente ou invalido
+        '403':
+          description: Role insuficiente ou execucao de outro mecanico
+      security:
+        - bearer: []
+      summary: Movimentacoes de estoque (BAIXA/DEVOLUCAO) da OS
+      tags:
+        - Execucao (ordens)
+info:
+  title: oficina-execucao-service
+  description: >-
+    Execucao de OS: atribuicao de mecanico, diagnostico, catalogo de
+    servicos/produtos e estoque (DynamoDB)
+  version: 0.1.0
+  contact: {}
+tags: []
+servers:
+  - url: http://oficina-execucao-service:3002
+    description: DNS interno do cluster
+components:
+  securitySchemes:
+    bearer:
+      scheme: bearer
+      bearerFormat: JWT
+      type: http
+  schemas:
+    CreateServicoDto:
+      type: object
+      properties:
+        nome:
+          type: string
+          description: Nome do servico
+          example: Troca de oleo
+        descricao:
+          type: string
+          description: Descricao do servico
+          example: Troca de oleo e filtro
+        precoBase:
+          type: number
+          description: Preco base (mao de obra)
+          example: 120
+      required:
+        - nome
+        - precoBase
+    UpdateServicoDto:
+      type: object
+      properties:
+        nome:
+          type: string
+          description: Nome do servico
+          example: Troca de oleo
+        descricao:
+          type: string
+          description: Descricao do servico
+          example: Troca de oleo e filtro
+        precoBase:
+          type: number
+          description: Preco base (mao de obra)
+          example: 120
+    CreateProdutoDto:
+      type: object
+      properties:
+        nome:
+          type: string
+          description: Nome do produto/peca
+          example: Filtro de oleo
+        sku:
+          type: string
+          description: SKU (unico, normalizado em maiusculas)
+          example: FILTRO-OLEO-01
+        preco:
+          type: number
+          description: Preco unitario de venda
+          example: 45.9
+        quantidadeEstoque:
+          type: number
+          description: Saldo inicial em estoque
+          example: 10
+          default: 0
+      required:
+        - nome
+        - sku
+        - preco
+    UpdateProdutoDto:
+      type: object
+      properties:
+        nome:
+          type: string
+          description: Nome do produto/peca
+          example: Filtro de oleo
+        sku:
+          type: string
+          description: SKU (unico, normalizado em maiusculas)
+          example: FILTRO-OLEO-01
+        preco:
+          type: number
+          description: Preco unitario de venda
+          example: 45.9
+    EntradaEstoqueDto:
+      type: object
+      properties:
+        quantidade:
+          type: number
+          description: Quantidade recebida (reposicao)
+          example: 5
+      required:
+        - quantidade
+    EnfileirarExecucaoDto:
+      type: object
+      properties:
+        numeroOS:
+          type: string
+          example: OS-2026-0001
+        veiculoId:
+          type: string
+          example: 7b2f0c1e-...
+        descricaoProblema:
+          type: string
+          example: Barulho ao frear
+      required:
+        - numeroOS
+        - veiculoId
+    AtribuirMecanicoDto:
+      type: object
+      properties:
+        mecanicoId:
+          type: string
+          description: Id do mecanico (claim `sub` do usuario MECANICO)
+          example: mec-1
+      required:
+        - mecanicoId
+    VincularServicosDto:
+      type: object
+      properties:
+        servicoIds:
+          description: Ids do catalogo de servicos
+          example:
+            - srv-1
+          type: array
+          items:
+            type: string
+      required:
+        - servicoIds
+    ItemProdutoDto:
+      type: object
+      properties:
+        produtoId:
+          type: string
+          example: prd-1
+        quantidade:
+          type: number
+          example: 2
+      required:
+        - produtoId
+        - quantidade
+    VincularProdutosDto:
+      type: object
+      properties:
+        produtos:
+          type: array
+          items:
+            $ref: '#/components/schemas/ItemProdutoDto'
+      required:
+        - produtos
+    ConcluirDiagnosticoDto:
+      type: object
+      properties:
+        diagnostico:
+          type: string
+          description: Laudo do diagnostico
+          example: Pastilhas gastas; oleo vencido
+      required:
+        - diagnostico
+    LiberarExecucaoDto:
+      type: object
+      properties:
+        motivo:
+          type: string
+          example: Orcamento reprovado pelo cliente
