@@ -2,8 +2,8 @@ import type { UrlsParticipantes } from '../ordem-de-servico/saga/infrastructure/
 
 /**
  * Enderecos internos dos participantes da saga (RFC-0008, `docs/contratos/http-interno.md`).
- * Em producao vem do ConfigMap com o DNS do cluster (`http://execucao-service:3002`,
- * `http://billing-service:3001`) e sao obrigatorios (`validateEnv`); em dev, `localhost`.
+ * Em producao vem do ConfigMap com o DNS do cluster (`http://oficina-execucao-service:3002`,
+ * `http://oficina-billing-service:3001`) e sao obrigatorios (`validateEnv`); em dev, `localhost`.
  */
 export function urlsDosParticipantes(env: NodeJS.ProcessEnv = process.env): UrlsParticipantes {
   const semBarra = (url: string) => url.replace(/\/+$/, '');

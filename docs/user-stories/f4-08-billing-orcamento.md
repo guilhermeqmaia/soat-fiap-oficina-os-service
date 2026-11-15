@@ -34,7 +34,7 @@ geram **callbacks** `POST /ordens-servico/{numeroOS}/eventos` no OS Service.
 - [ ] Testes >= 80%; Swagger (OpenAPI versionado no hub, [US-F4-15](f4-15-testes-de-contrato.md))
 ## APIs que expoe
 
-Conforme [`http-interno.md`](../contratos/http-interno.md). Prefixos `/orcamentos|/pagamentos|/webhooks` atras do API Gateway; rotas `SERVICO` chamadas pelo OS Service pelo DNS interno (`http://billing-service:3001`).
+Conforme [`http-interno.md`](../contratos/http-interno.md). Prefixos `/orcamentos|/pagamentos|/webhooks` atras do API Gateway; rotas `SERVICO` chamadas pelo OS Service pelo DNS interno (`http://oficina-billing-service:3001`).
 
 | Metodo | Rota | Role | Corpo | Resposta |
 |---|---|---|---|---|
@@ -51,7 +51,7 @@ Conforme [`http-interno.md`](../contratos/http-interno.md). Prefixos `/orcamento
 
 | Metodo | Rota (servico) | Quando | Corpo (envelope) | Resposta |
 |---|---|---|---|---|
-| POST | `/ordens-servico/{numeroOS}/eventos` (OS Service, `http://os-service:3000`) | cliente aprova | `type: billing.orcamento-aprovado`, `data: { numeroOS, orcamentoId }` | `200 { aplicado, passo, status }` · `409` repetir · `404` |
+| POST | `/ordens-servico/{numeroOS}/eventos` (OS Service, `http://oficina-app:3000`) | cliente aprova | `type: billing.orcamento-aprovado`, `data: { numeroOS, orcamentoId }` | `200 { aplicado, passo, status }` · `409` repetir · `404` |
 | POST | `/ordens-servico/{numeroOS}/eventos` (OS Service) | cliente rejeita | `type: billing.orcamento-rejeitado`, `data: { numeroOS, orcamentoId, motivo? }` | idem |
 | POST | `/ordens-servico/{numeroOS}/eventos` (OS Service) | webhook do Mercado Pago | `type: billing.pagamento-aprovado` / `billing.pagamento-recusado` | idem ([US-F4-09](f4-09-billing-mercado-pago.md)) |
 | POST/GET | `https://api.mercadopago.com/v1/orders`, `/v1/orders/{id}` | cobrar / reconciliar | order | [US-F4-09](f4-09-billing-mercado-pago.md) |

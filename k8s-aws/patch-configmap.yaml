@@ -36,8 +36,8 @@ data:
   DD_ENV: "producao"
   # Comunicacao HTTP com a Execucao e o Billing (US-F4-18 / RFC-0008): mesmos
   # Services do namespace `oficina` no EKS — chamadas internas nao passam pelo gateway.
-  EXECUCAO_SERVICE_URL: "http://execucao-service:3002"
-  BILLING_SERVICE_URL: "http://billing-service:3001"
+  EXECUCAO_SERVICE_URL: "http://oficina-execucao-service:3002"
+  BILLING_SERVICE_URL: "http://oficina-billing-service:3001"
   # Ambiente de DEMONSTRACAO da Fase 4: habilita x-simular-falha para o video da compensacao
   # (US-F4-11). Remover em qualquer ambiente real.
   SAGA_SIMULAR_FALHA_HABILITADO: "true"
