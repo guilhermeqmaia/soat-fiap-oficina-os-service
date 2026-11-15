@@ -197,17 +197,17 @@ components:
           - properties: { data: { type: object, required: [numeroOS, veiculoId, descricaoProblema], properties: { numeroOS: {type: string}, veiculoId: {type: string}, descricaoProblema: {type: string} } } }
     execucaoIniciar:
       name: execucao.iniciar
-      title: 'Comando: iniciar execução (baixa efetiva do estoque)'
+      title: 'Comando: iniciar execução (só muda o status; as peças já foram baixadas no diagnóstico)'
       payload:
         allOf: [ { $ref: '#/components/schemas/Envelope' }, { properties: { data: { $ref: '#/components/schemas/NumeroOS' } } } ]
     execucaoLiberarReservas:
       name: execucao.liberar-reservas
-      title: 'Compensação: cancelar a OS na Execução (sair da fila, abortar diagnóstico) e devolver reservas de estoque'
+      title: 'Compensação: cancelar a OS na Execução (sair da fila, abortar diagnóstico) e devolver ao estoque as peças baixadas'
       summary: >-
         Enviado pelo orquestrador em qualquer passo após `execucao.enfileirar` (inclusive antes do diagnóstico).
         A Execução deve tratá-lo de forma idempotente e responder sempre com `execucao.reservas-liberadas`,
-        mesmo sem reservas. Como comandos da mesma OS compartilham o MessageGroupId na fila FIFO, ele nunca
-        ultrapassa o comando que o precede.
+        mesmo sem peças baixadas, e repetir não devolve de novo. Desde a RFC-0008 o transporte é
+        `DELETE /execucao/ordens/{numeroOS}` (docs/contratos/http-interno.md).
       payload:
         allOf: [ { $ref: '#/components/schemas/Envelope' }, { properties: { data: { $ref: '#/components/schemas/NumeroOS' } } } ]
 

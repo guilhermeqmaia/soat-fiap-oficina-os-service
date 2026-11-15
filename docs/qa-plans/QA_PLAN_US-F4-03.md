@@ -1,7 +1,7 @@
 # QA Plan — US-F4-03: Bancos por Servico — Postgres (OS, Billing) e DynamoDB (Execucao)
 
 ## Resumo
-Valida no repo `soat-fiap-oficina-infra-db`: secret e credenciais exclusivas por servico na mesma instancia RDS, bootstrap dos bancos/usuarios via Job no EKS com isolamento por `REVOKE CONNECT`, e a tabela DynamoDB single-table do Execucao Service com policy IAM e SSM.
+Valida no repo `soat-fiap-oficina-infra-db`: secret e credenciais exclusivas por servico na mesma instancia RDS, bootstrap dos bancos/usuarios via Job no EKS com isolamento por `REVOKE CONNECT`, e as 4 tabelas DynamoDB do Execucao Service (`oficina-*`, uma por agregado desde 09/11) com policy IAM e SSM.
 
 ## Pre-requisitos
 - Terraform >= 1.9; profile `oficina`; para apply real: VPC/subnets do stage cluster (vars `VPC_ID`, `DB_SUBNET_IDS`, `DB_ALLOWED_CIDRS`)
@@ -33,11 +33,11 @@ Valida no repo `soat-fiap-oficina-infra-db`: secret e credenciais exclusivas por
 - **Passos:** de um pod no EKS (`kubectl run psql --image=postgres:16-alpine ...`): `psql "postgresql://billing:<senha>@<host>:5432/oficina_mecanica" -c 'select 1'`
 - **Resultado esperado:** `FATAL: permission denied for database "oficina_mecanica"`; com `/oficina_billing` -> `select 1` funciona
 
-### TS-05: Tabela DynamoDB
+### TS-05: Tabelas DynamoDB
 - **Tipo:** Manual (apos apply)
-- **Criterio:** Tabela single-table com GSIs, TTL, PITR e Streams
-- **Passos:** `aws dynamodb describe-table --table-name oficina-execucao`; `aws dynamodb describe-continuous-backups --table-name oficina-execucao`; `aws ssm get-parameter --name /oficina/dynamodb/execucao/table_name`
-- **Resultado esperado:** chaves PK/SK, GSI1 (GSI1PK/GSI1SK), GSI2 (GSI2PK), TTL `ttl` habilitado, PITR ENABLED, StreamViewType NEW_AND_OLD_IMAGES, PAY_PER_REQUEST; SSM com o nome
+- **Criterio:** Uma tabela por agregado com prefixo `oficina-` (revisao de 09/11 da RFC-0007)
+- **Passos:** `for t in execucoes servicos produtos movimentacoes_estoque; do aws dynamodb describe-table --table-name oficina-$t --query 'Table.[TableName,KeySchema,GlobalSecondaryIndexes[].IndexName,BillingModeSummary.BillingMode]'; aws dynamodb describe-continuous-backups --table-name oficina-$t; done`; `aws ssm get-parameter --name /oficina/dynamodb/execucao/table_prefix`
+- **Resultado esperado:** chaves `osId` (execucoes), `servicoId` (servicos), `produtoId` (produtos), `movimentacaoId` (movimentacoes_estoque); GSIs `produtoId-data-index` e `osId-data-index` so em `movimentacoes_estoque`; PAY_PER_REQUEST; PITR ENABLED em prod; sem TTL e sem Streams; SSM com o valor `oficina-`. A antiga `oficina-execucao` sai do state sem ser destruida (apagar manualmente, ver README do infra-db)
 
 ### TS-06: Acesso do Execucao Service a tabela
 - **Tipo:** Manual
@@ -61,7 +61,7 @@ Valida no repo `soat-fiap-oficina-infra-db`: secret e credenciais exclusivas por
 |---|---|
 | Postgres: bancos/usuarios exclusivos | TS-03, TS-04 |
 | DATABASE_URL por servico no Secrets Manager | TS-02 |
-| DynamoDB single-table (GSIs, TTL, PITR, Streams) | TS-05 |
+| DynamoDB: 4 tabelas `oficina-*` (chaves, GSIs, PITR) | TS-05 |
 | Lambda continua no banco do OS (excecao) | TS-07 |
 | Teste negativo documentado | TS-04 (README) |
 | Migrations por servico | template do kit (QA_PLAN_US-F4-01 TS-11) |
