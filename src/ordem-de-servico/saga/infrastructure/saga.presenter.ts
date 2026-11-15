@@ -12,6 +12,8 @@ export class SagaPresenter {
       falhaSimulada: saga.falhaSimulada,
       historico: saga.historico,
       compensacoes: saga.compensacoes,
+      /** Comandos nao entregues aguardando reprocessamento (alerta "saga parada"). */
+      falhasPendentes: saga.falhasPendentes,
       iniciadaEm: saga.createdAt,
       atualizadaEm: saga.updatedAt,
     };

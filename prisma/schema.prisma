@@ -237,6 +237,8 @@ model SagaOS {
   passoDesde        DateTime  @default(now()) @map("passo_desde")
   historico         Json      @default("[]")
   compensacoes      Json      @default("[]")
+  /// Comandos nao entregues aguardando reprocessamento (alerta de saga parada, US-F4-18)
+  falhasPendentes   Json      @default("[]") @map("falhas_pendentes")
   prazoAprovacao    DateTime? @map("prazo_aprovacao")
   prazoPagamento    DateTime? @map("prazo_pagamento")
   /// Demo (US-F4-11): passo em que a saga simula a falha do participante

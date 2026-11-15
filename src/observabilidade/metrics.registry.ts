@@ -68,10 +68,28 @@ export const sagasPorStatus = new Gauge({
   registers: [registry],
 });
 
-/** Sagas EM_ANDAMENTO paradas no mesmo passo alem de SAGA_ALERTA_PARADA_MIN (alerta "saga travada"). */
+/**
+ * Sagas paradas por FALHA DA PLATAFORMA (alerta critico "saga parada"): num passo
+ * automatico (ENFILEIRAR_EXECUCAO, GERAR_ORCAMENTO, INICIAR_EXECUCAO, COBRAR) ou
+ * COMPENSANDO alem de SAGA_ALERTA_PARADA_MIN, ou — na hora — com comando nao
+ * entregue pendente de reprocessamento (`falhas_pendentes`). Espera por pessoa
+ * NAO conta aqui (ver `sagasAguardandoPessoa`).
+ */
 export const sagasParadas = new Gauge({
   name: 'oficina_os_sagas_paradas',
-  help: 'Sagas em andamento sem avancar de passo ha mais tempo que o limite configurado',
+  help: 'Sagas paradas por falha da plataforma: passo automatico/compensacao alem do limite ou comando nao entregue pendente',
+  registers: [registry],
+});
+
+/**
+ * Sagas EM_ANDAMENTO esperando pessoa (diagnostico/execucao do mecanico,
+ * aprovacao/pagamento do cliente) alem de SAGA_ALERTA_PARADA_MIN, por passo.
+ * Informativa (dashboard/aviso), nao e falha da plataforma.
+ */
+export const sagasAguardandoPessoa = new Gauge({
+  name: 'oficina_os_sagas_aguardando_pessoa',
+  help: 'Sagas em andamento esperando cliente/mecanico ha mais tempo que o limite configurado, por passo',
+  labelNames: ['passo'] as const,
   registers: [registry],
 });
 
@@ -91,7 +109,8 @@ export const ORIGEM_HTTP_INTERNO = 'os-service';
  * Resultado de cada chamada interna (comando da saga) por par origem->destino:
  * `sucesso` (2xx, ou 409 "ja existe" tratado como sucesso), `recusa` (409 de
  * negocio), `esgotado` (5xx/timeout/rede depois das 3 tentativas — alerta "retry
- * esgotado") e `erro` (outro 4xx, ex.: 404/401: erro de configuracao, sem retry).
+ * esgotado") e `erro` (outro 4xx, ex.: 404/401: erro de configuracao, sem retry;
+ * ou erro inesperado fora do cliente HTTP — bug, nao indisponibilidade do destino).
  */
 export const httpInternoTotal = new Counter({
   name: 'oficina_http_interno_total',
@@ -204,6 +223,7 @@ export function inicializarSeriesDeNegocio(): void {
   }
   for (const status of ['EM_ANDAMENTO', 'COMPENSANDO', 'CONCLUIDA', 'CANCELADA']) sagasPorStatus.set({ status }, 0);
   sagasParadas.set(0);
+  for (const passo of ['AGUARDAR_DIAGNOSTICO', 'AGUARDAR_APROVACAO', 'AGUARDAR_FINALIZACAO', 'AGUARDAR_PAGAMENTO']) sagasAguardandoPessoa.set({ passo }, 0);
   for (const resultado of ['avancou', 'ignorado', 'compensando', 'concluida', 'cancelada', 'comando-falhou', 'resposta-falhou']) {
     sagaPassos.inc({ passo: 'ENFILEIRAR_EXECUCAO', resultado }, 0);
   }

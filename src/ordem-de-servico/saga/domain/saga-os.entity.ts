@@ -35,11 +35,23 @@ export type TipoComando =
   | 'billing.cobrar'
   | 'billing.cancelar-orcamento';
 
+/** Passo e status da saga no momento em que decidiu um comando. */
+export interface OrigemComando {
+  passo: PassoSaga;
+  status: StatusSaga;
+}
+
 export interface ComandoSaga {
   type: TipoComando;
   data: Record<string, unknown>;
   /** id do envelope que motivou o comando (ADR-0009). */
   causationId?: string;
+  /**
+   * Passo/status da saga quando o comando foi decidido. Uma falha de entrega so
+   * vale enquanto a saga continua nele: se ela avancou/foi cancelada durante as
+   * tentativas, a falha e descartada (nao conta como saga parada).
+   */
+  origem?: OrigemComando;
 }
 
 /** O que o orquestrador deve aplicar na OS depois que a saga aceitou o evento. */
@@ -73,8 +85,9 @@ export type ResultadoPasso =
   | 'pagamento-pendente'
   /**
    * Comando nao entregue ao participante (tentativas esgotadas ou 4xx sem
-   * evento): a saga fica no passo, conta em `oficina_os_sagas_paradas` e
-   * `POST /admin/sagas/:numero/reprocessar` reenvia (US-F4-18).
+   * evento): a saga fica no passo, o comando entra em `falhasPendentes` (conta
+   * em `oficina_os_sagas_paradas`) e `POST /admin/sagas/:numero/reprocessar`
+   * reenvia (US-F4-18).
    */
   | 'chamada-falhou';
 
@@ -93,6 +106,21 @@ export interface FalhaDeChamada {
   erro: string;
   status?: number;
   tentativas?: number;
+}
+
+/**
+ * Comando nao entregue que ainda espera reprocessamento. E ESTADO da saga (nao
+ * depende da ultima entrada do historico): so sai quando o comando e reenviado
+ * (`reprocessar`), quando a resposta dele e aplicada (compensacao confirmada /
+ * nova cobranca) ou quando a saga muda de passo ou de status.
+ */
+export interface FalhaPendente {
+  comando: TipoComando;
+  passo: PassoSaga;
+  status: StatusSaga;
+  em: string;
+  tentativas: number;
+  detalhe: string;
 }
 
 export interface Compensacao {
@@ -124,10 +152,12 @@ export interface SagaOSProps {
   descricaoProblema: string;
   passo: PassoSaga;
   status: StatusSaga;
-  /** Quando entrou no passo atual. */
+  /** Quando entrou no passo atual (ou comecou a compensar). */
   passoDesde?: Date;
   historico: PassoHistorico[];
   compensacoes: Compensacao[];
+  /** Comandos nao entregues aguardando reprocessamento (ausente = nenhum). */
+  falhasPendentes?: FalhaPendente[];
   prazoAprovacao: Date | null;
   prazoPagamento: Date | null;
   /** Demo (US-F4-11): passo em que a saga deve simular a falha do participante. */
@@ -149,6 +179,31 @@ const ORDEM: PassoSaga[] = [
   PassoSaga.CONCLUIDA,
 ];
 const indice = (p: PassoSaga) => ORDEM.indexOf(p);
+
+/**
+ * Passos em que a saga so espera a resposta de um comando que ELA enviou (a
+ * chamada HTTP e sincrona): ficar neles alem do limite indica falha da
+ * plataforma — entram em `oficina_os_sagas_paradas`.
+ */
+export const PASSOS_AUTOMATICOS: readonly PassoSaga[] = [
+  PassoSaga.ENFILEIRAR_EXECUCAO,
+  PassoSaga.GERAR_ORCAMENTO,
+  PassoSaga.INICIAR_EXECUCAO,
+  PassoSaga.COBRAR,
+];
+
+/**
+ * Passos que esperam uma pessoa (mecanico diagnosticando/executando, cliente
+ * aprovando/pagando): demorar nao e falha — vao para
+ * `oficina_os_sagas_aguardando_pessoa`, nao para o alerta critico.
+ */
+export const PASSOS_AGUARDANDO_PESSOA: readonly PassoSaga[] = [
+  PassoSaga.AGUARDAR_DIAGNOSTICO,
+  PassoSaga.AGUARDAR_APROVACAO,
+  PassoSaga.AGUARDAR_FINALIZACAO,
+  PassoSaga.AGUARDAR_PAGAMENTO,
+];
+
 const HISTORICO_MAX = 200;
 
 /** Passo da saga equivalente ao status de uma OS que nasceu antes da saga existir. */
@@ -191,6 +246,7 @@ export class SagaOS {
   private _passoDesde: Date;
   private _historico: PassoHistorico[];
   private _compensacoes: Compensacao[];
+  private _falhasPendentes: FalhaPendente[];
   private _prazoAprovacao: Date | null;
   private _prazoPagamento: Date | null;
   private _falhaSimulada: PassoSaga | null;
@@ -210,6 +266,7 @@ export class SagaOS {
     this._passoDesde = p.passoDesde ?? p.createdAt ?? new Date();
     this._historico = [...p.historico];
     this._compensacoes = [...p.compensacoes];
+    this._falhasPendentes = (p.falhasPendentes ?? []).map((f) => ({ ...f }));
     this._prazoAprovacao = p.prazoAprovacao;
     this._prazoPagamento = p.prazoPagamento;
     this._falhaSimulada = p.falhaSimulada ?? null;
@@ -303,6 +360,9 @@ export class SagaOS {
   get compensacoes(): readonly Compensacao[] {
     return this._compensacoes;
   }
+  get falhasPendentes(): readonly FalhaPendente[] {
+    return this._falhasPendentes;
+  }
   get passoDesde(): Date {
     return this._passoDesde;
   }
@@ -339,6 +399,15 @@ export class SagaOS {
    * (registrados no historico); so o cancelamento manual pode ser `rejeitado`.
    */
   aplicar(evento: EventoSaga, agora: Date = new Date(), prazos: Prazos = PRAZOS_DEFAULT): ResultadoAplicacao {
+    const passoAntes = this._passo;
+    const statusAntes = this._status;
+    const resultado = this.aplicarEvento(evento, agora, prazos);
+    // Mudou de passo/status: os comandos que falharam no estado anterior nao valem mais.
+    if (this._passo !== passoAntes || this._status !== statusAntes) this._falhasPendentes = [];
+    return resultado;
+  }
+
+  private aplicarEvento(evento: EventoSaga, agora: Date, prazos: Prazos): ResultadoAplicacao {
     if (this._status === StatusSaga.COMPENSANDO) return this.aplicarEmCompensacao(evento, agora);
     if (this.encerrada) return this.ignorar(evento, agora, `saga ${this._status}`);
 
@@ -408,6 +477,7 @@ export class SagaOS {
         if (this._passo === PassoSaga.AGUARDAR_PAGAMENTO) {
           // Nova cobranca (reprocessamento apos recusa/atraso): so renova o prazo e registra.
           this._prazoPagamento = new Date(agora.getTime() + prazos.pagamentoMs);
+          this.resolverFalha('billing.cobrar');
           this.registrar(agora, evento.type, 'avancou', `nova cobranca registrada (orderId=${evento.data.orderId ?? '?'})`);
           return { aplicado: true, comandos: [] };
         }
@@ -501,6 +571,8 @@ export class SagaOS {
       }
     }
     const reenviados = this._comandosPendentes.slice(antes);
+    // Reenviado = a falha anterior foi tratada; se falhar de novo, `chamada-falhou` a registra outra vez.
+    for (const c of reenviados) this.resolverFalha(c.type);
     this.registrar(
       agora,
       'saga.reprocessar',
@@ -514,17 +586,48 @@ export class SagaOS {
    * Registra que um comando decidido pela saga NAO chegou ao participante
    * (tentativas esgotadas / 4xx sem evento). Nao muda passo nem status: a saga
    * fica parada onde estava ate o reprocessamento; o historico guarda o comando,
-   * as tentativas e o motivo (US-F4-18).
+   * as tentativas e o motivo, e o comando entra em `falhasPendentes` (US-F4-18).
+   *
+   * A falha so vale se a saga AINDA esta no passo/status que decidiu o comando
+   * (`comando.origem`) e, em COMPENSANDO, se a compensacao ainda nao foi
+   * confirmada. Se ela avancou ou foi cancelada durante as tentativas, a falha e
+   * descartada (historico `ignorado`) e devolve `false`.
    */
-  registrarChamadaFalhou(comando: TipoComando, falha: FalhaDeChamada, agora: Date = new Date()): void {
+  registrarChamadaFalhou(comando: ComandoSaga | TipoComando, falha: FalhaDeChamada, agora: Date = new Date()): boolean {
+    const tipo = typeof comando === 'string' ? comando : comando.type;
+    const origem = typeof comando === 'string' ? undefined : comando.origem;
+    const obsoleta = this.motivoFalhaObsoleta(tipo, origem);
+    if (obsoleta) {
+      this.registrar(agora, tipo, 'ignorado', `chamada-falhou descartada: ${obsoleta}`);
+      return false;
+    }
     const status = falha.status !== undefined ? `HTTP ${falha.status}` : 'sem resposta';
     const tentativas = falha.tentativas ?? 1;
-    this.registrar(agora, comando, 'chamada-falhou', `${status} apos ${tentativas} tentativa(s): ${falha.erro}`, tentativas);
+    const detalhe = `${status} apos ${tentativas} tentativa(s): ${falha.erro}`;
+    this.registrar(agora, tipo, 'chamada-falhou', detalhe, tentativas);
+    this.resolverFalha(tipo);
+    this._falhasPendentes.push({ comando: tipo, passo: this._passo, status: this._status, em: agora.toISOString(), tentativas, detalhe });
+    return true;
   }
 
-  /** `true` quando a ultima entrada do historico e uma chamada nao entregue (saga parada ate reprocessar). */
+  /** `true` enquanto houver comando nao entregue esperando reprocessamento (independe da ordem do historico). */
   get aguardandoReprocessamento(): boolean {
-    return !this.encerrada && this._historico[this._historico.length - 1]?.resultado === 'chamada-falhou';
+    return !this.encerrada && this._falhasPendentes.length > 0;
+  }
+
+  private motivoFalhaObsoleta(tipo: TipoComando, origem?: OrigemComando): string | null {
+    if (this.encerrada) return `saga ${this._status}`;
+    if (origem && (origem.passo !== this._passo || origem.status !== this._status)) {
+      return `comando decidido em ${origem.passo}/${origem.status}, saga agora em ${this._passo}/${this._status}`;
+    }
+    if (this._status === StatusSaga.COMPENSANDO && !this._compensacoes.some((c) => c.comando === tipo && !c.confirmadaEm)) {
+      return 'compensacao ja confirmada';
+    }
+    return null;
+  }
+
+  private resolverFalha(tipo: TipoComando): void {
+    this._falhasPendentes = this._falhasPendentes.filter((f) => f.comando !== tipo);
   }
 
   // ─── helpers ────────────────────────────────────────────────────────────────
@@ -556,7 +659,7 @@ export class SagaOS {
   }
 
   private enviar(comando: ComandoSaga): void {
-    this._comandosPendentes.push(comando);
+    this._comandosPendentes.push({ ...comando, origem: { passo: this._passo, status: this._status } });
   }
 
   private registrar(agora: Date, evento: string, resultado: ResultadoPasso, detalhe?: string, tentativas?: number): void {
@@ -576,6 +679,10 @@ export class SagaOS {
   ): ResultadoAplicacao {
     this._prazoAprovacao = null;
     this._prazoPagamento = null;
+    // Status antes dos comandos: eles nascem com origem COMPENSANDO (ou a saga ja fica CANCELADA).
+    this._status = comandos.length === 0 ? StatusSaga.CANCELADA : StatusSaga.COMPENSANDO;
+    // Inicio da compensacao: base do alerta de saga parada em COMPENSANDO (o passo nao muda).
+    this._passoDesde = agora;
     for (const type of comandos) {
       this.enviar({
         type,
@@ -585,10 +692,8 @@ export class SagaOS {
       this._compensacoes.push({ comando: type, enviadaEm: agora.toISOString() });
     }
     if (comandos.length === 0) {
-      this._status = StatusSaga.CANCELADA;
       this.registrar(agora, evento.type, 'cancelada', motivo);
     } else {
-      this._status = StatusSaga.COMPENSANDO;
       this.registrar(agora, evento.type, 'compensando', `${motivo}: ${comandos.join(', ')}`);
     }
     return { aplicado: true, transicaoOS: { tipo: 'cancelar', motivo }, comandos: this._comandosPendentes.slice() };
@@ -606,6 +711,7 @@ export class SagaOS {
     const pendente = this._compensacoes.find((c) => c.comando === comando && !c.confirmadaEm);
     if (!pendente) return this.ignorar(evento, agora, 'compensacao ja confirmada');
     pendente.confirmadaEm = agora.toISOString();
+    this.resolverFalha(comando);
     const restantes = this._compensacoes.filter((c) => !c.confirmadaEm).length;
     if (restantes === 0) {
       this._status = StatusSaga.CANCELADA;

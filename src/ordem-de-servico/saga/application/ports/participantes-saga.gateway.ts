@@ -16,7 +16,7 @@ export type ResultadoComando =
       status?: number;
       /** Tentativas feitas pelo cliente HTTP (3 quando esgotou; 1 para 4xx). Vai para o historico `chamada-falhou`. */
       tentativas?: number;
-      /** `esgotado` = 5xx/timeout/rede apos as tentativas; `recusa` = 409 sem evento de recusa; `erro` = outro 4xx. */
+      /** `esgotado` = 5xx/timeout/rede apos as tentativas; `recusa` = 409 sem evento de recusa; `erro` = outro 4xx ou erro inesperado fora do cliente HTTP. */
       resultado?: 'esgotado' | 'recusa' | 'erro';
     };
 

@@ -205,9 +205,10 @@ Table saga_os {
   descricao_problema varchar [not null]
   passo varchar [not null, note: 'ENFILEIRAR_EXECUCAO | AGUARDAR_DIAGNOSTICO | GERAR_ORCAMENTO | AGUARDAR_APROVACAO | INICIAR_EXECUCAO | AGUARDAR_FINALIZACAO | COBRAR | AGUARDAR_PAGAMENTO | CONCLUIDA']
   status varchar [not null, note: 'EM_ANDAMENTO | COMPENSANDO | CONCLUIDA | CANCELADA']
-  passo_desde timestamp [not null, note: 'entrada no passo atual']
+  passo_desde timestamp [not null, note: 'entrada no passo atual (ou inicio da compensacao)']
   historico jsonb [not null, note: '[{em, passo, evento, resultado, detalhe}]; resultado inclui pagamento-pendente (pagamento recusado/em atraso apos a execucao)']
   compensacoes jsonb [not null, note: '[{comando, enviadaEm, confirmadaEm}]']
+  falhas_pendentes jsonb [not null, default: '[]', note: '[{comando, passo, status, em, tentativas, detalhe}]: comandos nao entregues aguardando reprocessamento (alerta de saga parada)']
   prazo_aprovacao timestamp
   prazo_pagamento timestamp [note: 'so para metrica/alerta de pagamento em atraso — nao cancela (ADR-0012)']
   falha_simulada varchar [note: 'demo: passo em que a saga simula a falha (US-F4-11)']

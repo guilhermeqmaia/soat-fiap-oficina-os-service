@@ -148,7 +148,7 @@ export class MundoOS extends World {
     return res.body;
   }
 
-  async sagaDaOS(): Promise<{ passo: string; status: string; compensacoes: Array<{ comando: string; confirmadaEm: string | null }>; historico: Array<{ evento: string; resultado: string; detalhe?: string }> }> {
+  async sagaDaOS(): Promise<{ passo: string; status: string; compensacoes: Array<{ comando: string; confirmadaEm: string | null }>; falhasPendentes: Array<{ comando: string; passo: string; tentativas: number }>; historico: Array<{ evento: string; resultado: string; detalhe?: string }> }> {
     const res = await this.http.get(`/ordens-servico/numero/${encodeURIComponent(this.ordem.numero)}/saga`, tokenDe('atendente'));
     expect(res.status).toBe(200);
     return res.body;

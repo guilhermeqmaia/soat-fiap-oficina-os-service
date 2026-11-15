@@ -1,3 +1,5 @@
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { ConcurrentModificationError } from '../../domain/errors/concurrent-modification.error';
@@ -70,7 +72,70 @@ const ITENS = [{ tipo: 'SERVICO', referenciaId: 's', nome: 'n', quantidade: 1, p
     expect(await repo.countParadasDesde(new Date(Date.now() - 3_600_000))).toBe(0);
   });
 
-  it('countParadasDesde conta na hora a saga cuja ultima entrada e chamada-falhou e a tira ao reprocessar (US-F4-18)', async () => {
+  /** Saga que entrou no passo/estado `minAtras` minutos atras. */
+  const sagaAte = (numero: string, eventos: Array<[string, Record<string, unknown>?]>, minAtras: number) => {
+    const quando = new Date(Date.now() - minAtras * 60_000);
+    const s = SagaOS.iniciar({ numero, clienteId: 'c', veiculoId: 'v', descricaoProblema: 'd' }, quando);
+    for (const [type, data] of eventos) s.aplicar(ev(type, numero, data), quando, { aprovacaoMs: 3_600_000, pagamentoMs: 3_600_000 });
+    s.consumirComandos();
+    return s;
+  };
+  const ATE_APROVACAO: Array<[string, Record<string, unknown>?]> = [
+    ['execucao.enfileirada'], ['execucao.diagnostico-concluido', { itens: ITENS }], ['billing.orcamento-gerado', { total: '1.00' }],
+  ];
+
+  it('compensacao com Billing fora: COMPENSANDO conta na hora mesmo com confirmacao/ignorado depois do chamada-falhou; sai ao reprocessar', async () => {
+    const limite = new Date(Date.now() - 3_600_000);
+    const base = await repo.countParadasDesde(limite);
+    const s = sagaAte('OS-S6', ATE_APROVACAO, 0);
+    s.aplicar({ type: 'os.cancelamento-manual', data: { numeroOS: 'OS-S6' } });
+    const [cancelar] = s.consumirComandos();
+    expect(s.registrarChamadaFalhou(cancelar, { erro: 'HTTP 503', status: 503, tentativas: 3 })).toBe(true);
+    s.aplicar(ev('execucao.reservas-liberadas', 'OS-S6')); // confirmacao: vira a ultima entrada
+    s.aplicar(ev('billing.orcamento-aprovado', 'OS-S6')); // callback duplicado: ignorado
+    let salva = await repo.save(s);
+    expect(salva.historico.slice(-3).map((h) => h.resultado)).toEqual(['chamada-falhou', 'confirmacao', 'ignorado']);
+    expect(salva.falhasPendentes.map((f) => f.comando)).toEqual(['billing.cancelar-orcamento']);
+    expect(await repo.countParadasDesde(limite)).toBe(base + 1);
+
+    salva.reprocessar({});
+    salva = await repo.save(salva);
+    expect(salva.falhasPendentes).toEqual([]);
+    expect(await repo.countParadasDesde(limite)).toBe(base); // COMPENSANDO ha < 1h e sem falha pendente
+  });
+
+  it('por tempo: passo automatico e COMPENSANDO contam; espera por cliente/mecanico vai para aguardando pessoa', async () => {
+    const limite = new Date(Date.now() - 30 * 60_000);
+    const [baseParadas, basePessoa] = [await repo.countParadasDesde(limite), await repo.countAguardandoPessoaDesde(limite)];
+    await repo.save(sagaAte('OS-T1', [['execucao.enfileirada'], ['execucao.diagnostico-concluido', { itens: ITENS }]], 120)); // GERAR_ORCAMENTO (automatico)
+    await repo.save(sagaAte('OS-T2', ATE_APROVACAO, 120)); // AGUARDAR_APROVACAO (cliente)
+    await repo.save(sagaAte('OS-T3', [['execucao.enfileirada']], 120)); // AGUARDAR_DIAGNOSTICO (mecanico)
+    const compensando = sagaAte('OS-T4', ATE_APROVACAO, 120);
+    compensando.aplicar({ type: 'os.cancelamento-manual', data: { numeroOS: 'OS-T4' } }, new Date(Date.now() - 90 * 60_000));
+    await repo.save(compensando); // COMPENSANDO desde 90 min, sem confirmacao
+    await repo.save(sagaAte('OS-T5', ATE_APROVACAO, 5)); // cliente, mas recente
+
+    expect(await repo.countParadasDesde(limite)).toBe(baseParadas + 2); // OS-T1 + OS-T4
+    const pessoa = await repo.countAguardandoPessoaDesde(limite);
+    expect(pessoa[PassoSaga.AGUARDAR_APROVACAO] ?? 0).toBe((basePessoa[PassoSaga.AGUARDAR_APROVACAO] ?? 0) + 1); // OS-T2 (OS-T5 e recente)
+    expect(pessoa[PassoSaga.AGUARDAR_DIAGNOSTICO] ?? 0).toBe((basePessoa[PassoSaga.AGUARDAR_DIAGNOSTICO] ?? 0) + 1); // OS-T3
+  });
+
+  it('migracao 20261115000000: backfill marca como pendente a saga aberta cuja ultima entrada e chamada-falhou', async () => {
+    const s = SagaOS.iniciar({ numero: 'OS-S7', clienteId: 'c', veiculoId: 'v', descricaoProblema: 'd' });
+    s.registrarChamadaFalhou('execucao.enfileirar', { erro: 'HTTP 503', status: 503, tentativas: 3 });
+    await repo.save(s);
+    await prisma.$executeRawUnsafe(`UPDATE saga_os SET falhas_pendentes = '[]'::jsonb WHERE numero = 'OS-S7'`); // estado anterior a coluna
+    const sql = readFileSync(join(__dirname, '../../../../prisma/migrations/20261115000000_saga_falhas_pendentes/migration.sql'), 'utf8');
+    await prisma.$executeRawUnsafe(sql.slice(sql.indexOf('UPDATE')));
+    const lida = (await repo.findByNumero('OS-S7'))!;
+    expect(lida.falhasPendentes).toEqual([
+      expect.objectContaining({ comando: 'execucao.enfileirar', passo: PassoSaga.ENFILEIRAR_EXECUCAO, status: StatusSaga.EM_ANDAMENTO, tentativas: 3 }),
+    ]);
+    expect(lida.aguardandoReprocessamento).toBe(true);
+  });
+
+  it('countParadasDesde conta na hora a saga com chamada-falhou pendente e a tira ao reprocessar (US-F4-18)', async () => {
     const antigo = new Date(Date.now() - 3_600_000);
     const base = await repo.countParadasDesde(antigo);
     const s = SagaOS.iniciar({ numero: 'OS-S5', clienteId: 'c', veiculoId: 'v', descricaoProblema: 'd' });

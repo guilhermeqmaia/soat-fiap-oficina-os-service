@@ -124,7 +124,8 @@ export class OrdemDeServicoController {
     summary: 'Linha do tempo da saga da OS (US-F4-10)',
     description:
       'Passo atual, status (EM_ANDAMENTO/COMPENSANDO/CONCLUIDA/CANCELADA), historico de eventos (avancou/ignorado/compensando), ' +
-      'compensacoes enviadas e confirmadas e prazos de aprovacao/pagamento — rastreamento do fluxo distribuido.',
+      'compensacoes enviadas e confirmadas, falhasPendentes (comandos nao entregues aguardando reprocessamento) e prazos de ' +
+      'aprovacao/pagamento — rastreamento do fluxo distribuido.',
   })
   @ApiOkResponse({ description: 'Estado da saga' })
   @ApiNotFoundResponse({ description: 'OS sem saga (nao encontrada)' })

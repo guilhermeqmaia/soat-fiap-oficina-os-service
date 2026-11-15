@@ -98,6 +98,15 @@ Then('a saga não tem compensações', async function (this: MundoOS) {
   expect((await this.sagaDaOS()).compensacoes).toEqual([]);
 });
 
+Then('a saga tem a falha pendente {string}', async function (this: MundoOS, comando: string) {
+  const { falhasPendentes } = await this.sagaDaOS();
+  expect(falhasPendentes.map((f) => f.comando)).toEqual([comando]);
+});
+
+Then('a saga não tem falhas pendentes', async function (this: MundoOS) {
+  expect((await this.sagaDaOS()).falhasPendentes).toEqual([]);
+});
+
 Then('o histórico da saga termina com {string} e resultado {string}', async function (this: MundoOS, evento: string, resultado: string) {
   const { historico } = await this.sagaDaOS();
   expect(historico[historico.length - 1]).toMatchObject({ evento, resultado });

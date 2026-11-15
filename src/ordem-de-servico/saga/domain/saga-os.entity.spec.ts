@@ -40,7 +40,7 @@ describe('SagaOS — maquina de estados pura (RFC-0005)', () => {
     const s = nova();
     expect(s.passo).toBe(PassoSaga.ENFILEIRAR_EXECUCAO);
     expect(s.status).toBe(StatusSaga.EM_ANDAMENTO);
-    expect(s.comandosPendentes).toEqual([{ type: 'execucao.enfileirar', data: { numeroOS: 'OS-1', veiculoId: 'vei-1', descricaoProblema: 'Barulho' } }]);
+    expect(s.comandosPendentes).toEqual([{ type: 'execucao.enfileirar', data: { numeroOS: 'OS-1', veiculoId: 'vei-1', descricaoProblema: 'Barulho' }, origem: { passo: PassoSaga.ENFILEIRAR_EXECUCAO, status: StatusSaga.EM_ANDAMENTO } }]);
     expect(s.consumirComandos()).toHaveLength(1);
     expect(s.comandosPendentes).toHaveLength(0);
     expect(s.historico[0]).toMatchObject({ evento: 'os.aberta', resultado: 'avancou' });
@@ -52,7 +52,7 @@ describe('SagaOS — maquina de estados pura (RFC-0005)', () => {
     expect(r.transicaoOS).toEqual({ tipo: 'iniciarDiagnostico' }); expect(r.comandos).toEqual([]);
     r = s.aplicar(ev('execucao.diagnostico-concluido', { mecanicoId: 'm', diagnostico: 'Pastilhas', itens: ITENS }), em(2), PRAZOS);
     expect(r.transicaoOS).toEqual({ tipo: 'registrarDiagnostico' });
-    expect(r.comandos).toEqual([{ type: 'billing.gerar-orcamento', data: { numeroOS: 'OS-1', clienteId: 'cli-1', itens: ITENS }, causationId: 'env-execucao.diagnostico-concluido' }]);
+    expect(r.comandos).toEqual([{ type: 'billing.gerar-orcamento', data: { numeroOS: 'OS-1', clienteId: 'cli-1', itens: ITENS }, causationId: 'env-execucao.diagnostico-concluido', origem: { passo: PassoSaga.GERAR_ORCAMENTO, status: StatusSaga.EM_ANDAMENTO } }]);
     s.consumirComandos();
     r = s.aplicar(ev('billing.orcamento-gerado', { total: '300.00' }), em(3), PRAZOS);
     expect(r.transicaoOS).toEqual({ tipo: 'aguardarAprovacao' });
@@ -60,7 +60,7 @@ describe('SagaOS — maquina de estados pura (RFC-0005)', () => {
     // aprovado: a OS NAO muda (continua AGUARDANDO_APROVACAO ate a Execucao confirmar); sem cobranca
     r = s.aplicar(ev('billing.orcamento-aprovado', { orcamentoId: 'o1' }), em(4), PRAZOS);
     expect(r.transicaoOS).toBeUndefined();
-    expect(r.comandos).toEqual([{ type: 'execucao.iniciar', data: { numeroOS: 'OS-1' }, causationId: 'env-billing.orcamento-aprovado' }]);
+    expect(r.comandos).toEqual([{ type: 'execucao.iniciar', data: { numeroOS: 'OS-1' }, causationId: 'env-billing.orcamento-aprovado', origem: { passo: PassoSaga.INICIAR_EXECUCAO, status: StatusSaga.EM_ANDAMENTO } }]);
     expect(s.passo).toBe(PassoSaga.INICIAR_EXECUCAO);
     expect(s.prazoAprovacao).toBeNull(); expect(s.prazoPagamento).toBeNull(); s.consumirComandos();
     r = s.aplicar(ev('execucao.iniciada'), em(5), PRAZOS);
@@ -68,7 +68,7 @@ describe('SagaOS — maquina de estados pura (RFC-0005)', () => {
     // executado: OS -> AGUARDANDO_PAGAMENTO e o Billing recebe `billing.cobrar`
     r = s.aplicar(ev('execucao.finalizada'), em(6), PRAZOS);
     expect(r.transicaoOS).toEqual({ tipo: 'aguardarPagamento' });
-    expect(r.comandos).toEqual([{ type: 'billing.cobrar', data: { numeroOS: 'OS-1' }, causationId: 'env-execucao.finalizada' }]);
+    expect(r.comandos).toEqual([{ type: 'billing.cobrar', data: { numeroOS: 'OS-1' }, causationId: 'env-execucao.finalizada', origem: { passo: PassoSaga.COBRAR, status: StatusSaga.EM_ANDAMENTO } }]);
     expect(s.passo).toBe(PassoSaga.COBRAR); s.consumirComandos();
     // cobranca criada: so o prazo (metrica/alerta), sem transicao da OS
     r = s.aplicar(ev('billing.cobranca-criada', { orderId: 'mp-1', linkPagamento: 'https://mp', valor: '300.00' }), em(7), PRAZOS);
@@ -334,7 +334,7 @@ describe('SagaOS — maquina de estados pura (RFC-0005)', () => {
       const s5 = ate(PassoSaga.INICIAR_EXECUCAO);
       expect(s5.reprocessar({}, em(1)).map((c) => c.type)).toEqual(['execucao.iniciar']);
       // cobranca perdida ou pagamento recusado/em atraso: nova cobranca
-      expect(ate(PassoSaga.COBRAR).reprocessar({}, em(1))).toEqual([{ type: 'billing.cobrar', data: { numeroOS: 'OS-1' } }]);
+      expect(ate(PassoSaga.COBRAR).reprocessar({}, em(1))).toEqual([{ type: 'billing.cobrar', data: { numeroOS: 'OS-1' }, origem: { passo: PassoSaga.COBRAR, status: StatusSaga.EM_ANDAMENTO } }]);
       expect(ate(PassoSaga.AGUARDAR_PAGAMENTO).reprocessar({}, em(1)).map((c) => c.type)).toEqual(['billing.cobrar']);
     });
     it('passos que aguardam cliente/participante e sagas encerradas nao reenviam nada', () => {
@@ -391,6 +391,145 @@ describe('SagaOS — maquina de estados pura (RFC-0005)', () => {
 
     it('entradas normais nao tem o campo tentativas', () => {
       expect(nova().historico[0]).not.toHaveProperty('tentativas');
+    });
+  });
+
+  describe('falhasPendentes: saga parada detectada pelo estado, nao pela ultima entrada do historico', () => {
+    const FALHA = { erro: 'DELETE /orcamentos/OS-1 respondeu 503 (tentativa 3/3)', status: 503, tentativas: 3 };
+    /** Timeout de aprovacao -> COMPENSANDO com [billing.cancelar-orcamento, execucao.liberar-reservas]. */
+    const compensandoPorTimeout = () => {
+      const s = ate(PassoSaga.AGUARDAR_APROVACAO);
+      s.aplicar(ev('saga.timeout'), em(200), PRAZOS);
+      expect(s.status).toBe(StatusSaga.COMPENSANDO);
+      return { s, comandos: s.consumirComandos() };
+    };
+
+    it('compensacao com Billing fora: cancelar-orcamento falha, liberar-reservas confirma por ultimo — a saga continua aguardando reprocessamento', () => {
+      const { s, comandos } = compensandoPorTimeout();
+      expect(comandos.map((c) => c.type)).toEqual(['billing.cancelar-orcamento', 'execucao.liberar-reservas']);
+      expect(comandos.every((c) => c.origem?.status === StatusSaga.COMPENSANDO && c.origem.passo === PassoSaga.AGUARDAR_APROVACAO)).toBe(true);
+      expect(s.passoDesde).toEqual(em(200)); // inicio da compensacao = base do alerta por tempo
+
+      expect(s.registrarChamadaFalhou(comandos[0], FALHA, em(201))).toBe(true);
+      const c = s.aplicar(ev('execucao.reservas-liberadas'), em(202), PRAZOS);
+      expect(c.aplicado).toBe(true);
+      expect(s.historico[s.historico.length - 1].resultado).toBe('confirmacao'); // ultima entrada NAO e chamada-falhou
+      expect(s.status).toBe(StatusSaga.COMPENSANDO);
+      expect(s.aguardandoReprocessamento).toBe(true);
+      expect(s.falhasPendentes).toEqual([
+        expect.objectContaining({ comando: 'billing.cancelar-orcamento', passo: PassoSaga.AGUARDAR_APROVACAO, status: StatusSaga.COMPENSANDO, tentativas: 3, em: em(201).toISOString() }),
+      ]);
+
+      // callback duplicado depois da falha (ignorado) tambem nao tira a saga da contagem
+      expect(s.aplicar(ev('billing.orcamento-aprovado'), em(203), PRAZOS).aplicado).toBe(false);
+      expect(s.aguardandoReprocessamento).toBe(true);
+
+      // reprocessar reenvia so a pendente e limpa a marca; a confirmacao encerra a saga
+      expect(s.reprocessar({}, em(204)).map((r) => r.type)).toEqual(['billing.cancelar-orcamento']);
+      expect(s.falhasPendentes).toEqual([]);
+      s.aplicar(ev('billing.orcamento-cancelado'), em(205), PRAZOS);
+      expect(s.status).toBe(StatusSaga.CANCELADA);
+      expect(s.aguardandoReprocessamento).toBe(false);
+    });
+
+    it('confirmacao da compensacao que falhou limpa so a falha dela', () => {
+      const { s, comandos } = compensandoPorTimeout();
+      s.registrarChamadaFalhou(comandos[0], FALHA, em(201));
+      s.registrarChamadaFalhou(comandos[1], { erro: 'x', status: 502, tentativas: 3 }, em(201));
+      expect(s.falhasPendentes.map((f) => f.comando)).toEqual(['billing.cancelar-orcamento', 'execucao.liberar-reservas']);
+      s.aplicar(ev('execucao.reservas-liberadas'), em(202), PRAZOS);
+      expect(s.falhasPendentes.map((f) => f.comando)).toEqual(['billing.cancelar-orcamento']);
+      // a mesma falha repetida nao duplica a marca
+      s.registrarChamadaFalhou(comandos[0], FALHA, em(203));
+      expect(s.falhasPendentes).toHaveLength(1);
+    });
+
+    it('callback ignorado depois de chamada-falhou num passo automatico nao tira a saga da contagem; avancar de passo limpa', () => {
+      const s = nova();
+      const [enfileirar] = s.consumirComandos();
+      s.registrarChamadaFalhou(enfileirar, FALHA, em(1));
+      s.aplicar(ev('billing.orcamento-aprovado'), em(2), PRAZOS); // fora de ordem -> ignorado
+      expect(s.historico[s.historico.length - 1].resultado).toBe('ignorado');
+      expect(s.aguardandoReprocessamento).toBe(true);
+      // o participante tinha recebido (callback tardio): a saga avanca e a falha deixa de valer
+      s.aplicar(ev('execucao.enfileirada'), em(3), PRAZOS);
+      expect(s.passo).toBe(PassoSaga.AGUARDAR_DIAGNOSTICO);
+      expect(s.aguardandoReprocessamento).toBe(false);
+      expect(s.falhasPendentes).toEqual([]);
+    });
+
+    it('nova cobranca aplicada limpa a falha de billing.cobrar em AGUARDAR_PAGAMENTO', () => {
+      const s = ate(PassoSaga.AGUARDAR_PAGAMENTO);
+      const [cobrar] = s.reprocessar({}, em(10)); s.consumirComandos();
+      s.registrarChamadaFalhou(cobrar, FALHA, em(11));
+      expect(s.aguardandoReprocessamento).toBe(true);
+      s.aplicar(ev('billing.cobranca-criada', { orderId: 'mp-2' }), em(12), PRAZOS);
+      expect(s.aguardandoReprocessamento).toBe(false);
+    });
+
+    it('GERAR_ORCAMENTO sem itens no reprocessamento: nada reenviado, a falha continua pendente', () => {
+      const s = ate(PassoSaga.AGUARDAR_DIAGNOSTICO);
+      s.aplicar(ev('execucao.diagnostico-concluido', { mecanicoId: 'm', diagnostico: 'd', itens: ITENS }), em(20), PRAZOS);
+      const [gerar] = s.consumirComandos();
+      s.registrarChamadaFalhou(gerar, FALHA, em(21));
+      expect(s.reprocessar({ itens: [] }, em(22))).toEqual([]);
+      expect(s.aguardandoReprocessamento).toBe(true);
+    });
+
+    it('reconstitute preserva as falhas pendentes (copia defensiva)', () => {
+      const s = nova();
+      s.registrarChamadaFalhou(s.consumirComandos()[0], FALHA, em(1));
+      const props = { numero: s.numero, clienteId: s.clienteId, veiculoId: s.veiculoId, descricaoProblema: s.descricaoProblema, passo: s.passo, status: s.status, historico: [...s.historico], compensacoes: [], falhasPendentes: [...s.falhasPendentes], prazoAprovacao: null, prazoPagamento: null, version: 1 };
+      const r = SagaOS.reconstitute(props);
+      expect(r.aguardandoReprocessamento).toBe(true);
+      expect(r.falhasPendentes).toEqual(s.falhasPendentes);
+      expect(SagaOS.reconstitute({ ...props, falhasPendentes: undefined }).falhasPendentes).toEqual([]);
+    });
+  });
+
+  describe('registrarChamadaFalhou: so vale no passo/status que decidiu o comando (origem)', () => {
+    const FALHA = { erro: 'fetch failed', tentativas: 3 };
+
+    it('saga avancou durante as tentativas (callback chegou antes): falha descartada, historico ignorado, nada pendente', () => {
+      const s = nova();
+      const [enfileirar] = s.consumirComandos();
+      s.aplicar(ev('execucao.enfileirada'), em(1), PRAZOS);
+      expect(s.registrarChamadaFalhou(enfileirar, FALHA, em(2))).toBe(false);
+      expect(s.historico[s.historico.length - 1]).toMatchObject({
+        evento: 'execucao.enfileirar',
+        resultado: 'ignorado',
+        detalhe: expect.stringContaining('comando decidido em ENFILEIRAR_EXECUCAO/EM_ANDAMENTO, saga agora em AGUARDAR_DIAGNOSTICO/EM_ANDAMENTO'),
+      });
+      expect(s.aguardandoReprocessamento).toBe(false);
+      expect(s.reprocessar({}, em(3))).toEqual([]); // nada de comando antigo para reenviar
+    });
+
+    it('saga cancelada durante as tentativas (mesmo passo, outro status): falha descartada e reprocessar nao reenvia compensacao por ela', () => {
+      const s = ate(PassoSaga.INICIAR_EXECUCAO);
+      const [iniciar] = s.reprocessar({}, em(10)); s.consumirComandos();
+      s.aplicar({ type: 'os.cancelamento-manual', data: { numeroOS: 'OS-1' } }, em(11), PRAZOS);
+      const compensacoes = s.consumirComandos();
+      expect(s.status).toBe(StatusSaga.COMPENSANDO);
+      expect(s.registrarChamadaFalhou(iniciar, FALHA, em(12))).toBe(false);
+      expect(s.falhasPendentes).toEqual([]);
+      for (const c of compensacoes) s.aplicar(ev(c.type === 'billing.cancelar-orcamento' ? 'billing.orcamento-cancelado' : 'execucao.reservas-liberadas'), em(13), PRAZOS);
+      expect(s.status).toBe(StatusSaga.CANCELADA);
+      expect(s.registrarChamadaFalhou(compensacoes[0], FALHA, em(14))).toBe(false);
+    });
+
+    it('em COMPENSANDO, falha de compensacao ja confirmada e descartada', () => {
+      const s = ate(PassoSaga.AGUARDAR_APROVACAO);
+      s.aplicar(ev('saga.timeout'), em(200), PRAZOS);
+      const [cancelar] = s.consumirComandos();
+      s.aplicar(ev('billing.orcamento-cancelado'), em(201), PRAZOS);
+      expect(s.registrarChamadaFalhou(cancelar, FALHA, em(202))).toBe(false);
+      expect(s.historico[s.historico.length - 1].detalhe).toContain('compensacao ja confirmada');
+    });
+
+    it('comando sem origem (tipo puro) continua registrando enquanto a saga esta aberta', () => {
+      const s = nova(); s.consumirComandos();
+      expect(s.registrarChamadaFalhou('execucao.enfileirar', FALHA, em(1))).toBe(true);
+      expect(s.falhasPendentes).toHaveLength(1);
     });
   });
 });

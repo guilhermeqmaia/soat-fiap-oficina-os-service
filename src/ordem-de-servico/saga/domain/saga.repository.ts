@@ -13,7 +13,12 @@ export interface SagaRepository {
   /** Sagas EM_ANDAMENTO cujo prazo de aprovacao ou pagamento ja venceu. */
   findComPrazoVencido(agora: Date, limite?: number): Promise<SagaOS[]>;
   countPorStatus(): Promise<Record<string, number>>;
-  /** Sagas EM_ANDAMENTO paradas no mesmo passo ha mais tempo que `desde`. */
+  /**
+   * Sagas paradas por falha da plataforma: num passo automatico ou COMPENSANDO
+   * desde antes de `desde`, ou (na hora) com comando nao entregue pendente.
+   */
   countParadasDesde(desde: Date): Promise<number>;
+  /** Sagas EM_ANDAMENTO esperando pessoa (cliente/mecanico) desde antes de `desde`, por passo. */
+  countAguardandoPessoaDesde(desde: Date): Promise<Record<string, number>>;
 }
 export const SAGA_REPOSITORY = Symbol('SAGA_REPOSITORY');
