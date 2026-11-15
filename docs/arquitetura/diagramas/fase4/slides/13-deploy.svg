@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" font-family="Inter, Helvetica Neue, Arial, sans-serif">
+<defs><marker id="ah" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 z" fill="#262626"/></marker><marker id="ahr" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 z" fill="#cf1322"/></marker></defs>
+<rect width="1920" height="1080" fill="#ffffff"/>
+<text x="960.0" y="46.0" font-size="32" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">Deploy automatizado: um pipeline independente por serviço</text>
+<text x="960" y="92.0" font-size="19" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#434343">os-service, billing-service e execucao-service: cada repositório com o próprio CI/CD, imagem no ECR e deployment no EKS</text>
+<rect x="40" y="140" width="270" height="330" rx="10" fill="#fff7e6" stroke="#d48806" stroke-width="2"/>
+<text x="175.0" y="230.0" font-size="19" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">1 · Pull request</text>
+<text x="175.0" y="255.0" font-size="19" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f"></text>
+<text x="175.0" y="280.0" font-size="19" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">main protegida:</text>
+<text x="175.0" y="305.0" font-size="19" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">PR obrigatório</text>
+<text x="175.0" y="330.0" font-size="19" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">1 aprovação</text>
+<text x="175.0" y="355.0" font-size="19" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">checks obrigatórios</text>
+<text x="175.0" y="380.0" font-size="19" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">sem push direto</text>
+<polyline points="310,305 350,305" fill="none" stroke="#262626" stroke-width="2.4" marker-end="url(#ah)"/>
+<rect x="350" y="140" width="560" height="330" rx="12" fill="#f6ffed" stroke="#389e0d" stroke-width="2"/>
+<text x="630" y="170.0" font-size="21" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#237804">2 · CI no PR (GitHub Actions)</text>
+<rect x="375" y="200" width="510" height="58" rx="10" fill="#ffffff" stroke="#389e0d" stroke-width="2"/>
+<text x="630.0" y="218.0" font-size="17" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">✔ Lint, typecheck e testes</text>
+<text x="630.0" y="240.0" font-size="17" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">unitários + integração · gate de 80%</text>
+<rect x="375" y="266" width="510" height="58" rx="10" fill="#ffffff" stroke="#389e0d" stroke-width="2"/>
+<text x="630.0" y="284.0" font-size="17" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">✔ BDD · Cucumber</text>
+<text x="630.0" y="306.0" font-size="17" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">cenários Gherkin em português</text>
+<rect x="375" y="332" width="510" height="58" rx="10" fill="#ffffff" stroke="#389e0d" stroke-width="2"/>
+<text x="630.0" y="350.0" font-size="17" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">✔ SonarCloud</text>
+<text x="630.0" y="372.0" font-size="17" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">quality gate bloqueante</text>
+<rect x="375" y="398" width="510" height="58" rx="10" fill="#ffffff" stroke="#389e0d" stroke-width="2"/>
+<text x="630.0" y="427.0" font-size="17" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">✔ Build da imagem Docker</text>
+<polyline points="910,305 950,305" fill="none" stroke="#262626" stroke-width="2.4" marker-end="url(#ah)"/>
+<rect x="950" y="230" width="190" height="150" rx="10" fill="#f9f0ff" stroke="#722ed1" stroke-width="2"/>
+<text x="1045.0" y="280.0" font-size="19" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">3 · Merge</text>
+<text x="1045.0" y="305.0" font-size="19" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">na main</text>
+<text x="1045.0" y="330.0" font-size="19" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">dispara o CD</text>
+<polyline points="1140,305 1180,305" fill="none" stroke="#262626" stroke-width="2.4" marker-end="url(#ah)"/>
+<rect x="1180" y="140" width="700" height="700" rx="12" fill="#e6f4ff" stroke="#1677ff" stroke-width="2"/>
+<text x="1530" y="170.0" font-size="21" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#0958d9">4 · CD (cd-aws.yml)</text>
+<rect x="1205" y="198" width="650" height="62" rx="10" fill="#ffffff" stroke="#1677ff" stroke-width="2"/>
+<text x="1530.0" y="218.0" font-size="17" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">Credenciais AWS por OIDC</text>
+<text x="1530.0" y="240.0" font-size="17" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">sem chave guardada no GitHub</text>
+<polyline points="1530,260 1530,274" fill="none" stroke="#262626" stroke-width="2.4" marker-end="url(#ah)"/>
+<rect x="1205" y="276" width="650" height="62" rx="10" fill="#ffffff" stroke="#1677ff" stroke-width="2"/>
+<text x="1530.0" y="307.0" font-size="17" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">Build da imagem</text>
+<polyline points="1530,338 1530,352" fill="none" stroke="#262626" stroke-width="2.4" marker-end="url(#ah)"/>
+<rect x="1205" y="354" width="650" height="62" rx="10" fill="#ffffff" stroke="#1677ff" stroke-width="2"/>
+<text x="1530.0" y="374.0" font-size="17" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">Trivy</text>
+<text x="1530.0" y="396.0" font-size="17" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">bloqueia vulnerabilidade CRITICAL</text>
+<polyline points="1530,416 1530,430" fill="none" stroke="#262626" stroke-width="2.4" marker-end="url(#ah)"/>
+<rect x="1205" y="432" width="650" height="62" rx="10" fill="#ffffff" stroke="#1677ff" stroke-width="2"/>
+<text x="1530.0" y="452.0" font-size="17" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">Push no ECR</text>
+<text x="1530.0" y="474.0" font-size="17" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">tag = commit</text>
+<polyline points="1530,494 1530,508" fill="none" stroke="#262626" stroke-width="2.4" marker-end="url(#ah)"/>
+<rect x="1205" y="510" width="650" height="62" rx="10" fill="#ffffff" stroke="#1677ff" stroke-width="2"/>
+<text x="1530.0" y="530.0" font-size="17" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">Secrets Manager → Secret no cluster</text>
+<text x="1530.0" y="552.0" font-size="17" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">JWT, banco, Mercado Pago</text>
+<polyline points="1530,572 1530,586" fill="none" stroke="#262626" stroke-width="2.4" marker-end="url(#ah)"/>
+<rect x="1205" y="588" width="650" height="62" rx="10" fill="#ffffff" stroke="#1677ff" stroke-width="2"/>
+<text x="1530.0" y="608.0" font-size="17" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">kustomize (overlay k8s-aws) + apply</text>
+<text x="1530.0" y="630.0" font-size="17" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">migrations em Job (serviços com Postgres)</text>
+<polyline points="1530,650 1530,664" fill="none" stroke="#262626" stroke-width="2.4" marker-end="url(#ah)"/>
+<rect x="1205" y="666" width="650" height="62" rx="10" fill="#ffffff" stroke="#1677ff" stroke-width="2"/>
+<text x="1530.0" y="686.0" font-size="17" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">Rollout + smoke test</text>
+<text x="1530.0" y="708.0" font-size="17" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">/health e /health/ready</text>
+<polyline points="1530,728 1530,742" fill="none" stroke="#262626" stroke-width="2.4" marker-end="url(#ah)"/>
+<rect x="1205" y="744" width="650" height="62" rx="10" fill="#ffffff" stroke="#1677ff" stroke-width="2"/>
+<text x="1530.0" y="764.0" font-size="17" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">NodePort publicado para o NLB</text>
+<text x="1530.0" y="786.0" font-size="17" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">o API Gateway já enxerga a versão nova</text>
+<rect x="40" y="520" width="1110" height="150" rx="10" fill="#f0f5ff" stroke="#2f54eb" stroke-width="2"/>
+<text x="595.0" y="570.0" font-size="19" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">EKS · namespace oficina</text>
+<text x="595.0" y="595.0" font-size="19" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">OS Service · Execução · Billing — Deployment com HPA, PodDisruptionBudget e Service NodePort</text>
+<text x="595.0" y="620.0" font-size="19" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">rolling update: a versão anterior só sai quando a nova responde no /health</text>
+<polyline points="1180,780 1100,780 1100,670" fill="none" stroke="#262626" stroke-width="2.4" marker-end="url(#ah)"/>
+<rect x="1107.8" y="787" width="64.4" height="26" rx="5" fill="#ffffff" stroke="#bfbfbf"/>
+<text x="1140" y="800.0" font-size="15" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#434343">deploy</text>
+<rect x="40" y="720" width="1040" height="320" rx="12" fill="#fafafa" stroke="#8c8c8c" stroke-width="2"/>
+<text x="560" y="752.0" font-size="21" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#262626">Infraestrutura também por pipeline (Terraform)</text>
+<rect x="65" y="785" width="315" height="130" rx="10" fill="#ffffff" stroke="#8c8c8c" stroke-width="2"/>
+<text x="222.5" y="827.0" font-size="18" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">infra-k8s</text>
+<text x="222.5" y="850.0" font-size="18" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">VPC, EKS, API Gateway,</text>
+<text x="222.5" y="873.0" font-size="18" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">VPC Endpoint, Datadog</text>
+<rect x="400" y="785" width="315" height="130" rx="10" fill="#ffffff" stroke="#8c8c8c" stroke-width="2"/>
+<text x="557.5" y="827.0" font-size="18" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">infra-db</text>
+<text x="557.5" y="850.0" font-size="18" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">RDS do OS, RDS do Billing,</text>
+<text x="557.5" y="873.0" font-size="18" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">tabelas DynamoDB</text>
+<rect x="735" y="785" width="315" height="130" rx="10" fill="#ffffff" stroke="#8c8c8c" stroke-width="2"/>
+<text x="892.5" y="827.0" font-size="18" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">auth-lambda</text>
+<text x="892.5" y="850.0" font-size="18" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">Lambda de CPF</text>
+<text x="892.5" y="873.0" font-size="18" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">e authorizer</text>
+<text x="560" y="975.0" font-size="19" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#434343">plan comentado no PR · apply no merge da main · state no S3 com lock</text>
+<text x="560" y="1010.0" font-size="19" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#434343">mesma proteção de branch e credenciais por OIDC</text>
+<rect x="1180" y="870" width="700" height="170" rx="10" fill="#f6ffed" stroke="#389e0d" stroke-width="2"/>
+<text x="1530.0" y="917.5" font-size="19" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">Resultado</text>
+<text x="1530.0" y="942.5" font-size="19" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">um serviço sobe sozinho, sem parar os outros</text>
+<text x="1530.0" y="967.5" font-size="19" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">nada vai para produção sem testes, BDD</text>
+<text x="1530.0" y="992.5" font-size="19" font-weight="normal" text-anchor="middle" dominant-baseline="middle" fill="#1f1f1f">e quality gate verdes</text>
+</svg>
