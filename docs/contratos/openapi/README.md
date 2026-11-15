@@ -8,7 +8,7 @@ dos testes de contrato no CI de cada serviço e a referência para quem consome 
 |---|---|---|---|---|
 | [`os-service.yaml`](os-service.yaml) | OS Service (`/ordens-servico`, `/clientes`, `/veiculos`, `/usuario`, `/notificacoes`, `/auth/me`, `/admin`, callback `/ordens-servico/{numero}/eventos`) | `soat-fiap-oficina-os-service` | 1.0.0 | publicado (gerado por `npm run openapi:export`) |
 | [`billing-service.yaml`](billing-service.yaml) | Billing (`/orcamentos`, `/pagamentos`, `/webhooks/mercadopago`) | `soat-fiap-oficina-billing-service` | 0.1.0 | publicado (cópia do `openapi.yaml` gerado no repo do Billing por `npm run openapi:export`) |
-| `execucao-service.yaml` | Execução (`/execucao`, `/catalogo`, `/estoque`) | `soat-fiap-oficina-execucao-service` | — | *a publicar* |
+| [`execucao-service.yaml`](execucao-service.yaml) | Execução (`/execucao`, `/catalogo`) | `soat-fiap-oficina-execucao-service` | 0.1.0 | publicado (cópia do `openapi.yaml` gerado no repo da Execução por `npm run openapi:export`) |
 
 ## De onde vem cada parte
 
