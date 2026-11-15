@@ -11,13 +11,25 @@ Legenda: ✅ tem QA Plan · ⚠️ pendente (nao prioritario neste ciclo) · —
 | US-F4-01 | Kit Compartilhado dos Servicos | ✅ [QA_PLAN_US-F4-01](QA_PLAN_US-F4-01.md) |
 | ~~US-F4-02~~ | Mensageria — SNS + SQS FIFO com DLQ (cancelada em 03/11) | ✅ [QA_PLAN_US-F4-02](QA_PLAN_US-F4-02.md) *(historico)* |
 | US-F4-03 | Bancos por Servico (Postgres + DynamoDB) | ✅ [QA_PLAN_US-F4-03](QA_PLAN_US-F4-03.md) |
+| US-F4-04 | Repositorios dos servicos com CI/CD independente | ✅ [QA_PLAN_US-F4-04](QA_PLAN_US-F4-04.md) *(deploy no EKS pendente da sessao AWS)* |
 | US-F4-05 | API Gateway Multi-servico | ✅ [QA_PLAN_US-F4-05](QA_PLAN_US-F4-05.md) |
 | US-F4-06 | OS Service — strangler | ✅ [QA_PLAN_US-F4-06](QA_PLAN_US-F4-06.md) |
+| US-F4-07 | Execucao Service (FLUXO 1) | ⚠️ `QA_PLAN_FLUXO-1.md` no repo [execucao-service](https://github.com/guilhermeqmaia/soat-fiap-oficina-execucao-service) *(em elaboracao)* |
+| US-F4-08 | Billing — orcamento (FLUXO 2) | ✅ [QA_PLAN_FLUXO-2](https://github.com/guilhermeqmaia/soat-fiap-oficina-billing-service/blob/main/docs/qa-plans/QA_PLAN_FLUXO-2.md) *(no repo billing-service)* |
+| US-F4-09 | Billing — Mercado Pago (FLUXO 2) | ✅ [QA_PLAN_FLUXO-2](https://github.com/guilhermeqmaia/soat-fiap-oficina-billing-service/blob/main/docs/qa-plans/QA_PLAN_FLUXO-2.md) *(no repo billing-service)* |
 | US-F4-10 | Saga orquestrada | ✅ [QA_PLAN_US-F4-10](QA_PLAN_US-F4-10.md) |
 | US-F4-11 | Compensacoes e rollback | ✅ [QA_PLAN_US-F4-11](QA_PLAN_US-F4-11.md) |
-| US-F4-18 | Comunicacao HTTP entre servicos (RFC-0008) | ✅ [QA_PLAN_US-F4-18](QA_PLAN_US-F4-18.md) *(executado do lado do OS Service em 11/11)* |
+| US-F4-12 | Notificacoes por eventos | ✅ [QA_PLAN_US-F4-12](QA_PLAN_US-F4-12.md) |
+| US-F4-13 | Cobertura >= 80% e quality gate (SonarCloud) | ✅ [QA_PLAN_US-F4-13](QA_PLAN_US-F4-13.md) *(gate bloqueante so no os-service; Billing/Execucao pendentes)* |
+| US-F4-14 | BDD dos fluxos da OS (Gherkin + Cucumber) | ✅ [QA_PLAN_US-F4-14](QA_PLAN_US-F4-14.md) *(BDD da Execucao pendente do merge)* |
+| US-F4-15 | Testes de contrato das APIs HTTP (OpenAPI) | ✅ [QA_PLAN_US-F4-15](QA_PLAN_US-F4-15.md) *(OpenAPI da Execucao a publicar)* |
 | US-F4-16 | Observabilidade distribuida | ✅ [QA_PLAN_US-F4-16](QA_PLAN_US-F4-16.md) *(prints do Datadog pendentes)* |
+| US-F4-17 | Entrega: video, PDF e diagrama geral | ✅ [QA_PLAN_US-F4-17](QA_PLAN_US-F4-17.md) *(checklist; gravacao pendente)* |
+| US-F4-18 | Comunicacao HTTP entre servicos (RFC-0008) | ✅ [QA_PLAN_US-F4-18](QA_PLAN_US-F4-18.md) *(executado do lado do OS Service em 11/11)* |
 | FLUXO 3 | OS ponta a ponta: integracao, notificacoes e rastreamento | ✅ [QA_PLAN_FLUXO-3](QA_PLAN_FLUXO-3.md) |
+| US-F4-DOC-01 a 06 | RFCs, ADRs, contratos, diagramas, READMEs, QA Plans | — (historias de documentacao/processo; validadas por revisao de conteudo, nao por QA Plan) |
+
+**Fase 4: 16/17 historias testaveis com QA Plan (94%)** — US-F4-02 cancelada fica como historico; falta o `QA_PLAN_FLUXO-1.md` da US-F4-07, em elaboracao no repo da Execucao.
 
 ## Fase 3 (`f3-*`) — cobertura completa das historias testaveis
 
