@@ -90,7 +90,7 @@
   <header>
     <div>
       <h1>Fase 4 — Microsserviços e Saga · painel do time</h1>
-      <p class="sub">Tech Challenge FIAP SOAT · atualizado em 04/11/2026 · fonte: <code>docs/plano-execucao-fase-4.md</code>, Notion e PRs</p>
+      <p class="sub">Tech Challenge FIAP SOAT · atualizado em 15/11/2026 · fonte: <code>docs/plano-execucao-fase-4.md</code>, Notion e PRs</p>
     </div>
     <div class="toolbar">
       <button id="theme" aria-pressed="false">Modo escuro</button>
@@ -99,10 +99,10 @@
   </header>
 
   <div class="grid tiles">
-    <div class="card tile"><div class="label">Story points entregues</div><div class="value">71 <span class="muted">/ 138</span></div><div class="hint">51% da fase (US-F4-02 cancelada em 03/11; US-F4-18 entregue 03/11)</div></div>
-    <div class="card tile"><div class="label">Stories concluídas</div><div class="value">11 <span class="muted">/ 23</span></div><div class="hint">DONE no Notion (as demais viraram 5 cards de fluxo)</div></div>
-    <div class="card tile"><div class="label">Restante</div><div class="value">67 <span class="muted">SP</span></div><div class="hint">4 fluxos · 1, 2 e 3 com a qualidade embutida (53 SP), um por pessoa</div></div>
-    <div class="card tile"><div class="label">Testes no OS Service</div><div class="value">463</div><div class="hint">testes unitários após o pivot HTTP (PR #99) · integração/e2e no CI</div></div>
+    <div class="card tile"><div class="label">Story points entregues</div><div class="value">122 <span class="muted">/ 138</span></div><div class="hint">88% da fase (US-F4-02 cancelada em 03/11); faltam a sessão na AWS, o sandbox M2–M7, os prints e o vídeo</div></div>
+    <div class="card tile"><div class="label">Stories concluídas</div><div class="value">20 <span class="muted">/ 23</span></div><div class="hint">os 3 fluxos de serviço mergeados em 13–15/11</div></div>
+    <div class="card tile"><div class="label">Restante</div><div class="value">16 <span class="muted">SP</span></div><div class="hint">US-F4-09 (sandbox M2–M7), 16 (prints do Datadog) e 17 (vídeo e PDF): dependem da sessão na AWS</div></div>
+    <div class="card tile"><div class="label">Cobertura (SonarCloud)</div><div class="value">94–98%</div><div class="hint">OS 93,9% · Billing 98% · Execução 95,4% — quality gate no CI dos 3</div></div>
   </div>
 
   <div class="grid two">
@@ -230,6 +230,7 @@
       </ul>
     </section>
   </div>
+  <p class="muted"><b>15/11:</b> Execução (#5, BDD #6, QA plan + OpenAPI #7), Billing (#5) e a pilha do FLUXO 3 (#107–#113, #116) na <code>main</code>; SonarCloud com quality gate nos 3 serviços; documento de entrega <code>docs/entrega-fase-4.md</code> (#115) e QA plans (#117). Pendente só o que depende da sessão na AWS: deploy, sandbox M2–M7, prints do Datadog e o vídeo.</p>
   <p class="muted">Entregue: DOC-01, DOC-02, DOC-03, US-F4-01, 03..06, 10, 11 e 18 (PRs #78–#100 no hub, #29–#34 no infra-k8s, #9–#10 no infra-db, #1–#10 no kit, #1–#4 em billing e execução); US-F4-02 entregue e cancelada em 03/11 (RFC-0008). Board do Notion consolidado em 4 cards de fluxo em 04/11 (qualidade diluída nos fluxos 1 a 3). Validação manual registrada em <code>docs/qa-plans/QA_PLAN_US-F4-10.md</code> (TS-11).</p>
 </div>
 <div class="tip" id="tip"></div>
@@ -238,11 +239,11 @@
 const ONDAS = [
   { n: '0 Decisões e contratos', done: 8, prog: 0, todo: 0 },
   { n: '1 Plataforma', done: 34, prog: 0, todo: 0 },
-  { n: '2 Serviços', done: 8, prog: 0, todo: 24 },
-  { n: '3 Saga e pagamento', done: 21, prog: 0, todo: 8 },
-  { n: '4 Qualidade', done: 0, prog: 8, todo: 8 },
-  { n: '5 Observabilidade e docs', done: 0, prog: 5, todo: 11 },
-  { n: '6 Entrega', done: 0, prog: 0, todo: 3 },
+  { n: '2 Serviços', done: 32, prog: 0, todo: 0 },
+  { n: '3 Saga e pagamento', done: 21, prog: 8, todo: 0 },
+  { n: '4 Qualidade', done: 16, prog: 0, todo: 0 },
+  { n: '5 Observabilidade e docs', done: 11, prog: 5, todo: 0 },
+  { n: '6 Entrega', done: 0, prog: 3, todo: 0 },
 ];
 const FLUXOS = [
   { n: '1 Execução', sp: 18, c: 'var(--s1)', s: 'US-F4-07 + lado Execução da 18 + qualidade do repo (13/14/15)' },
@@ -255,25 +256,25 @@ const STORIES = [
   ['US-F4-DOC-02','ADRs: outbox, kit, Sonar, Mercado Pago, gateway',0,'hub',2,'done','—',0],
   ['US-F4-DOC-03','Contratos de eventos (AsyncAPI)',0,'hub',3,'done','—',0],
   ['US-F4-01','Kit compartilhado + template',1,'kit',8,'done','—',0],
-  ['US-F4-03','Bancos por serviço (Postgres ×2, DynamoDB)',1,'infra-db',5,'review','—',0],
+  ['US-F4-03','Bancos por serviço (Postgres ×2, DynamoDB)',1,'infra-db',5,'done','—',0],
   ['US-F4-04','Repos + CI/CD por serviço',1,'todos',8,'done','—',0],
   ['US-F4-05','API Gateway multi-serviço + webhook MP',1,'infra-k8s',5,'done','—',0],
   ['US-F4-18','Comunicação HTTP entre serviços — RFC-0008 (kit 0.3.0, OS, infra entregues; Billing/Execução nos fluxos 1 e 2)',1,'kit / os-service / billing / execucao / infra-k8s',8,'done','3 (fechamento)',1],
   ['US-F4-06','OS Service: strangler do monólito',2,'os-service',8,'done','—',0],
-  ['US-F4-07','Execução Service: fila, diagnóstico, catálogo, estoque (DynamoDB)',2,'execucao-service',13,'todo','1',1],
-  ['US-F4-08','Billing Service: orçamento, aprovação, rejeição',2,'billing-service',8,'todo','2',1],
-  ['US-F4-12','Notificações (callbacks HTTP, link de pagamento)',2,'os-service',3,'todo','3',0],
-  ['US-F4-09','Billing: pagamento Mercado Pago',3,'billing-service',8,'todo','2',1],
+  ['US-F4-07','Execução Service: fila, diagnóstico, catálogo, estoque (DynamoDB)',2,'execucao-service',13,'done','1',1],
+  ['US-F4-08','Billing Service: orçamento, aprovação, rejeição',2,'billing-service',8,'done','2',1],
+  ['US-F4-12','Notificações (callbacks HTTP, link de pagamento)',2,'os-service',3,'done','3',0],
+  ['US-F4-09','Billing: pagamento Mercado Pago',3,'billing-service',8,'prog','2',1],
   ['US-F4-10','Saga orquestrada da OS',3,'os-service',13,'done','—',0],
   ['US-F4-11','Compensações, reprocessar saga e injeção de falhas (PR #96)',3,'os-service',8,'done','—',0],
-  ['US-F4-13','Cobertura ≥ 80% + quality gate',4,'todos',5,'todo','1, 2, 3 (por repo)',0],
-  ['US-F4-14','BDD Gherkin + Cucumber: um .feature por fluxo + ponta a ponta (exigência do professor)',4,'hub + serviços',8,'prog','1, 2 (por serviço) + 3 (ponta a ponta)',1],
-  ['US-F4-15','Testes de contrato das APIs HTTP (OpenAPI por serviço)',4,'hub + serviços',3,'todo','1, 2, 3 (por lado)',0],
-  ['US-F4-16','Observabilidade distribuída (traces HTTP, saga parada)',5,'os-service / infra-k8s',5,'todo','3',0],
-  ['US-F4-DOC-04','Diagrama geral + sequências da saga',5,'hub',3,'todo','4',0],
-  ['US-F4-DOC-05','READMEs por serviço com evidências',5,'todos',3,'todo','4',0],
-  ['US-F4-DOC-06','QA plans da Fase 4',5,'hub',5,'prog','4',0],
-  ['US-F4-17','Entrega: vídeo, PDF, diagrama',6,'todos',3,'todo','4',1],
+  ['US-F4-13','Cobertura ≥ 80% + quality gate',4,'todos',5,'done','1, 2, 3 (por repo)',0],
+  ['US-F4-14','BDD Gherkin + Cucumber: um .feature por fluxo + ponta a ponta (exigência do professor)',4,'hub + serviços',8,'done','1, 2 (por serviço) + 3 (ponta a ponta)',1],
+  ['US-F4-15','Testes de contrato das APIs HTTP (OpenAPI por serviço)',4,'hub + serviços',3,'done','1, 2, 3 (por lado)',0],
+  ['US-F4-16','Observabilidade distribuída (traces HTTP, saga parada)',5,'os-service / infra-k8s',5,'prog','3',0],
+  ['US-F4-DOC-04','Diagrama geral + sequências da saga',5,'hub',3,'done','4',0],
+  ['US-F4-DOC-05','READMEs por serviço com evidências',5,'todos',3,'done','4',0],
+  ['US-F4-DOC-06','QA plans da Fase 4',5,'hub',5,'done','4',0],
+  ['US-F4-17','Entrega: vídeo, PDF, diagrama',6,'todos',3,'prog','4',1],
 ];
 const STATUS = { done: ['st-done','Entregue'], review: ['st-review','Em review'], prog: ['st-prog','Em progresso'], todo: ['st-todo','A fazer'] };
 
