@@ -708,11 +708,12 @@ precisa ser explícito e consultável).
   O **timeout de aprovação** (`SAGA_TIMEOUT_APROVACAO_*`) dispara a mesma compensação. Cancelar só é
   possível até a execução começar.
 - **Pagamento recusado / em atraso** (após a execução) **não** compensa: a OS fica retida em
-  `AGUARDANDO_PAGAMENTO`, a saga registra `pagamento-pendente` e `oficina_os_sagas_paradas` alerta;
+  `AGUARDANDO_PAGAMENTO`, a saga registra `pagamento-pendente` e passa a contar em
+  `oficina_os_sagas_aguardando_pessoa{passo="AGUARDAR_PAGAMENTO"}` (espera pelo cliente, não falha);
   `POST /admin/sagas/:numero/reprocessar` chama de novo `POST /orcamentos/{n}/cobrar` (nova cobrança).
 - **Falha de plataforma nunca compensa:** se uma chamada esgota as 3 tentativas (5xx/timeout/rede), a saga
-  **fica no passo** (métrica `oficina_os_saga_passos_total{resultado="comando-falhou"}`), o alerta de saga
-  parada acusa e `POST /admin/sagas/:numero/reprocessar` (ADMIN) reenvia o comando — idempotente pelo
+  **fica no passo** (métrica `oficina_os_saga_passos_total{resultado="comando-falhou"}`), o comando entra em
+  `falhasPendentes` da saga (estado, não a última entrada do histórico), o alerta de saga parada acusa e `POST /admin/sagas/:numero/reprocessar` (ADMIN) reenvia o comando — idempotente pelo
   `numeroOS` no participante. Quem envia callbacks também repete 3x; `409` do OS significa "releia e repita".
 - Notificação continua **in-process** (US-F4-12): quando a saga **aplica** um fato do Billing
   (`billing.orcamento-gerado`, `-aprovado`, `cobranca-criada` com o `linkPagamento` do `201` do cobrar,
@@ -725,7 +726,9 @@ precisa ser explícito e consultável).
 - **Consistência:** cada evento roda numa única transação (OS + saga no mesmo Postgres); os comandos
   HTTP saem só depois do commit; conflito de versão é refeito em processo e, se persistir, devolve 409.
 - Métricas: `oficina_os_saga_passos_total`, `oficina_os_saga_passo_duracao_seconds`, `oficina_os_sagas`,
-  `oficina_os_sagas_paradas` (alerta de saga travada, `SAGA_ALERTA_PARADA_MIN`),
+  `oficina_os_sagas_paradas` (alerta crítico de saga parada por falha da plataforma: passo automático ou
+  `COMPENSANDO` além de `SAGA_ALERTA_PARADA_MIN`, ou comando não entregue pendente),
+  `oficina_os_sagas_aguardando_pessoa{passo}` (espera por cliente/mecânico além do mesmo limite — informativa),
   `oficina_integracoes_total{integracao="execucao-service"|"billing-service"}`.
 - **Operação (US-F4-11):** chamada que falha 3 vezes deixa a saga parada e dispara o alerta; o runbook
   [`docs/runbooks/saga-reprocessar.md`](docs/runbooks/saga-reprocessar.md) cobre triagem e reenvio.

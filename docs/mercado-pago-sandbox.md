@@ -108,7 +108,7 @@ JWT `SERVICO`, retry 3x — RFC-0008). Idempotencia por id da order.
 | Pagamento recusado | titular `OTHE` | callback `billing.pagamento-recusado` → **sem compensacao** (servico ja executado): OS segue `AGUARDANDO_PAGAMENTO`, saga registra `pagamento-pendente`; `POST /admin/sagas/:numero/reprocessar` repete `POST /orcamentos/{n}/cobrar` (nova order) — runbook `docs/runbooks/saga-reprocessar.md` |
 | Pagamento pendente | titular `CONT` | cobranca segue PENDENTE; reconciliacao consulta a order |
 | Webhook perdido | pagar com a URL do webhook apontando para lugar nenhum | job de reconciliacao (`GET /v1/orders/{id}`) fecha a cobranca |
-| Pagamento em atraso | nao pagar; `SAGA_TIMEOUT_PAGAMENTO_MS` curto no OS Service | OS **nao** e cancelada: historico `pagamento em atraso`, `oficina_os_sagas_paradas` alerta; `TIMEOUT_PAGAMENTO` e reservado/obsoleto |
+| Pagamento em atraso | nao pagar; `SAGA_TIMEOUT_PAGAMENTO_MS` curto no OS Service | OS **nao** e cancelada: historico `pagamento em atraso`, conta em `oficina_os_sagas_aguardando_pessoa{passo="AGUARDAR_PAGAMENTO"}` (nao e falha da plataforma: nao dispara o alerta critico `oficina_os_sagas_paradas`); `TIMEOUT_PAGAMENTO` e reservado/obsoleto |
 
 ## 6. Quando o Billing subir na AWS
 

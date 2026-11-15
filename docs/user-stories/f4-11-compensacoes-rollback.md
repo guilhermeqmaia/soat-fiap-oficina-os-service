@@ -24,7 +24,7 @@ para tras). Toda compensacao e idempotente e pode ser reexecutada.
   - orcamento rejeitado -> `execucao.liberar-reservas` -> OS `CANCELADA`
   - timeout de aprovacao -> `billing.cancelar-orcamento` + `execucao.liberar-reservas` -> OS `CANCELADA`
   - falha ao iniciar execucao (aprovado, nao pago, nao executado) -> `billing.cancelar-orcamento` + liberar reservas (sem estorno) -> OS `CANCELADA`
-  - pagamento recusado / em atraso (apos a execucao) -> **pendencia, nao compensacao**: OS permanece `AGUARDANDO_PAGAMENTO`, historico `pagamento-pendente`, alerta `oficina_os_sagas_paradas`, `reprocessar` reenvia `billing.cobrar`
+  - pagamento recusado / em atraso (apos a execucao) -> **pendencia, nao compensacao**: OS permanece `AGUARDANDO_PAGAMENTO`, historico `pagamento-pendente`, gauge `oficina_os_sagas_aguardando_pessoa` (revisao 15/11: espera pelo cliente nao entra no alerta critico `oficina_os_sagas_paradas`), `reprocessar` reenvia `billing.cobrar`
 - [x] Compensacoes enfileiradas em ordem inversa (executadas em paralelo pelos participantes, filas distintas) e registradas em `saga_os.compensacoes` com `enviadaEm`/`confirmadaEm`. **Revisao 03/11:** viram chamadas HTTP `DELETE /orcamentos/{n}` e `DELETE /execucao/ordens/{n}` em ordem inversa; `confirmadaEm` = resposta `200` (idempotente)
 - [x] ~~Retry com backoff nos comandos (SQS visibility 30 s, `maxReceiveCount` 5) e **DLQ** com alarme~~ → **revisao 03/11:** retry/backoff no cliente HTTP do kit (3 tentativas: 200 ms, 800 ms, 3 s; so `5xx`/timeout/rede); **retry esgotado -> saga fica no passo -> alerta de saga parada (`oficina_os_sagas_paradas`) -> `reprocessar`**; runbook [`docs/runbooks/saga-reprocessar.md`](../runbooks/saga-reprocessar.md) (sem DLQ; nunca editar estado a mao)
 - [x] Endpoint interno `POST /admin/sagas/:numero/reprocessar` (ADMIN): reenvia o comando do passo atual ou as compensacoes nao confirmadas (**revisao 03/11:** repete a chamada HTTP correspondente, idempotente por `numeroOS`); nao altera a OS
@@ -47,7 +47,7 @@ para tras). Toda compensacao e idempotente e pode ser reexecutada.
 | DELETE | `/orcamentos/{numeroOS}` (Billing) | `billing.cancelar-orcamento` — cancela orcamento pendente/aprovado nao cobrado | `{ motivo }` | `200 { numeroOS, orcamentoId, estornado: false }` ≙ `billing.orcamento-cancelado` (idempotente) |
 | POST | `/orcamentos/{numeroOS}/cobrar` (Billing) | reprocessar em `COBRAR`/`AGUARDAR_PAGAMENTO` (nova cobranca) | — | `201` ≙ `billing.cobranca-criada` |
 
-Mesmo cliente HTTP do kit (JWT `SERVICO`, 3 tentativas, correlacao). Retry esgotado: a compensacao fica `enviadaEm` sem `confirmadaEm`, a saga em `COMPENSANDO`, o gauge `oficina_os_sagas_paradas` sobe e `reprocessar` reenvia.
+Mesmo cliente HTTP do kit (JWT `SERVICO`, 3 tentativas, correlacao). Retry esgotado: a compensacao fica `enviadaEm` sem `confirmadaEm` e entra em `falhasPendentes`, a saga em `COMPENSANDO`, o gauge `oficina_os_sagas_paradas` sobe na hora (mesmo que a outra compensacao seja confirmada depois) e `reprocessar` reenvia. Sem falha registrada, `COMPENSANDO` alem de `SAGA_ALERTA_PARADA_MIN` tambem conta.
 
 ## O que salva no banco
 
@@ -74,7 +74,7 @@ Nos participantes: Execucao marca `EXECUCAO#<n> META.status = CANCELADA` e grava
 | AGUARDAR_APROVACAO | `saga.timeout` | `billing.cancelar-orcamento` = `DELETE /orcamentos/{n}`, `execucao.liberar-reservas` = `DELETE /execucao/ordens/{n}` | `TIMEOUT_APROVACAO` |
 | INICIAR_EXECUCAO | `execucao.recusada` (`409` em `POST /execucao/ordens/{n}/iniciar`; aprovado, nao pago, nao executado) | `DELETE /orcamentos/{n}`, `DELETE /execucao/ordens/{n}` (sem estorno) | `FALHA_INICIO_EXECUCAO` |
 | qualquer ate INICIAR_EXECUCAO | `POST :id/cancelar` (atendente) | conforme o passo: `DELETE /execucao/ordens/{n}` desde o 1o passo; `DELETE /orcamentos/{n}` a partir de GERAR_ORCAMENTO | `OPERADOR` |
-| AGUARDAR_PAGAMENTO (apos a execucao) | `billing.pagamento-recusado` (callback) / prazo de pagamento vencido | **nenhuma** — pendencia: OS fica `AGUARDANDO_PAGAMENTO`, historico `pagamento-pendente` / `pagamento em atraso`, alerta `oficina_os_sagas_paradas`; `reprocessar` repete `POST /orcamentos/{n}/cobrar` | — (OS nao e cancelada) |
+| AGUARDAR_PAGAMENTO (apos a execucao) | `billing.pagamento-recusado` (callback) / prazo de pagamento vencido | **nenhuma** — pendencia: OS fica `AGUARDANDO_PAGAMENTO`, historico `pagamento-pendente` / `pagamento em atraso`, gauge `oficina_os_sagas_aguardando_pessoa`; `reprocessar` repete `POST /orcamentos/{n}/cobrar` | — (OS nao e cancelada) |
 
 A partir de `AGUARDAR_FINALIZACAO` nao ha cancelamento (manual ou por compensacao): o servico esta sendo ou ja foi
 executado. `PAGAMENTO_RECUSADO` e `TIMEOUT_PAGAMENTO` continuam no enum `MotivoCancelamento` por compatibilidade com

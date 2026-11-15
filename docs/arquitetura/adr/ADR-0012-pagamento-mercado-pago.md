@@ -42,8 +42,10 @@ recurso de integração.
   cancelam o orçamento e liberam reservas.
 - **Inadimplência:** pagamento recusado ou em atraso **não cancela** a OS (o
   serviço já foi feito). A OS fica retida em `AGUARDANDO_PAGAMENTO`, a saga
-  registra `pagamento-pendente` e a gauge `oficina_os_sagas_paradas` dispara o
-  alerta; `POST /admin/sagas/:numero/reprocessar` reenvia `billing.cobrar`
+  registra `pagamento-pendente` e a saga passa a contar em
+  `oficina_os_sagas_aguardando_pessoa{passo="AGUARDAR_PAGAMENTO"}` (revisao de
+  15/11: espera pelo cliente nao e falha da plataforma, entao nao entra no alerta
+  critico `oficina_os_sagas_paradas`); `POST /admin/sagas/:numero/reprocessar` reenvia `billing.cobrar`
   (nova order). O motivo `TIMEOUT_PAGAMENTO` fica reservado/obsoleto.
 - **Webhook** `POST /webhooks/mercadopago` público no gateway (sem JWT), validado
   no Billing pelo cabeçalho **`x-signature`** (`ts` + `v1`, HMAC com a assinatura

@@ -77,7 +77,7 @@ avança ao receber **eventos** dos participantes. Estado em `saga_os`, exposto e
 | `AGUARDAR_APROVACAO` | `saga.timeout` (prazo de aprovação) | `billing.cancelar-orcamento`, `execucao.liberar-reservas` | CANCELADA (`TIMEOUT_APROVACAO`) |
 | `INICIAR_EXECUCAO` | `execucao.recusada` (aprovado, não pago, não executado) | `billing.cancelar-orcamento`, `execucao.liberar-reservas` (sem estorno) | CANCELADA (`FALHA_INICIO_EXECUCAO`) |
 | até `INICIAR_EXECUCAO` | `POST :id/cancelar` (atendente) | conforme o passo | CANCELADA (`OPERADOR`) |
-| `AGUARDAR_PAGAMENTO` | `billing.pagamento-recusado` / pagamento em atraso | **nenhuma** — o serviço já foi executado | permanece AGUARDANDO_PAGAMENTO; histórico `pagamento-pendente`; alerta `oficina_os_sagas_paradas`; `reprocessar` reenvia `billing.cobrar` |
+| `AGUARDAR_PAGAMENTO` | `billing.pagamento-recusado` / pagamento em atraso | **nenhuma** — o serviço já foi executado | permanece AGUARDANDO_PAGAMENTO; histórico `pagamento-pendente`; gauge `oficina_os_sagas_aguardando_pessoa` (espera pelo cliente, sem alerta crítico); `reprocessar` reenvia `billing.cobrar` |
 
 A partir de `AGUARDAR_FINALIZACAO` não há cancelamento (manual ou por compensação).
 

@@ -8,24 +8,24 @@ Principio: **nunca editar estado a mao** — use `reprocessar`, `cancelar` ou o 
 
 | Sinal | Origem |
 |---|---|
-| Gauge `oficina_os_sagas_paradas > 0` por mais de `SAGA_ALERTA_PARADA_MIN` (padrao 60 min) | OS Service, `/metrics`; alerta "saga parada" (US-F4-16, [`saga-parada.md`](saga-parada.md)). A gauge conta na hora as sagas cuja ultima entrada e `chamada-falhou` |
+| Gauge `oficina_os_sagas_paradas > 0` por mais de `SAGA_ALERTA_PARADA_MIN` (padrao 60 min) | OS Service, `/metrics`; alerta "saga parada" (US-F4-16, [`saga-parada.md`](saga-parada.md)). A gauge conta na hora as sagas com `falhasPendentes` (comando nao entregue) e, apos o limite, as sagas em passo automatico ou `COMPENSANDO`; espera por cliente/mecanico NAO conta (vai para `oficina_os_sagas_aguardando_pessoa`) |
 | `oficina_http_interno_total{resultado="esgotado"}` incrementou (alerta "retry esgotado", [`retry-esgotado.md`](retry-esgotado.md)) | OS Service: uma chamada a Execucao/Billing falhou 3 vezes (`5xx`/timeout/rede) |
 | Historico `chamada-falhou` (com `tentativas`) / logs `comando nao entregue — tentativas esgotadas` com `correlation_id` = numero da OS | OS Service (orquestrador) ou Billing/Execucao (callback nao entregue) |
 | Saga `COMPENSANDO` ha mais de 1 h | `GET /ordens-servico/numero/:numero/saga` |
-| Saga em `AGUARDAR_PAGAMENTO` com `pagamento-pendente` / `pagamento em atraso` | idem (pendencia de negocio, nao falha) |
+| Saga em `AGUARDAR_PAGAMENTO` com `pagamento-pendente` / `pagamento em atraso`; `oficina_os_sagas_aguardando_pessoa > 0` | idem (pendencia de negocio, nao falha) |
 
 ## 1. Triagem (onde a saga parou e por que)
 
 ```bash
 GW=https://<api-id>.execute-api.us-east-1.amazonaws.com
 curl -s $GW/ordens-servico/numero/$NUMERO/saga -H "Authorization: Bearer $TOKEN_ADMIN" \
-  | jq '{passo,status,passoDesde,compensacoes,historico:.historico[-5:]}'
+  | jq '{passo,status,falhasPendentes,compensacoes,historico:.historico[-5:]}'
 ```
 
 | Passo parado | Significa | Acao |
 |---|---|---|
-| `ENFILEIRAR_EXECUCAO`, `GERAR_ORCAMENTO`, `INICIAR_EXECUCAO`, `COBRAR` (historico com `chamada-falhou`) | o OS chamou o participante e o retry esgotou (participante fora, `5xx`, timeout) | resolver a causa no participante (`kubectl -n oficina get pods`, `/health`, logs pelo `correlation_id`) e **reprocessar** (item 2) |
-| `COMPENSANDO` sem `confirmadaEm` | um `DELETE /orcamentos/{n}` ou `DELETE /execucao/ordens/{n}` nao respondeu `200` | idem: resolver e reprocessar (os `DELETE` sao idempotentes) |
+| `ENFILEIRAR_EXECUCAO`, `GERAR_ORCAMENTO`, `INICIAR_EXECUCAO`, `COBRAR` (`falhasPendentes` com o comando / historico `chamada-falhou`) | o OS chamou o participante e o retry esgotou (participante fora, `5xx`, timeout) | resolver a causa no participante (`kubectl -n oficina get pods`, `/health`, logs pelo `correlation_id`) e **reprocessar** (item 2) |
+| `COMPENSANDO` sem `confirmadaEm` (o comando aparece em `falhasPendentes`, mesmo que a ultima entrada do historico seja a `confirmacao` da outra compensacao) | um `DELETE /orcamentos/{n}` ou `DELETE /execucao/ordens/{n}` nao respondeu `200` | idem: resolver e reprocessar (os `DELETE` sao idempotentes) |
 | `AGUARDAR_DIAGNOSTICO`, `AGUARDAR_APROVACAO`, `AGUARDAR_FINALIZACAO` | espera por pessoa; nao e falha — **salvo** se o participante registrou a acao e o callback nao chegou | conferir no participante (`GET /execucao/ordens/{n}`, `GET /orcamentos/{n}`); se o estado la ja avancou, o callback foi perdido: ver item 3 |
 | `AGUARDAR_PAGAMENTO` com `pagamento-pendente` | pagamento recusado ou em atraso apos a execucao (nao compensa) | combinar com o cliente; `reprocessar` emite nova cobranca (`POST /orcamentos/{n}/cobrar`) |
 | historico com `InvalidStatusTransitionError` / callback `409` repetido | callback fora de ordem ou concorrencia | normalmente se resolve sozinho (o participante repete apos backoff); se persistir, ver a OS e o participante |
