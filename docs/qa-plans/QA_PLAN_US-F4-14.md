@@ -21,7 +21,7 @@ são publicados como artifact no CI de cada repo.
 | OS Service (hub) | `features/ordem-de-servico.feature` | `npm run test:bdd` | 15 (10 declarados, 3 esquemas) |
 | OS Service — ponta a ponta | `features/e2e/ciclo-completo-os.feature` | `npm run e2e:up && npm run test:bdd:e2e` | 12 (11 declarados, 1 esquema) |
 | Billing | `features/orcamento.feature`, `aprovacao.feature`, `cobranca.feature`, `pagamento.feature` | `npm run test:bdd` | 16 |
-| Execução | `features/` da branch `test/f4-14-bdd-execucao` (PR em andamento) | `npm run test:bdd` | a registrar após o merge |
+| Execução | `features/execucao.feature`, `diagnostico.feature`, `cancelamento.feature` (execucao-service #6) | `npm run test:bdd` | 21 cenários, 249 passos (15/11/2026) |
 
 **Legenda de dependência**
 
@@ -38,7 +38,7 @@ são publicados como artifact no CI de cada repo.
 - os-service: **Node 22** (o Cucumber 13 não suporta Node 20), `npm ci`, `npx prisma generate`;
   portas 3000, 3001, 3002, 8025 e 1025 livres para o compose (sobrescrevíveis por `OS_PORT` etc.).
 - Billing: Node 20, `npm ci`, `npx prisma generate` (Cucumber 12; Postgres via Testcontainers, Mercado Pago e OS Service mockados com `nock`).
-- Execução: checkout da branch `test/f4-14-bdd-execucao` enquanto o PR não for mesclado; `npm ci`; DynamoDB Local via Testcontainers.
+- Execução: `main`; `npm ci`; DynamoDB Local via Testcontainers.
 
 ## Cenários de Teste
 
@@ -52,7 +52,7 @@ são publicados como artifact no CI de cada repo.
   4. Tokens do kit: `grep -n "mintToken\|mintServiceToken" features/support/tokens.ts` (os-service) e `src/test/app-harness.ts` (Billing, usado pelos steps)
   5. `npx cucumber-js --dry-run` em cada repo
 - **Resultado esperado:** `test:bdd` presente (os-service `cucumber-js`; Billing `TS_NODE_PROJECT=tsconfig.bdd.json cucumber-js`); todos os `.feature` com `# language: pt` (`Funcionalidade`/`Cenário`/`Dado`/`Quando`/`Então`); `--dry-run` sem steps indefinidos (com `strict: true`, step faltando reprova)
-- **Execução:** repetir os passos no repo da Execução após o merge do PR da branch `test/f4-14-bdd-execucao`
+- **Execução:** repetir os passos no repo da Execução (job `BDD (Gherkin + Cucumber)` no CI)
 
 ### TS-02: OS Service — fluxo da OS orquestrado pela saga (nível de serviço) — [LOCAL]
 - **Tipo:** Automatizado
@@ -83,7 +83,7 @@ são publicados como artifact no CI de cada repo.
 ### TS-04: Execução — diagnóstico e execução — [LOCAL] (pendente do merge)
 - **Tipo:** Automatizado
 - **Critério:** `diagnostico.feature` e `execucao.feature` (Execução)
-- **Passos:** no repo `soat-fiap-oficina-execucao-service`, branch `test/f4-14-bdd-execucao` (ou `main` depois do merge): `npm ci && npm run test:bdd`
+- **Passos:** no repo `soat-fiap-oficina-execucao-service`, branch `main`: `npm ci && npm run test:bdd`
 - **Resultado esperado:** cenários verdes cobrindo, no mínimo: mecânico registra diagnóstico com serviços e peças → reservas de estoque → callback `execucao.diagnostico-concluido` para o OS mockado; estoque insuficiente → item recusado; iniciar baixa o estoque; concluir serviços; finalizar → callback `execucao.finalizada`
 - **Status em 15/11/2026:** **pendente** — PR de BDD da Execução em andamento; a branch ainda não está no remoto e a `main` não tem `features/` nem o script `test:bdd`. Registrar o número de cenários e o link do PR no checklist quando mesclar
 
@@ -171,7 +171,7 @@ são publicados como artifact no CI de cada repo.
 - [x] TS-01 os-service e Billing — [ ] Execução
 - [x] TS-02 `npm run test:bdd` no os-service — 15 cenários (11/11/2026)
 - [x] TS-03 `npm run test:bdd` no Billing — 16 cenários (README do Billing, 09/11/2026)
-- [ ] TS-04 Execução — após o merge da branch `test/f4-14-bdd-execucao`
+- [x] TS-04 Execução (15/11/2026) — 21/21 cenários, local e CI
 - [x] TS-05 ponta a ponta com stubs — 12 cenários (11/11/2026)
 - [ ] TS-06 ponta a ponta com imagens reais
 - [x] TS-07 mocks seguem o contrato (stubs validam contra `docs/contratos/schemas`)

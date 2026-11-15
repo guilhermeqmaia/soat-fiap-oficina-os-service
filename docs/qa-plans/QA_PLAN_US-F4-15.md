@@ -44,7 +44,8 @@ Billing, valida o teste de contrato e2e (`src/orcamento/contrato.e2e.spec.ts`) e
   5. Cópia no hub: `diff <billing>/openapi.yaml docs/contratos/openapi/billing-service.yaml` e versão (`0.1.0` no `package.json` e no `info.version`)
 - **Resultado esperado:** export sem diferença (arquivo commitado em dia); `openapi:check` imprime `os-service.yaml em dia com o codigo`; os-service `1.1.0` = `1.1.0`; Billing idêntico ao do hub (conferido em 15/11/2026) e `0.1.0` = `0.1.0`
 - **Alternativo:** controller/DTO alterado sem regerar → `openapi:check` (os-service) ou `git diff --exit-code openapi.yaml` (Billing) falha no CI
-- **Pendente:** `execucao-service.yaml` "a publicar" — a Execução ainda não tem `openapi:export` (ver Rastreabilidade)
+  6. Execução (no clone): `npm run openapi:export && git diff --exit-code openapi.yaml` (o CI faz o mesmo) e `diff <execucao>/openapi.yaml docs/contratos/openapi/execucao-service.yaml`
+- **Execução:** idêntico ao do hub e `0.1.0` = `0.1.0` (publicado em 15/11/2026, execucao-service #7)
 
 ### TS-02: Endpoints internos com os códigos do contrato e segurança `SERVICO` — [LOCAL]
 - **Tipo:** Automatizado (teste de contrato) + revisão
@@ -119,7 +120,7 @@ Billing, valida o teste de contrato e2e (`src/orcamento/contrato.e2e.spec.ts`) e
 - **Tipo:** Revisão
 - **Critério:** `docs/contratos/openapi/README.md` lista os três arquivos, a versão e o comando de validação; renderização (Redoc) linkada no README do hub
 - **Passos:** ler `docs/contratos/openapi/README.md`; `grep -n "contratos/openapi" README.md`; gerar o HTML: `npx -y @redocly/cli build-docs docs/contratos/openapi/os-service.yaml -o docs/contratos/html/os-service.html`
-- **Resultado esperado:** tabela com `os-service.yaml` (publicado), `billing-service.yaml` (publicado, `0.1.0`) e `execucao-service.yaml` (*a publicar*); seções Gerar/Validar/Versionar com `openapi:export`, `openapi:check`, `contracts:lint`, `test:contracts`; README do hub linka `docs/contratos/openapi/`; o HTML gerado abre no navegador
+- **Resultado esperado:** tabela com `os-service.yaml` (publicado), `billing-service.yaml` (publicado, `0.1.0`) e `execucao-service.yaml` (publicado, `0.1.0`); seções Gerar/Validar/Versionar com `openapi:export`, `openapi:check`, `contracts:lint`, `test:contracts`; README do hub linka `docs/contratos/openapi/`; o HTML gerado abre no navegador
 - **Gaps (15/11/2026):** a coluna "Versão" do README diz `1.0.0` para o os-service, mas o `info.version` publicado é `1.1.0`; o README do hub linka a pasta, não uma renderização Redoc publicada (só o comando `build-docs`)
 
 ## Casos de Borda
@@ -136,17 +137,17 @@ Billing, valida o teste de contrato e2e (`src/orcamento/contrato.e2e.spec.ts`) e
 
 | Critério de aceite | Cenários | Status em 15/11/2026 |
 |---|---|---|
-| OpenAPI exportado e publicado no hub; `info.version` = versão | TS-01 | os-service e Billing OK; **Execução pendente** (sem export/publicação) |
+| OpenAPI exportado e publicado no hub; `info.version` = versão | TS-01 | os-service, Billing e Execução OK (Execução publicada em 15/11/2026) |
 | Endpoints do `http-interno.md` com códigos e `x-role: SERVICO`; `Envelope` compartilhado | TS-02 | os-service OK; Billing sem `x-role` |
-| Lint no CI, bloqueante; regra de compatibilidade | TS-03 | os-service e Billing OK; Execução pendente |
-| Testes de contrato no CI de cada serviço (respostas + fixtures de callbacks) | TS-04, TS-05, TS-06 | os-service e Billing OK; Execução pendente |
+| Lint no CI, bloqueante; regra de compatibilidade | TS-03 | os-service e Billing OK; Execução: export conferido no CI (`git diff --exit-code openapi.yaml`), lint do Redocly ainda não roda no CI dela |
+| Testes de contrato no CI de cada serviço (respostas + fixtures de callbacks) | TS-04, TS-05, TS-06 | os-service e Billing OK; Execução: as rotas internas são cobertas pelos e2e e pelo BDD contra o OS Service fake (envelope, status e `{ motivo }`), sem suíte de contrato dedicada |
 | Callbacks validados na entrada (`400`, fora de `processed_messages`) | TS-07 | provedor OK (validação estrutural; schema completo do `data` só no CI); manual a executar |
 | Pact opcional | TS-08 | não adotado (decisão registrada) |
 | README dos contratos + renderização linkada no hub | TS-09 | README OK; versão desatualizada na tabela e sem Redoc publicado |
 
 ## Checklist de Validação
 
-- [x] TS-01 os-service e Billing (15/11/2026) — [ ] `execucao-service.yaml`
+- [x] TS-01 os-service, Billing e Execução (15/11/2026)
 - [x] TS-02 os-service — [ ] `x-role: SERVICO` no `billing-service.yaml`
 - [x] TS-03 lint (CI verde nos dois repos)
 - [x] TS-04 `npm run test:contracts` (11/11/2026)
