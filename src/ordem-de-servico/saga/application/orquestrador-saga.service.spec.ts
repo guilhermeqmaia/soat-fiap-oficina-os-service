@@ -14,7 +14,7 @@ import { MarcoOrdemDeServicoEvent } from '../../../shared/domain/events/marco-or
 import { ConcurrentModificationError } from '../../domain/errors/concurrent-modification.error';
 import { SagaTimeoutsService } from './saga-timeouts.service';
 import { FakeParticipantesSaga } from '../../../test/fake-participantes-saga';
-import { sagaPassos } from '../../../observabilidade/metrics.registry';
+import { sagaPassos, sagasAguardandoPessoa, sagasParadas } from '../../../observabilidade/metrics.registry';
 
 /** Repositorio em memoria que reproduz o contrato (lock otimista por version; cada leitura devolve uma copia, como o banco). */
 function fakeRepo() {
@@ -22,7 +22,7 @@ function fakeRepo() {
   const copia = (s: SagaOS, version = s.version) =>
     SagaOS.reconstitute({
       id: s.id ?? 'id-' + s.numero, numero: s.numero, clienteId: s.clienteId, veiculoId: s.veiculoId, descricaoProblema: s.descricaoProblema,
-      passo: s.passo, status: s.status, historico: [...s.historico], compensacoes: s.compensacoes.map((c) => ({ ...c })), prazoAprovacao: s.prazoAprovacao,
+      passo: s.passo, status: s.status, historico: [...s.historico], compensacoes: s.compensacoes.map((c) => ({ ...c })), falhasPendentes: s.falhasPendentes.map((f) => ({ ...f })), prazoAprovacao: s.prazoAprovacao,
       prazoPagamento: s.prazoPagamento, passoDesde: s.passoDesde, falhaSimulada: s.falhaSimulada, version, createdAt: s.createdAt ?? new Date(), updatedAt: new Date(),
     });
   return {
@@ -34,6 +34,7 @@ function fakeRepo() {
     }),
     deleteByNumero: jest.fn(async (n: string) => { store.delete(n); }),
     countParadasDesde: jest.fn(async () => 0),
+    countAguardandoPessoaDesde: jest.fn(async (): Promise<Record<string, number>> => ({})),
     findComPrazoVencido: jest.fn(async (agora: Date) => [...store.values()].filter((s) => s.status === StatusSaga.EM_ANDAMENTO && ((s.prazoAprovacao && s.prazoAprovacao <= agora) || (s.prazoPagamento && s.prazoPagamento <= agora)))),
     countPorStatus: jest.fn(async () => { const r: Record<string, number> = {}; for (const s of store.values()) r[s.status] = (r[s.status] ?? 0) + 1; return r; }),
   };
@@ -93,7 +94,7 @@ describe('OrquestradorSagaService (participantes por HTTP)', () => {
   it('iniciar cria a saga na transacao e devolve execucao.enfileirar SEM executar; repetir nao duplica', async () => {
     const r = await svc.iniciar(ordem(), { descricaoProblema: 'Barulho ao frenar' }, 'tx');
     expect(r.saga.passo).toBe(PassoSaga.ENFILEIRAR_EXECUCAO);
-    expect(r.comandos).toEqual([{ type: 'execucao.enfileirar', data: { numeroOS: 'OS-1', veiculoId: 'vei-1', descricaoProblema: 'Barulho ao frenar' } }]);
+    expect(r.comandos).toEqual([{ type: 'execucao.enfileirar', data: { numeroOS: 'OS-1', veiculoId: 'vei-1', descricaoProblema: 'Barulho ao frenar' }, origem: { passo: PassoSaga.ENFILEIRAR_EXECUCAO, status: StatusSaga.EM_ANDAMENTO } }]);
     expect(participantes.chamadas).toHaveLength(0);
     expect((await svc.iniciar(ordem(), { descricaoProblema: 'x' }, 'tx')).comandos).toEqual([]);
   });
@@ -225,6 +226,46 @@ describe('OrquestradorSagaService (participantes por HTTP)', () => {
       expect(s.status).toBe(StatusSaga.COMPENSANDO);
       expect(s.historico[s.historico.length - 1]).toMatchObject({ resultado: 'chamada-falhou', evento: 'execucao.liberar-reservas', tentativas: 1 });
       expect(s.aguardandoReprocessamento).toBe(true);
+    });
+
+    it('approval timeout + Billing fora: cancelar-orcamento falha e liberar-reservas confirma por ultimo — saga segue COMPENSANDO e parada ate reprocessar', async () => {
+      process.env.SAGA_TIMEOUT_APROVACAO_MS = '1000';
+      await abrir();
+      const t0 = new Date();
+      await svc.processar({ type: 'execucao.diagnostico-concluido', id: '2', data: { numeroOS: 'OS-1', mecanicoId: 'm', diagnostico: 'Pastilhas', itens: ITENS } }, t0);
+      participantes.indisponivel('billing.cancelar-orcamento');
+      await new SagaTimeoutsService(repo as any, svc).varrer(new Date(t0.getTime() + 1500));
+      const s = repo.store.get('OS-1')!;
+      expect(s.status).toBe(StatusSaga.COMPENSANDO);
+      expect(s.historico.slice(-2).map((h) => h.resultado)).toEqual(['chamada-falhou', 'confirmacao']);
+      expect(s.aguardandoReprocessamento).toBe(true);
+      expect(s.falhasPendentes.map((f) => f.comando)).toEqual(['billing.cancelar-orcamento']);
+
+      participantes.restaurar();
+      const { saga, reenviados } = await svc.reprocessar('OS-1');
+      expect(reenviados).toEqual(['billing.cancelar-orcamento']);
+      expect(saga.status).toBe(StatusSaga.CANCELADA);
+      expect(saga.aguardandoReprocessamento).toBe(false);
+      delete process.env.SAGA_TIMEOUT_APROVACAO_MS;
+    });
+
+    it('saga avancou enquanto o comando esgotava as tentativas: a falha e descartada (nao conta como parada, reprocessar nao reenvia)', async () => {
+      // O participante recebeu o comando e o callback chegou antes do fim das tentativas.
+      const executarOriginal = participantes.executar.bind(participantes);
+      jest.spyOn(participantes, 'executar').mockImplementationOnce(async (c) => {
+        await svc.processar({ type: 'execucao.enfileirada', id: 'cb-1', data: { numeroOS: 'OS-1', posicaoFila: 1 } });
+        participantes.chamadas.push(c);
+        return { entregue: false, erro: 'timeout', tentativas: 3, resultado: 'esgotado' };
+      }).mockImplementation(executarOriginal);
+      const s = await abrir();
+      expect(s.passo).toBe(PassoSaga.AGUARDAR_DIAGNOSTICO);
+      expect(s.historico[s.historico.length - 1]).toMatchObject({ evento: 'execucao.enfileirar', resultado: 'ignorado' });
+      expect(s.aguardandoReprocessamento).toBe(false);
+      expect(Logger.prototype.warn).toHaveBeenCalledWith(expect.objectContaining({
+        msg: 'falha de comando descartada — a saga saiu do passo/status que decidiu o comando',
+        origem: { passo: PassoSaga.ENFILEIRAR_EXECUCAO, status: StatusSaga.EM_ANDAMENTO },
+      }));
+      expect((await svc.reprocessar('OS-1')).reenviados).toEqual([]);
     });
 
     it('conflito ao gravar chamada-falhou e refeito; se persistir, so loga e a saga anterior segue', async () => {
@@ -438,6 +479,20 @@ describe('OrquestradorSagaService (participantes por HTTP)', () => {
       expect(ucs.cancelamento.execute).not.toHaveBeenCalled();
       expect(await relogio.varrer(new Date(t0.getTime() + 3000))).toBe(0);
       delete process.env.SAGA_TIMEOUT_PAGAMENTO_MS;
+    });
+    it('gauges: paradas (falha da plataforma) e aguardando pessoa por passo, com o mesmo limite SAGA_ALERTA_PARADA_MIN', async () => {
+      process.env.SAGA_ALERTA_PARADA_MIN = '30';
+      repo.countParadasDesde.mockResolvedValueOnce(2);
+      repo.countAguardandoPessoaDesde.mockResolvedValueOnce({ AGUARDAR_APROVACAO: 4 });
+      const agora = new Date('2026-11-15T12:00:00Z');
+      await new SagaTimeoutsService(repo as any, svc).varrer(agora);
+      const limite = new Date(agora.getTime() - 30 * 60_000);
+      expect(repo.countParadasDesde).toHaveBeenCalledWith(limite);
+      expect(repo.countAguardandoPessoaDesde).toHaveBeenCalledWith(limite);
+      expect((await sagasParadas.get()).values[0].value).toBe(2);
+      const porPasso = Object.fromEntries((await sagasAguardandoPessoa.get()).values.map((v) => [v.labels.passo, v.value]));
+      expect(porPasso).toEqual({ AGUARDAR_DIAGNOSTICO: 0, AGUARDAR_APROVACAO: 4, AGUARDAR_FINALIZACAO: 0, AGUARDAR_PAGAMENTO: 0 });
+      delete process.env.SAGA_ALERTA_PARADA_MIN;
     });
     it('nao agenda com AGENDADORES_AUTOSTART=false; agenda e limpa o timer caso contrario', () => {
       const r = new SagaTimeoutsService(repo as any, svc);

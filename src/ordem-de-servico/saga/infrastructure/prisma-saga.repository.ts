@@ -1,7 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { ConcurrentModificationError } from '../../domain/errors/concurrent-modification.error';
-import { Compensacao, PassoHistorico, PassoSaga, SagaOS, StatusSaga } from '../domain/saga-os.entity';
+import { Prisma } from '../../../generated/prisma/client';
+import {
+  Compensacao,
+  FalhaPendente,
+  PASSOS_AGUARDANDO_PESSOA,
+  PASSOS_AUTOMATICOS,
+  PassoHistorico,
+  PassoSaga,
+  SagaOS,
+  StatusSaga,
+} from '../domain/saga-os.entity';
 import { SagaRepository } from '../domain/saga.repository';
 
 type PrismaTx = { sagaOS: PrismaService['sagaOS'] };
@@ -27,6 +37,7 @@ export class PrismaSagaRepository implements SagaRepository {
       passoDesde: saga.passoDesde,
       historico: saga.historico as unknown as object[],
       compensacoes: saga.compensacoes as unknown as object[],
+      falhasPendentes: saga.falhasPendentes as unknown as object[],
       prazoAprovacao: saga.prazoAprovacao,
       prazoPagamento: saga.prazoPagamento,
       falhaSimulada: saga.falhaSimulada,
@@ -75,21 +86,35 @@ export class PrismaSagaRepository implements SagaRepository {
   }
 
   /**
-   * Paradas = EM_ANDAMENTO no mesmo passo desde antes de `desde` OU (EM_ANDAMENTO
-   * ou COMPENSANDO) cuja ultima entrada do historico e `chamada-falhou` — comando
-   * nao entregue conta na hora, sem esperar SAGA_ALERTA_PARADA_MIN (US-F4-18);
-   * sai da contagem quando o reprocessamento registra a proxima entrada.
-   * SQL cru porque o Prisma nao filtra pelo ultimo elemento de um array JSON.
+   * Paradas (falha da plataforma, alerta critico) =
+   * - EM_ANDAMENTO num passo AUTOMATICO (so espera a resposta de um comando da
+   *   propria saga) desde antes de `desde`;
+   * - COMPENSANDO desde antes de `desde` (compensacao sem confirmacao);
+   * - na hora, EM_ANDAMENTO/COMPENSANDO com `falhas_pendentes` (comando nao
+   *   entregue, US-F4-18) — estado, nao a ultima entrada do historico, entao uma
+   *   confirmacao de outra compensacao ou um callback duplicado nao a tiram daqui.
+   * Passos que esperam pessoa (cliente/mecanico) NAO entram: ver `countAguardandoPessoaDesde`.
+   * SQL cru porque o Prisma nao compara JSON com array vazio de forma portavel.
    */
   async countParadasDesde(desde: Date): Promise<number> {
     const [linha] = await this.prisma.$queryRaw<Array<{ total: number }>>`
       SELECT COUNT(*)::int AS total
         FROM saga_os
-       WHERE (status = ${StatusSaga.EM_ANDAMENTO} AND passo_desde <= ${desde})
+       WHERE (status = ${StatusSaga.EM_ANDAMENTO} AND passo IN (${Prisma.join([...PASSOS_AUTOMATICOS])}) AND passo_desde <= ${desde})
+          OR (status = ${StatusSaga.COMPENSANDO} AND passo_desde <= ${desde})
           OR (status IN (${StatusSaga.EM_ANDAMENTO}, ${StatusSaga.COMPENSANDO})
-              AND jsonb_typeof(historico) = 'array'
-              AND historico -> -1 ->> 'resultado' = 'chamada-falhou')`;
+              AND jsonb_typeof(falhas_pendentes) = 'array'
+              AND jsonb_array_length(falhas_pendentes) > 0)`;
     return Number(linha?.total ?? 0);
+  }
+
+  async countAguardandoPessoaDesde(desde: Date): Promise<Record<string, number>> {
+    const grupos = await this.prisma.sagaOS.groupBy({
+      by: ['passo'],
+      where: { status: StatusSaga.EM_ANDAMENTO, passo: { in: [...PASSOS_AGUARDANDO_PESSOA] }, passoDesde: { lte: desde } },
+      _count: { _all: true },
+    });
+    return Object.fromEntries(grupos.map((g) => [g.passo, g._count._all]));
   }
 
   private db(tx?: unknown): PrismaTx {
@@ -103,7 +128,7 @@ export class PrismaSagaRepository implements SagaRepository {
 
   private toDomain(r: {
     id: string; numero: string; clienteId: string; veiculoId: string; descricaoProblema: string; passo: string; status: string;
-    passoDesde: Date; historico: unknown; compensacoes: unknown; prazoAprovacao: Date | null; prazoPagamento: Date | null; falhaSimulada?: string | null;
+    passoDesde: Date; historico: unknown; compensacoes: unknown; falhasPendentes?: unknown; prazoAprovacao: Date | null; prazoPagamento: Date | null; falhaSimulada?: string | null;
     version: number; createdAt: Date; updatedAt: Date;
   }): SagaOS {
     return SagaOS.reconstitute({
@@ -117,6 +142,7 @@ export class PrismaSagaRepository implements SagaRepository {
       passoDesde: r.passoDesde,
       historico: Array.isArray(r.historico) ? (r.historico as PassoHistorico[]) : [],
       compensacoes: Array.isArray(r.compensacoes) ? (r.compensacoes as Compensacao[]) : [],
+      falhasPendentes: Array.isArray(r.falhasPendentes) ? (r.falhasPendentes as FalhaPendente[]) : [],
       prazoAprovacao: r.prazoAprovacao ?? null,
       prazoPagamento: r.prazoPagamento ?? null,
       falhaSimulada: (r.falhaSimulada as PassoSaga | null) ?? null,

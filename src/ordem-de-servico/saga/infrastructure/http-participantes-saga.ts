@@ -162,11 +162,19 @@ export class HttpParticipantesSaga implements ParticipantesSagaGateway {
           return { entregue: true, evento: { type: rota.sucesso, data: { ...corpo, numeroOS } } };
         }
       }
-      const resultado: ResultadoHttpInterno = e instanceof HttpInternoError && !e.transitoria ? (e.status === 409 ? 'recusa' : 'erro') : 'esgotado';
+      // `esgotado` so para falha transitoria do kit (5xx/timeout/rede apos as tentativas); 4xx e erro
+      // que nao veio do cliente HTTP (bug de programacao, ex.: TypeError) sao `erro`.
+      const resultado: ResultadoHttpInterno =
+        e instanceof HttpInternoError ? (e.transitoria ? 'esgotado' : e.status === 409 ? 'recusa' : 'erro') : 'erro';
       medir(status, resultado);
       integracaoResultados.inc({ integracao: rota.participante, resultado: 'falha' });
       this.logger.error({
-        msg: resultado === 'esgotado' ? 'comando nao entregue — tentativas esgotadas' : 'comando nao entregue — resposta sem retry',
+        msg:
+          resultado === 'esgotado'
+            ? 'comando nao entregue — tentativas esgotadas'
+            : e instanceof HttpInternoError
+              ? 'comando nao entregue — resposta sem retry'
+              : 'comando nao entregue — erro inesperado antes da resposta',
         ...log({ metodo: rota.metodo, url: rota.url, status, tentativa: tentativas, resultado, erro: (e as Error).message }),
       });
       return { entregue: false, erro: (e as Error).message, status, tentativas, resultado };

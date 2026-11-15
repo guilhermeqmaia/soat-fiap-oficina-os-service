@@ -8,14 +8,17 @@ A ação de correção está em [`saga-reprocessar.md`](saga-reprocessar.md); es
 | Sinal | Detalhe |
 |---|---|
 | `oficina_os_sagas_paradas > 0` durante `saga_alerta_parada_min` | var do Terraform, igual a `SAGA_ALERTA_PARADA_MIN` do os-service (padrão 60 min) |
-| O que a gauge conta | sagas `EM_ANDAMENTO` no mesmo passo há mais de `SAGA_ALERTA_PARADA_MIN` **e**, na hora, sagas `EM_ANDAMENTO`/`COMPENSANDO` cuja última entrada do histórico é `chamada-falhou` (retry esgotado, US-F4-18) |
+| O que a gauge conta | só **falha da plataforma**: sagas `EM_ANDAMENTO` num passo automático (`ENFILEIRAR_EXECUCAO`, `GERAR_ORCAMENTO`, `INICIAR_EXECUCAO`, `COBRAR`) ou `COMPENSANDO` há mais de `SAGA_ALERTA_PARADA_MIN` **e**, na hora, sagas `EM_ANDAMENTO`/`COMPENSANDO` com comando não entregue em `falhasPendentes` (retry esgotado, US-F4-18 — estado da saga, não a última entrada do histórico: uma confirmação ou callback duplicado depois do `chamada-falhou` não a tira da contagem) |
+| O que a gauge NÃO conta | espera por pessoa (`AGUARDAR_DIAGNOSTICO`, `AGUARDAR_APROVACAO`, `AGUARDAR_FINALIZACAO`, `AGUARDAR_PAGAMENTO`): vai para `oficina_os_sagas_aguardando_pessoa{passo}` (informativa, sem alerta crítico) |
 | Atualização | o relógio da saga (`SagaTimeoutsService`) recalcula a cada `SAGA_TIMEOUTS_INTERVALO_MS` (60 s) |
 
 ## O que significa
 
-Uma OS não avança: o participante não respondeu, uma compensação não foi confirmada ou um callback
-se perdeu. Também entra aqui a espera longa por pessoa (aprovação do cliente, mecânico): nesse caso
-não é falha — confirme antes de agir.
+Uma OS não avança por falha da plataforma: o participante não respondeu (retry esgotado) ou uma
+compensação não foi confirmada. Espera longa por pessoa (aprovação/pagamento do cliente, mecânico) **não**
+entra mais aqui (revisão de 15/11) — aparece em `oficina_os_sagas_aguardando_pessoa`. Callback perdido
+num passo de espera por pessoa também só aparece nessa gauge: se ela crescer num passo, confira no
+participante (item 3 de [`saga-reprocessar.md`](saga-reprocessar.md)).
 
 ## Triagem (5 min)
 
@@ -27,10 +30,11 @@ não é falha — confirme antes de agir.
 3. Para cada OS:
    ```bash
    curl -s $GW/ordens-servico/numero/$NUMERO/saga -H "Authorization: Bearer $TOKEN_ADMIN" \
-     | jq '{passo,status,historico:.historico[-5:]}'
+     | jq '{passo,status,falhasPendentes,historico:.historico[-5:]}'
    ```
-   - última entrada `chamada-falhou` (com `tentativas`) → o participante falhou: resolver e **reprocessar**;
-   - `AGUARDAR_*` sem `chamada-falhou` → espera por pessoa ou callback perdido.
+   - `falhasPendentes` não vazio (comando, passo, `tentativas`) → o participante falhou: resolver e **reprocessar**;
+   - passo automático ou `COMPENSANDO` sem falha pendente → resposta não aplicada (log
+     `resposta do participante nao aplicada na saga`) ou compensação sem confirmação: **reprocessar**.
 
 ## Ação
 

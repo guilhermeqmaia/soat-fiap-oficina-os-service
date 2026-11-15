@@ -113,6 +113,25 @@ Funcionalidade: Ciclo de vida da Ordem de Serviço orquestrado pela saga
     E a OS permanece com status "EM_EXECUCAO"
     E o serviço "Billing" não recebeu chamadas em "DELETE /orcamentos/{n}"
 
+  @falha-plataforma @compensacao
+  Cenário: Billing fora do ar na compensação deixa a falha pendente mesmo depois da outra confirmação
+    Dado que existe uma OS no status "AGUARDANDO_APROVACAO"
+    E que o serviço "Billing" está fora do ar em "DELETE /orcamentos/{n}"
+    Quando o atendente cancela a OS
+    Então a resposta tem status HTTP 200
+    E a OS é cancelada com o motivo "OPERADOR"
+    E a saga fica no passo "AGUARDAR_APROVACAO" com status "COMPENSANDO"
+    E o serviço "Billing" recebeu 3 chamadas em "DELETE /orcamentos/{n}"
+    # a confirmacao da Execucao vira a ultima entrada do historico, mas a falha do Billing continua pendente
+    E o histórico da saga termina com "execucao.reservas-liberadas" e resultado "confirmacao"
+    E a saga tem a falha pendente "billing.cancelar-orcamento"
+
+    Quando o serviço "Billing" volta ao ar
+    E o administrador reprocessa a saga
+    Então a saga fica no passo "AGUARDAR_APROVACAO" com status "CANCELADA"
+    E as compensações confirmadas da saga são "billing.cancelar-orcamento, execucao.liberar-reservas"
+    E a saga não tem falhas pendentes
+
   @falha-plataforma
   Cenário: Execução fora do ar na abertura deixa a saga parada até o reprocessamento
     Dado que o serviço "Execução" está fora do ar em "POST /execucao/ordens"

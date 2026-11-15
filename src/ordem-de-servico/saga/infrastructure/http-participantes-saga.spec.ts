@@ -174,6 +174,16 @@ describe('HttpParticipantesSaga (fetch mockado)', () => {
       expect(await interno('execucao-service', INICIAR, 'erro')).toBe(erro + 1);
     });
 
+    it('erro que nao vem do cliente HTTP (bug de programacao) conta como erro, nao como esgotado', async () => {
+      const bugado = new HttpParticipantesSaga({ post: jest.fn().mockRejectedValue(new TypeError('cannot read properties of undefined')) } as unknown as ClienteHttpInterno, URLS);
+      const [esg, erro] = [await interno('billing-service', COBRAR, 'esgotado'), await interno('billing-service', COBRAR, 'erro')];
+      const r = await bugado.executar({ type: 'billing.cobrar', data: { numeroOS: 'OS-1' } });
+      expect(r).toMatchObject({ entregue: false, resultado: 'erro', erro: 'cannot read properties of undefined' });
+      expect(await interno('billing-service', COBRAR, 'erro')).toBe(erro + 1);
+      expect(await interno('billing-service', COBRAR, 'esgotado')).toBe(esg);
+      expect(Logger.prototype.error).toHaveBeenCalledWith(expect.objectContaining({ msg: 'comando nao entregue — erro inesperado antes da resposta', resultado: 'erro' }));
+    });
+
     it('logs levam trace_id, correlation_id (numero da OS), servico, destino, rota e tentativa', async () => {
       fetchMock.mockImplementation(async () => json(503, {}));
       await gateway.executar({ type: 'billing.cobrar', data: { numeroOS: 'OS-7' } });

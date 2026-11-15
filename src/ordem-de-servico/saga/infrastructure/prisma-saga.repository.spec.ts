@@ -56,10 +56,36 @@ describe('PrismaSagaRepository (unit)', () => {
     const desde = new Date();
     expect(await repo.countParadasDesde(desde)).toBe(2);
     const [sql, ...valores] = prisma.$queryRaw.mock.calls[0];
-    expect(sql.join('?')).toContain("historico -> -1 ->> 'resultado' = 'chamada-falhou'");
-    expect(valores).toEqual(['EM_ANDAMENTO', desde, 'EM_ANDAMENTO', 'COMPENSANDO']);
+    const texto = sql.join('?');
+    expect(texto).toContain('jsonb_array_length(falhas_pendentes) > 0');
+    expect(texto).not.toContain("historico -> -1");
+    expect(valores[0]).toBe('EM_ANDAMENTO');
+    expect(valores[1].values).toEqual(['ENFILEIRAR_EXECUCAO', 'GERAR_ORCAMENTO', 'INICIAR_EXECUCAO', 'COBRAR']); // so passos automaticos
+    expect(valores.slice(2)).toEqual([desde, 'COMPENSANDO', desde, 'EM_ANDAMENTO', 'COMPENSANDO']);
     prisma.$queryRaw.mockResolvedValueOnce([]);
     expect(await repo.countParadasDesde(desde)).toBe(0);
+  });
+
+  it('countAguardandoPessoaDesde agrupa por passo so os passos que esperam cliente/mecanico', async () => {
+    prisma.sagaOS.groupBy.mockResolvedValueOnce([{ passo: 'AGUARDAR_APROVACAO', _count: { _all: 3 } }]);
+    const desde = new Date();
+    expect(await repo.countAguardandoPessoaDesde(desde)).toEqual({ AGUARDAR_APROVACAO: 3 });
+    expect(prisma.sagaOS.groupBy.mock.calls[0][0]).toEqual({
+      by: ['passo'],
+      where: { status: 'EM_ANDAMENTO', passo: { in: ['AGUARDAR_DIAGNOSTICO', 'AGUARDAR_APROVACAO', 'AGUARDAR_FINALIZACAO', 'AGUARDAR_PAGAMENTO'] }, passoDesde: { lte: desde } },
+      _count: { _all: true },
+    });
+  });
+
+  it('save grava as falhas pendentes; findByNumero as le (linha antiga sem a coluna = nenhuma)', async () => {
+    const falha = { comando: 'execucao.enfileirar', passo: 'ENFILEIRAR_EXECUCAO', status: 'EM_ANDAMENTO', em: 'x', tentativas: 3, detalhe: 'd' };
+    prisma.sagaOS.findUnique.mockResolvedValueOnce(row({ falhasPendentes: [falha] })).mockResolvedValueOnce(row({ falhasPendentes: null }));
+    const s = (await repo.findByNumero('OS-1'))!;
+    expect(s.falhasPendentes).toEqual([falha]);
+    expect((await repo.findByNumero('OS-1'))!.falhasPendentes).toEqual([]);
+    tx.sagaOS.updateMany.mockResolvedValueOnce({ count: 1 }); tx.sagaOS.findUniqueOrThrow.mockResolvedValue(row());
+    await repo.save(s);
+    expect(tx.sagaOS.updateMany.mock.calls[0][0].data.falhasPendentes).toEqual([falha]);
   });
 
   it('findComPrazoVencido e countPorStatus delegam ao Prisma', async () => {

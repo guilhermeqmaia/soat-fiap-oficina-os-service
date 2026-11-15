@@ -91,9 +91,11 @@ export interface ResultadoEvento {
  * (`ParticipantesSagaGateway`): a resposta sincrona de cada chamada vira o
  * evento correspondente e e reinjetada em `processar` — nova transacao, sem
  * reentrancia dentro da anterior. Se a chamada esgotar as tentativas, a saga
- * fica no passo: o historico ganha `chamada-falhou` com as tentativas (outra
- * transacao curta), a saga passa a contar em `oficina_os_sagas_paradas` e
- * `reprocessar` reenvia.
+ * fica no passo: o historico ganha `chamada-falhou` com as tentativas e o
+ * comando entra em `falhasPendentes` (outra transacao curta), a saga passa a
+ * contar em `oficina_os_sagas_paradas` e `reprocessar` reenvia. Se a saga saiu
+ * do passo/status que decidiu o comando durante as tentativas, a falha e
+ * descartada (`comando.origem`).
  *
  * Logs (US-F4-16): toda linha leva `trace_id`, `correlation_id` (numero da OS)
  * e `servico` (`camposDeRastreio`); as de chamada levam tambem `rota`/`tentativa`.
@@ -196,9 +198,11 @@ export class OrquestradorSagaService {
   /**
    * Grava `chamada-falhou` (com as tentativas) no historico da saga, numa
    * transacao propria — a chamada ja aconteceu fora da transacao que decidiu o
-   * comando. Conflito de versao e refeito como em `aplicarComRetry`; se ainda
-   * assim nao gravar, so loga (a metrica `comando-falhou` e o log ja contaram a
-   * falha, e o alerta de saga parada continua valendo pelo tempo no passo).
+   * comando. A entidade descarta a falha se a saga ja nao esta no passo/status
+   * de origem do comando (avancou ou foi cancelada durante as tentativas).
+   * Conflito de versao e refeito como em `aplicarComRetry`; se ainda assim nao
+   * gravar, so loga (a metrica `comando-falhou` e o log ja contaram a falha, e o
+   * alerta de saga parada continua valendo pelo tempo no passo automatico).
    */
   private async registrarChamadaFalhou(
     numero: string,
@@ -211,7 +215,15 @@ export class OrquestradorSagaService {
         const salva = await this.uow.executar(async (tx) => {
           const saga = await this.sagas.findByNumero(numero, tx);
           if (!saga) return null;
-          saga.registrarChamadaFalhou(comando.type, { erro: falha.erro, status: falha.status, tentativas: falha.tentativas }, agora);
+          const valeu = saga.registrarChamadaFalhou(comando, { erro: falha.erro, status: falha.status, tentativas: falha.tentativas }, agora);
+          if (!valeu) {
+            this.logger.warn({
+              msg: 'falha de comando descartada — a saga saiu do passo/status que decidiu o comando',
+              ...camposDeRastreio(numero, { comando: comando.type, passo: saga.passo }),
+              origem: comando.origem,
+              status: saga.status,
+            });
+          }
           return this.sagas.save(saga, tx);
         });
         return salva;

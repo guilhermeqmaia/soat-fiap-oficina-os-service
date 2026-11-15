@@ -692,7 +692,7 @@ paths:
         - Ordens de Servico
   /ordens-servico/numero/{numero}/saga:
     get:
-      description: Passo atual, status (EM_ANDAMENTO/COMPENSANDO/CONCLUIDA/CANCELADA), historico de eventos (avancou/ignorado/compensando), compensacoes enviadas e confirmadas e prazos de aprovacao/pagamento — rastreamento do fluxo distribuido.
+      description: Passo atual, status (EM_ANDAMENTO/COMPENSANDO/CONCLUIDA/CANCELADA), historico de eventos (avancou/ignorado/compensando), compensacoes enviadas e confirmadas, falhasPendentes (comandos nao entregues aguardando reprocessamento) e prazos de aprovacao/pagamento — rastreamento do fluxo distribuido.
       operationId: OrdemDeServicoController_findSaga
       parameters:
         - name: numero

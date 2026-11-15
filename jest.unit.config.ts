@@ -17,6 +17,8 @@ const config: Config = {
     '!**/*.spec.ts',
   ],
   coverageDirectory: '../coverage/unit',
+  // Padrao do jest + json-summary (lido pelo passo "Check coverage gate (80%)" do CI).
+  coverageReporters: ['json', 'lcov', 'text', 'clover', 'json-summary'],
   coverageThreshold: {
     global: {
       lines: 80,

@@ -12,8 +12,10 @@ Monitor `datadog_monitor.retry_esgotado` (infra-k8s `observability/monitors.tf`,
 ## O que significa
 
 O destino (`execucao-service` ou `billing-service`) está fora, lento ou quebrando. A saga da OS
-ficou no passo com a entrada `chamada-falhou` (com `tentativas`) e passa a contar em
-`oficina_os_sagas_paradas` — o alerta **saga parada** vem em seguida se nada for feito.
+ficou no passo com a entrada `chamada-falhou` (com `tentativas`), o comando entra em `falhasPendentes`
+e a saga passa a contar em `oficina_os_sagas_paradas` — o alerta **saga parada** vem em seguida se nada
+for feito. Se a saga já tinha saído daquele passo/status quando as tentativas acabaram (callback chegou
+antes, OS cancelada), a falha é descartada (histórico `ignorado`, log `falha de comando descartada`).
 
 ## Triagem
 
