@@ -165,7 +165,7 @@ Regras de segurança que importam:
 - **NLB** é `internal = true`; o target group aponta para os **nodes** (NodePort), por isso não precisa de AWS Load Balancer Controller.
 - **VPC Link** tem SG próprio com saída apenas para o NLB/nodes.
 - A **Lambda** fica na VPC para chegar ao RDS; sai para o Secrets Manager pelo NAT.
-- As chamadas **entre serviços** nunca saem do cluster: `http://billing-service:3001`, `http://execucao-service:3002` (DNS do namespace `oficina`).
+- As chamadas **entre serviços** nunca saem do cluster: `http://oficina-billing-service:3001`, `http://oficina-execucao-service:3002` (DNS do namespace `oficina`).
 
 Custo: o desenho é o mínimo para alta disponibilidade do banco e do cluster
 (duas AZs, RDS Multi-AZ) com um único NAT Gateway e um endpoint de gateway gratuito; o cluster fica **desligado**

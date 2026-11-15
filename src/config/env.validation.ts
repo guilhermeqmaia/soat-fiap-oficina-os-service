@@ -49,7 +49,7 @@ export function validateEnv(
     const valor = config[nome];
     if (valor === undefined || valor === '') {
       if (config.NODE_ENV === 'production') {
-        throw new Error(`${nome} e obrigatoria em producao (ex.: http://execucao-service:3002).`);
+        throw new Error(`${nome} e obrigatoria em producao (ex.: http://oficina-execucao-service:3002).`);
       }
       continue;
     }

@@ -59,7 +59,7 @@ parada -> alerta -> `reprocessar`.
 
 - [ ] Stage `messaging/` removido (destroy documentado), parametros SSM `/oficina/messaging/*` e `scripts/messaging-vars.sh` apagados; vars `SNS_TOPIC_ARN`/`SQS_QUEUE_URL` removidas dos repos (`gh variable delete`)
 - [ ] Gateway com os tres prefixos, **incluindo a Execucao** (`/execucao*`, `/catalogo*`, `/estoque*`) e `/admin*` -> OS Service; nenhuma rota interna (`/ordens-servico/{n}/eventos` so com `SERVICO`, que o authorizer da Lambda nunca emite — documentado)
-- [ ] `NetworkPolicy`/Service DNS: `os-service:3000`, `billing-service:3001`, `execucao-service:3002` no namespace `oficina`; `JWT_SECRET` compartilhado via Secrets Manager
+- [ ] `NetworkPolicy`/Service DNS: `oficina-app:3000`, `oficina-billing-service:3001`, `oficina-execucao-service:3002` no namespace `oficina`; `JWT_SECRET` compartilhado via Secrets Manager
 
 ### Hub (docs)
 

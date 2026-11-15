@@ -86,7 +86,7 @@ Valida a troca da mensageria SNS/SQS por HTTP direto (RFC-0008): o cliente HTTP 
 ### TS-12: Chamadas internas nao passam pelo gateway
 - **Tipo:** Manual (EKS)
 - **Criterio:** DNS interno + `SERVICO` nunca emitido pela Lambda
-- **Passos:** de um pod do OS: `curl http://execucao-service:3002/health`; pelo gateway: `curl $GW/ordens-servico/OS-1/eventos -H "Authorization: Bearer <token de usuario>"`
+- **Passos:** de um pod do OS: `curl http://oficina-execucao-service:3002/health`; pelo gateway: `curl $GW/ordens-servico/OS-1/eventos -H "Authorization: Bearer <token de usuario>"`
 - **Resultado esperado:** `200` interno; `403` pelo gateway (role de usuario); logs dos tres servicos com o mesmo `correlation_id` numa OS
 
 ## Casos de Borda
